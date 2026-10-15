@@ -66,6 +66,9 @@ async function detectVersion(id, exe) {
     const pkg = path.join(appDir(a), 'resources', 'app.asar', 'package.json');   // Electron reads inside .asar
     // (Electron's own fs on purpose: it reads inside .asar files)
     if (fs.existsSync(path.join(appDir(a), 'resources', 'app.asar'))) return JSON.parse(require('fs').readFileSync(pkg, 'utf8')).version || '';
+    // other programs (DS4Windows …): the version written into the .exe
+    return await new Promise((res) => execFile('powershell.exe', ['-NoProfile', '-Command', `(Get-Item -LiteralPath '${exe.replace(/'/g, "''")}').VersionInfo.FileVersion`],
+      { windowsHide: true, timeout: 20000 }, (e, out) => res(String(out || '').trim())));
   } catch {}
   return '';
 }
