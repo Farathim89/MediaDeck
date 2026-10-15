@@ -5,7 +5,9 @@
 // Sources:  { gh: 'owner/repo', asset: /regex/ }      latest GitHub release asset
 //           { page: url, link: /regex/, base: url }    first link on an official download page
 //           { json: url, pick: (j) => url }            an official update feed (Dolphin)
-const fs = require('fs');
+// Electron's own fs treats .asar files as folders (an app's resources\app.asar would be copied
+// as a folder and fail); original-fs sees them as the plain files they are
+const fs = process.versions.electron ? require('original-fs') : require('fs');
 const fsp = fs.promises;
 const path = require('path');
 const { execFile } = require('child_process');

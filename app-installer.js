@@ -5,7 +5,9 @@
 //  - the version is kept in Apps\<folder>\.mediadeck-version.json, so it travels with the folder
 //  - the download is checked against GitHub's SHA-256 when the release lists one
 //  - driver installers (ViGEmBus, HidHide) are only downloaded to Apps\Setup; Windows runs them
-const fs = require('fs');
+// Electron's own fs treats .asar files as folders (an app's resources\app.asar would be copied
+// as a folder and fail); original-fs sees them as the plain files they are
+const fs = process.versions.electron ? require('original-fs') : require('fs');
 const fsp = fs.promises;
 const path = require('path');
 const crypto = require('crypto');
@@ -62,7 +64,8 @@ async function detectVersion(id, exe) {
       return await new Promise((res) => execFile(exe, ['--version'], { windowsHide: true, timeout: 20000 }, (e, out) => res(String(out || '').trim().split(' ').pop())));
     }
     const pkg = path.join(appDir(a), 'resources', 'app.asar', 'package.json');   // Electron reads inside .asar
-    if (fs.existsSync(path.join(appDir(a), 'resources', 'app.asar'))) return JSON.parse(fs.readFileSync(pkg, 'utf8')).version || '';
+    // (Electron's own fs on purpose: it reads inside .asar files)
+    if (fs.existsSync(path.join(appDir(a), 'resources', 'app.asar'))) return JSON.parse(require('fs').readFileSync(pkg, 'utf8')).version || '';
   } catch {}
   return '';
 }
