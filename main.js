@@ -567,6 +567,13 @@ function startTestSwitch() {
       if (u.pathname === '/apps') return send(await appInstaller.status(net, u.searchParams.has('check')));
       // MediaDeck's own update: check, or (with install) download it, close, update and start again
       if (u.pathname === '/self-update') { try { return send(u.searchParams.has('install') ? await selfUpdate.install(net) : await selfUpdate.check(net)); } catch (e) { return send({ error: e.message }); } }
+      // sends install progress like a real download (checks how the progress message behaves)
+      if (u.pathname === '/progress-demo') {
+        for (let i = 1; i <= 20; i++) { win.webContents.send('emu-install-progress', { text: `Demo: downloading ${i * 5} / 100 MB`, pct: i / 20 - 0.001 }); await wait(150); }
+        win.webContents.send('emu-install-progress', { text: 'Demo 1.0 installed', pct: 1 });
+        return send({ ok: true });
+      }
+      if (u.pathname === '/toasts') return send(await win.webContents.executeJavaScript(`(() => { const t = [...document.querySelectorAll('.toast')]; const r = t.map((x) => ({ text: x.textContent.trim(), mark: x.dataset.mark || '', out: x.classList.contains('out') })); t.forEach((x) => { x.dataset.mark = 'seen'; }); return r; })()`));
       // opens a Settings page (and, with run=installEmulators, the emulator installer)
       if (u.pathname === '/open-settings') { await win.webContents.executeJavaScript(`App.open(Settings, ${JSON.stringify({ section: u.searchParams.get('section') || 'general' })})`); return send({ ok: true }); }
       if (u.pathname === '/twitch-key') { twitch.key(u.searchParams.get('a')); return send({ ok: true }); }

@@ -553,8 +553,20 @@ const Settings = (() => {
     });
   }
   if (api.onInstallProgress) {
-    let last = null;
-    api.onInstallProgress((p) => { if (last) last.remove(); last = UI.toast(p.text, { spinner: p.pct < 1, duration: p.pct >= 1 ? 2500 : 0 }); });
+    // one message that changes its text (a new one each time would flash in again on every MB)
+    let last = null, done = null;
+    api.onInstallProgress((p) => {
+      clearTimeout(done);
+      if (!last || !last.el.isConnected || last.el.classList.contains('out')) last = UI.toast(p.text, { spinner: true, duration: 0 });
+      else last.el.querySelector('span').textContent = p.text;
+      // finished steps ("… installed"): the spinner becomes a tick and the message goes after a while
+      if (p.pct >= 1 && /installed|updated/i.test(p.text)) {
+        const spin = last.el.querySelector('.spinner');
+        if (spin) spin.outerHTML = Icons.check;
+        const t = last;
+        done = setTimeout(() => { t.remove(); if (last === t) last = null; }, 2500);
+      }
+    });
   }
 
   async function rescan(showToast) {
