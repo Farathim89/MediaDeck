@@ -15,6 +15,10 @@ const DIST = path.join(ROOT, 'dist');
 const { version } = require('../package.json');
 const STAGE = path.join(DIST, 'MediaDeck');
 const ZIP = path.join(DIST, `MediaDeck-${version}-portable.zip`);
+// where the bundled tools come from: --apps <folder> (e.g. an installed MediaDeck's Apps), else this folder's Apps
+//   npm run dist -- --apps "D:\MediaDeck\Apps"
+const argApps = process.argv.indexOf('--apps');
+const APPS_SRC = argApps > 0 ? path.resolve(process.argv[argApps + 1]) : path.join(ROOT, 'Apps');
 
 // What of each bundled tool ships (paths relative to Apps\<tool>)
 const BUNDLE = {
@@ -40,8 +44,8 @@ console.log('Putting the release folder together…');
 fs.rmSync(STAGE, { recursive: true, force: true });
 copyTree(path.join(DIST, 'win-unpacked'), STAGE, () => true);
 for (const [tool, keep] of Object.entries(BUNDLE)) {
-  const src = path.join(ROOT, 'Apps', tool);
-  if (!fs.existsSync(path.join(src, '.mediadeck-version.json'))) throw new Error(`Apps\\${tool} is missing (install it from Settings → Apps first)`);
+  const src = path.join(APPS_SRC, tool);
+  if (!fs.existsSync(path.join(src, '.mediadeck-version.json'))) throw new Error(`${src} is missing (install it from Settings → Apps first, or pass --apps <folder>)`);
   copyTree(src, path.join(STAGE, 'Apps', tool), keep);
 }
 fs.copyFileSync(path.join(ROOT, 'LICENSE'), path.join(STAGE, 'LICENSE.txt'));
