@@ -1,0 +1,65 @@
+{
+  "name": "mediadeck",
+  "productName": "MediaDeck",
+  "version": "1.0.0",
+  "description": "A TV-style home screen for Windows: media player, YouTube and Twitch without ads, Plex and Audiobookshelf, and your emulators, all with a controller",
+  "main": "main.js",
+  "author": "Farathim",
+  "license": "GPL-3.0-or-later",
+  "private": true,
+  "homepage": "https://github.com/Farathim89/MediaDeck",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Farathim89/MediaDeck.git"
+  },
+  "scripts": {
+    "start": "electron .",
+    "icon": "electron build/make-icon.js",
+    "dist": "node build/build.js"
+  },
+  "devDependencies": {
+    "electron": "^44.7.2",
+    "electron-builder": "^26.15.3"
+  },
+  "build": {
+    "appId": "com.farathim.mediadeck",
+    "productName": "MediaDeck",
+    "executableName": "MediaDeck",
+    "copyright": "Farathim",
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "asar": true,
+    "files": [
+      "*.js",
+      "!build/**",
+      "renderer/**",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "tools",
+        "to": "tools",
+        "filter": [
+          "7za.exe",
+          "padwatch.exe",
+          "keys.exe",
+          "cursorhide.exe"
+        ]
+      }
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "dir",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "build/icon.ico",
+      "signAndEditExecutable": true
+    }
+  }
+}

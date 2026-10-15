@@ -1,0 +1,35 @@
+MediaDeck - third-party software
+================================
+
+MediaDeck itself is free software under the GNU General Public License v3.0 or later (LICENSE.txt).
+It ships with, or downloads on request, the programs below. Each keeps its own licence; their
+source code is available from the projects named here.
+
+Shipped with MediaDeck
+----------------------
+Electron (MIT) and Chromium (BSD-style and others)
+  https://www.electronjs.org - see LICENSE.electron.txt and LICENSES.chromium.html
+
+mpv - video player (GPL-2.0-or-later / LGPL-2.1-or-later), Windows build by zhongfly/shinchiro
+  https://mpv.io  -  build: https://github.com/zhongfly/mpv-winbuild          (Apps\mpv)
+
+FFmpeg - ffmpeg and ffprobe (GPL-3.0 build), Windows build by BtbN
+  https://ffmpeg.org  -  build: https://github.com/BtbN/FFmpeg-Builds         (Apps\ffmpeg, see its LICENSE.txt)
+
+Streamlink (BSD-2-Clause), Windows build with its own Python
+  https://streamlink.github.io  -  build: https://github.com/streamlink/windows-builds   (Apps\Streamlink, see its LICENSE.txt)
+
+7-Zip command line (7za.exe) (GNU LGPL, with unRAR restriction) - Igor Pavlov
+  https://www.7-zip.org                                                      (resources\tools\7za.exe)
+
+Loaded from the internet while running
+--------------------------------------
+SmartTwitchTV web interface (GPL-3.0) - https://github.com/fgl27/SmartTwitchTV
+TizenTube (GPL-3.0) - https://github.com/reisxd/TizenTube (from npm: @foxreis/tizentube)
+YouTube's TV interface (youtube.com/tv) and Twitch are services of their owners; MediaDeck is not
+affiliated with YouTube, Google, Twitch, Plex, Microsoft, Sony, Nintendo, Sega or any other maker.
+
+Downloaded only when you install them (Settings > Apps, Settings > Emulators)
+----------------------------------------------------------------------------
+PlexDeck, ABS-DA, DS4Windows, ViGEmBus, HidHide and the emulators come from their own official
+release pages, under their own licences. MediaDeck never downloads BIOS files or games.

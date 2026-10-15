@@ -1,0 +1,21 @@
+# Built and installed things
+node_modules/
+dist/
+
+# Everything personal or downloaded lives next to the program and never goes in git
+data/
+Apps/
+Emu_modules/
+Emulator backups/
+BIOS/
+setup/
+
+# Local only
+PlexDeck audit/
+tools/DS4Windows/
+tools/*.bak
+tools/extract-xiso.exe
+Media Center.exe
+Start Media Center.bat
+*.log
+*.orig

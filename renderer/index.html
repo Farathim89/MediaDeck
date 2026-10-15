@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: http://127.0.0.1:*; media-src http://127.0.0.1:*; connect-src http://127.0.0.1:*">
+  <title>MediaDeck</title>
+  <link rel="stylesheet" href="css/styles.css">
+  <link rel="stylesheet" href="css/media.css">
+</head>
+<body>
+  <div id="backdrop">
+    <div class="glow" id="glow-a"></div>
+    <div class="glow" id="glow-b"></div>
+    <div class="vignette"></div>
+  </div>
+
+  <!-- Home -->
+  <main id="home" class="screen">
+    <!-- Tabs: Home, one per app, Emulators with a sub tab per emulator -->
+    <nav class="sidebar">
+      <div class="brand">
+        <span class="brand-mark"></span>
+        <span class="brand-name">MediaDeck</span>
+      </div>
+      <div class="tabs"></div>
+      <div class="sidebar-bottom">
+        <button class="icon-btn focusable" id="btn-settings" data-group="sys" aria-label="Settings"></button>
+        <button class="icon-btn focusable" id="btn-power" data-group="sys" aria-label="Power"></button>
+      </div>
+    </nav>
+    <section class="content">
+      <header class="content-top">
+        <div class="clock"><div class="clock-time">--:--</div><div class="clock-date"></div></div>
+      </header>
+      <div class="page"></div>
+    </section>
+  </main>
+
+  <!-- Media Player: continue watching, drives, favourite folders -->
+  <main id="media" class="screen">
+    <header class="topbar">
+      <div class="brand">
+        <button class="icon-btn focusable back-btn" data-group="topbar" aria-label="Back"></button>
+        <span class="brand-name">Media Player</span>
+      </div>
+      <div class="topbar-right">
+        <div class="clock"><div class="clock-time">--:--</div><div class="clock-date"></div></div>
+      </div>
+    </header>
+    <section class="hero">
+      <div class="hero-kicker"></div>
+      <h1 class="hero-title"></h1>
+      <div class="hero-sub"></div>
+    </section>
+    <div class="rows"></div>
+  </main>
+
+  <!-- Folder browser -->
+  <main id="browser" class="screen">
+    <header class="topbar">
+      <div class="brand crumbs-wrap">
+        <button class="icon-btn focusable back-btn" data-group="topbar" aria-label="Back"></button>
+        <div class="crumbs"></div>
+      </div>
+      <div class="topbar-right">
+        <div class="browser-info"></div>
+        <div class="clock"><div class="clock-time">--:--</div><div class="clock-date"></div></div>
+      </div>
+    </header>
+    <div class="grid-scroll"><div class="grid"></div></div>
+    <div class="empty-note"></div>
+  </main>
+
+  <!-- Settings -->
+  <main id="settings" class="screen">
+    <nav class="sidebar">
+      <div class="brand">
+        <button class="icon-btn focusable back-btn" data-group="settings-back" aria-label="Back"></button>
+        <span class="brand-name">Settings</span>
+      </div>
+      <div class="tabs"></div>
+    </nav>
+    <section class="content">
+      <header class="content-top">
+        <div class="clock"><div class="clock-time">--:--</div><div class="clock-date"></div></div>
+      </header>
+      <div class="settings-page">
+        <div class="hero-kicker">Settings</div>
+        <h1 class="settings-title"></h1>
+        <div class="settings-desc"></div>
+        <div class="settings-list"></div>
+      </div>
+    </section>
+  </main>
+
+  <!-- Photo viewer -->
+  <main id="photos" class="screen">
+    <img class="photo photo-a" alt="">
+    <img class="photo photo-b" alt="">
+    <div class="photo-caption"><div class="photo-name"></div><div class="photo-meta"></div></div>
+    <div class="photo-state"></div>
+  </main>
+
+  <div id="modal-root"></div>
+  <div id="toast-root"></div>
+
+  <script src="js/icons.js"></script>
+  <script src="js/input.js"></script>
+  <script src="js/nav.js"></script>
+  <script src="js/ui.js"></script>
+  <script src="js/media-util.js"></script>
+  <script src="js/home.js"></script>
+  <script src="js/media-home.js"></script>
+  <script src="js/browser.js"></script>
+  <script src="js/photos.js"></script>
+  <script src="js/rom-folders.js"></script>
+  <script src="js/settings.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>

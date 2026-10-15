@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:">
+  <title>Overlay</title>
+  <link rel="stylesheet" href="css/styles.css">
+  <style>
+    html { color-scheme: normal !important; }
+    html, body { background: transparent !important; }
+    #dim { position: fixed; inset: 0; background: rgba(0, 0, 0, 0.55); animation: fadeIn 0.2s ease; }
+    #panel {
+      position: fixed; inset: 0;
+      background: linear-gradient(180deg, var(--panel-solid), var(--bg));
+      border-right: 1px solid var(--line);
+      box-shadow: 1.5rem 0 4rem rgba(0, 0, 0, 0.6);
+      padding: 2.6rem 1.8rem 2rem; display: flex; flex-direction: column;
+      animation: slideIn 0.25s var(--ease);
+    }
+    @keyframes slideIn { from { transform: translateX(-2rem); opacity: 0; } }
+    .ov-top { display: flex; justify-content: space-between; align-items: flex-start; }
+    .ov-kicker { font-size: 0.85rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.14em; color: var(--accent); }
+    .ov-name { margin: 0.5rem 0 0.3rem; font-size: 2rem; font-weight: 750; line-height: 1.12; letter-spacing: -0.01em; }
+    .ov-emu { color: var(--muted); font-size: 1.05rem; }
+    #panel .clock { text-align: right; }
+    .ov-list { display: flex; flex-direction: column; gap: 0.35rem; margin-top: 2.2rem; }
+    .ov-list .menu-item { font-size: 1.15rem; padding: 0.95rem 1.1rem; }
+    .ov-sep { height: 1px; background: var(--line); margin: 0.6rem 0.4rem; }
+    .ov-hints { margin-top: auto; display: flex; gap: 1.6rem; color: var(--dim); font-size: 0.85rem; }
+    .ov-hints .hint { display: flex; align-items: center; gap: 0.5rem; }
+    #busy { position: fixed; left: 30rem; right: 0; top: 50%; text-align: center; color: var(--text); font-size: 1.2rem; display: none; }
+  </style>
+</head>
+<body>
+  <aside id="panel">
+    <div class="ov-top">
+      <div class="ov-kicker">Playing</div>
+      <div class="clock"><div class="clock-time">--:--</div></div>
+    </div>
+    <h1 class="ov-name"></h1>
+    <div class="ov-emu"></div>
+    <div class="ov-list"></div>
+    <div class="ov-hints">
+      <span class="hint"><span class="btn-glyph a">A</span>Select</span>
+      <span class="hint"><span class="btn-glyph b">B</span>Back to the game</span>
+    </div>
+  </aside>
+  <div id="modal-root"></div>
+  <div id="toast-root"></div>
+  <script src="js/icons.js"></script>
+  <script src="js/input.js"></script>
+  <script src="js/nav.js"></script>
+  <script src="js/ui.js"></script>
+  <script src="js/overlay-ui.js"></script>
+</body>
+</html>
