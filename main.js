@@ -565,6 +565,8 @@ function startTestSwitch() {
       if (u.pathname === '/app-updates') { try { return send(await appUpdatesAtStart(true)); } catch (e) { return send({ error: e.message }); } }
       if (u.pathname === '/apps-install') { const r = await installApps(String(u.searchParams.get('ids') || '').split(',').filter(Boolean)); return send(r.results || r); }
       if (u.pathname === '/apps') return send(await appInstaller.status(net, u.searchParams.has('check')));
+      // MediaDeck's own update: check, or (with install) download it, close, update and start again
+      if (u.pathname === '/self-update') { try { return send(u.searchParams.has('install') ? await selfUpdate.install(net) : await selfUpdate.check(net)); } catch (e) { return send({ error: e.message }); } }
       // opens a Settings page (and, with run=installEmulators, the emulator installer)
       if (u.pathname === '/open-settings') { await win.webContents.executeJavaScript(`App.open(Settings, ${JSON.stringify({ section: u.searchParams.get('section') || 'general' })})`); return send({ ok: true }); }
       if (u.pathname === '/twitch-key') { twitch.key(u.searchParams.get('a')); return send({ ok: true }); }

@@ -19,3 +19,4 @@ Media Center.exe
 Start Media Center.bat
 *.log
 *.orig
+dist-test/

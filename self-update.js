@@ -60,7 +60,14 @@ async function install(net, progress = () => {}) {
     `Start-Process -FilePath ${q(exe)} -WorkingDirectory ${q(P.ROOT)}`,
     `Remove-Item -LiteralPath ${q(work)} -Recurse -Force`,
   ].join('\r\n'));
-  spawn('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-WindowStyle', 'Hidden', '-File', script], { detached: true, stdio: 'ignore', windowsHide: true }).unref();
+  // PowerShell started straight from here (detached, so it outlives MediaDeck) gets no console and
+  // quits at once; a tiny VBScript starts it hidden instead (cmd's "start" if Windows Script Host is off)
+  const vbs = path.join(work, 'update.vbs');
+  await fsp.writeFile(vbs, `CreateObject("WScript.Shell").Run "powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File ""${script}""", 0, False\r\n`);
+  const run = spawn('wscript.exe', ['//B', '//Nologo', vbs], { detached: true, stdio: 'ignore', windowsHide: true });
+  run.on('error', () => spawn('cmd.exe', ['/d', '/c', 'start', '""', '/min', 'powershell.exe', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-WindowStyle', 'Hidden', '-File', script],
+    { detached: true, stdio: 'ignore', windowsHide: true }).unref());
+  run.unref();
   setTimeout(() => app.quit(), 300);
   return { version: info.latest };
 }
