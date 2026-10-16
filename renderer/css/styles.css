@@ -587,6 +587,22 @@ svg { display: block; }
 }
 .chip svg { width: 1.05rem; height: 1.05rem; }
 .chip.letter { padding: 0; }
+.game-bar .bar-gap { width: 1px; height: 1.6rem; margin: 0 0.45rem; align-self: center; background: rgba(255, 255, 255, 0.12); }
+/* # A–Z down the right edge (like Plex): stays put while the cards scroll */
+.games-section.has-rail { padding-right: 2.6rem; }
+.letters-rail {
+  position: fixed; right: 0.5rem; top: 50%; transform: translateY(-50%); z-index: 5;
+  display: flex; flex-direction: column; align-items: center; gap: 0.05rem;
+  padding: 0.35rem 0.15rem; border-radius: 1rem; background: rgba(0, 0, 0, 0.35);
+}
+.letters-rail .letter {
+  width: 1.7rem; height: 1.45rem; border-radius: 0.5rem; display: flex; align-items: center; justify-content: center;
+  font-size: 0.78rem; font-weight: 700; color: var(--muted); background: none;
+  transition: background 0.12s, color 0.12s, transform 0.12s var(--ease);
+}
+.letters-rail .letter.off { opacity: 0.28; }
+.letters-rail button.letter:hover { color: var(--text); }
+.letters-rail .letter.focused { background: var(--focus-bg); color: var(--focus-ink); box-shadow: 0 0 0 0.12rem var(--focus-ring); transform: scale(1.15); }
 .chip.active { color: var(--text); background: color-mix(in srgb, var(--accent) 25%, transparent); }
 .chip.focused { background: var(--focus-bg); color: var(--focus-ink); box-shadow: 0 0 0 0.14rem var(--focus-ring); transform: scale(1.08); }
 /* Favourite games get a small star */

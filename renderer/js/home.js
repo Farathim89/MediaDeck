@@ -451,6 +451,9 @@ const Home = (() => {
   const gameConsole = new Map(); // module id -> console shown (multi-console emulators)
   const listKey = (t) => (t.console ? 'c:' + t.console.id : t.moduleId);
   const letterOf = (title) => (/^[a-z]/i.test(title) ? title[0].toUpperCase() : '#');
+  const gameGroup = new Map();   // list key -> sub tab shown ('' = All games)
+  // "...\Nintendo Snes\0 - Randomizer\Zelda.sfc" -> "Randomizer"
+  const groupOf = (g) => { const m = /[\\/]0 - ([^\\/]+)[\\/]/.exec(g.rom || ''); return m ? m[1].trim() : ''; };
 
   // Cards for the games matching the search; letters to jump with
   async function renderGameCards(t, sec, query) {
@@ -466,7 +469,14 @@ const Home = (() => {
     const byTitle = (a, b) => (letterOf(a.title) === '#') !== (letterOf(b.title) === '#')
       ? (letterOf(a.title) === '#' ? -1 : 1)
       : a.title.localeCompare(b.title, undefined, { numeric: true, sensitivity: 'base' });
-    const all = (consoles.length > 1 ? everything.filter((g) => g.console === cur) : everything).slice().sort(byTitle);
+    const inConsole = consoles.length > 1 ? everything.filter((g) => g.console === cur) : everything;
+    // Sub tabs: a "0 - Name" folder in the console's folder ("0 - Randomizer") is a tab of its own;
+    // its games are only shown there, the rest under "All games"
+    const groupCounts = new Map();
+    for (const g of inConsole) { const k = groupOf(g); groupCounts.set(k, (groupCounts.get(k) || 0) + 1); }
+    let grp = gameGroup.get(listKey(t)) || '';
+    if (!groupCounts.has(grp)) grp = '';
+    const all = inConsole.filter((g) => groupOf(g) === grp).sort(byTitle);
     // The cards take the shape of this console's boxes (SNES/N64 wide, PS2 tall …)
     sec.style.setProperty('--art-ratio', (all[0] && all[0].ratio) || 0.75);
     let cbar = sec.querySelector('.console-bar');
@@ -481,18 +491,37 @@ const Home = (() => {
     }
     const q = query.trim().toLowerCase();
     // versions of one game (Rev 1, Sample, other regions, .smc / .sfc) on one card; starting it asks which
-    const shown = cfg().settings.groupVersions === false ? all : groupVersions(all);
+    const grouped = (gs) => (cfg().settings.groupVersions === false ? gs : groupVersions(gs));
+    const shown = grouped(all);
     const list = q ? shown.filter((g) => g.title.toLowerCase().includes(q)) : shown;
     const favs = new Set((await api.favGames()).map((x) => x.rom));
     sec.querySelector('.games-count').textContent = q ? `${list.length} of ${shown.length}` : shown.length;
 
+    sec.querySelectorAll('.group-bar').forEach((x) => x.remove());   // (an older layout had its own row)
     let bar = sec.querySelector('.letters-bar');
     if (!bar) { bar = document.createElement('div'); bar.className = 'game-bar letters-bar'; sec.querySelector('.game-grid').before(bar); }
-    const letters = [...new Set(list.map((g) => letterOf(g.title)))];
-    bar.innerHTML = `
+    const letters = new Set(list.map((g) => letterOf(g.title)));
+    // the sub tabs (All games | Randomizer | Homebrew …) and Search on one row; counts are cards, like the header
+    const groups = [...groupCounts.keys()].filter(Boolean).sort((x, y) => x.localeCompare(y));
+    const cardCount = (k) => (k === grp ? shown.length : grouped(inConsole.filter((g) => groupOf(g) === k)).length);
+    const chip = (k, label) => `<button class="chip focusable group-chip${k === grp ? ' active' : ''}" data-group="gamebar" data-key="${UI.esc(k)}">${UI.esc(label)} <small>${cardCount(k)}</small></button>`;
+    bar.innerHTML = (groups.length ? (groupCounts.has('') ? chip('', 'All games') : '') + groups.map((k) => chip(k, k)).join('') + '<span class="bar-gap"></span>' : '') + `
       <button class="chip focusable search-chip${q ? ' active' : ''}" data-group="gamebar">${Icons.search}<span>${q ? `"${UI.esc(query)}"` : 'Search'}</span></button>
-      ${q ? `<button class="chip focusable clear-chip" data-group="gamebar">${Icons.close}<span>Clear</span></button>` : ''}
-      ${all.length > 30 ? letters.map((l) => `<button class="chip letter focusable" data-group="gamebar" data-letter="${l}">${l}</button>`).join('') : ''}`;
+      ${q ? `<button class="chip focusable clear-chip" data-group="gamebar">${Icons.close}<span>Clear</span></button>` : ''}`;
+    bar.querySelectorAll('.group-chip').forEach((x) => x.addEventListener('click', async () => {
+      gameGroup.set(listKey(t), x.dataset.key);
+      await renderGameCards(t, sec, '');
+      Nav.focus([...sec.querySelectorAll('.group-chip')].find((y) => y.dataset.key === x.dataset.key));
+    }));
+    // # A–Z down the right edge like Plex (letters without games are dimmed)
+    let rail = sec.querySelector('.letters-rail');
+    if (all.length > 30) {
+      if (!rail) { rail = document.createElement('div'); rail.className = 'letters-rail'; sec.appendChild(rail); }
+      rail.innerHTML = ['#', ...'ABCDEFGHIJKLMNOPQRSTUVWXYZ'].map((l) => letters.has(l)
+        ? `<button class="letter focusable" data-group="letters" data-letter="${l}">${l}</button>`
+        : `<span class="letter off">${l}</span>`).join('');
+      sec.classList.add('has-rail');
+    } else if (rail) { rail.remove(); sec.classList.remove('has-rail'); }
     bar.querySelector('.search-chip').addEventListener('click', async () => {
       const v = await UI.prompt({ title: `Search ${t.console ? t.console.name : t.name} games`, value: query, okLabel: 'Search' });
       if (v === null) return;
@@ -501,7 +530,7 @@ const Home = (() => {
     });
     const clear = bar.querySelector('.clear-chip');
     if (clear) clear.addEventListener('click', async () => { await renderGameCards(t, sec, ''); Nav.focus(sec.querySelector('.search-chip')); });
-    bar.querySelectorAll('.letter').forEach((b) => b.addEventListener('click', () => {
+    sec.querySelectorAll('.letters-rail button.letter').forEach((b) => b.addEventListener('click', () => {
       const first = [...sec.querySelectorAll('.game-card')].find((c) => c.dataset.letter === b.dataset.letter);
       if (!first) return;
       // The letter's first game at the top of the view, not just somewhere on screen
