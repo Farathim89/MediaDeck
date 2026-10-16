@@ -45,6 +45,8 @@ const CONSOLES = [
   { id: 'pcfx', name: 'PC-FX', maker: 'NEC', folder: 'NEC\\1994 - PC-FX', games: ['NEC PC-FX'], bios: 'NEC - PC-FX', emus: ['mednafen'] },
   { id: 'model3', name: 'Sega Model 3', maker: 'Arcade', folder: 'Arcade\\1996 - Sega Model 3', games: ['Sega Model 3'], emus: ['supermodel'] },
   { id: 'amiga', name: 'Amiga', maker: 'Commodore', folder: 'Commodore\\1985 - Amiga', games: ['Commodore Amiga', 'Amiga'], bios: 'Commodore - Amiga', emus: ['winuae'] },
+  // CD32: its own WinUAE copy that starts a disc in CD32 mode (needs the CD32 Kickstart + extended ROM in BIOS)
+  { id: 'cd32', name: 'Amiga CD32', maker: 'Commodore', folder: 'Commodore\\1993 - Amiga CD32', games: ['Amiga CD32', 'Commodore Amiga CD32', 'CD32'], bios: 'Commodore - Amiga CD32', emus: ['winuae-cd32'] },
   { id: 'c64', name: 'Commodore 64', maker: 'Commodore', folder: 'Commodore\\1982 - Commodore 64', games: ['Commodore 64', 'C64'], emus: ['vice'] },
   { id: 'zx', name: 'ZX Spectrum', maker: 'Sinclair', folder: 'Sinclair\\1982 - ZX Spectrum', games: ['Sinclair ZX Spectrum', 'ZX Spectrum'], emus: ['zesarux'] },
   { id: 'apple2', name: 'Apple II', maker: 'Apple', folder: 'Apple\\1977 - Apple II', games: ['Apple II'], emus: ['applewin'] },
@@ -58,6 +60,10 @@ const CONSOLES = [
 // Emulators. exe: the program to look for after unpacking. multi: shared by several consoles
 // (goes to Multi-system). portable: files that make it keep its settings in its own folder.
 const EMULATORS = {
+  // a second WinUAE that starts CD32 discs; module: the emu-module.json it gets (not the Amiga one)
+  'winuae-cd32': { name: 'WinUAE', desc: 'Amiga CD32 (needs the CD32 Kickstart 40.060 and its extended ROM)', exe: /^winuae64\.exe$/i,
+    src: { page: 'https://www.winuae.net/download/', link: /https:\/\/download\.abime\.net\/winuae\/releases\/WinUAE\d+_x64\.zip/, ver: (l) => (/WinUAE(\d)(\d)(\d)/.exec(l) || []).slice(1).join('.') }, portable: ['winuae.ini'], biosTo: 'Roms', biosFiles: /\.(rom|bin|cd32|ext)$/i,
+    module: { system: 'Amiga CD32', exe: 'winuae64.exe', gameArgs: '-portable -s use_gui=no -s gfx_fullscreen_amiga=true -s quickstart=cd32,0 -cdimage "{rom}"', romExtensions: ['cue', 'iso', 'chd', 'ccd'], hotkeys: { options: 'F12', pause: 'Pause' } } },
   mesen: { name: 'Mesen', desc: 'Accurate NES, SNES, Master System and PC Engine', exe: /^mesen\.exe$/i, multi: true,
     src: { gh: 'SourMesen/Mesen2', asset: /_Windows\.zip$/i } },
   snes9x: { name: 'Snes9x', desc: 'Fast, well-known Super Nintendo emulator', exe: /^snes9x-x64\.exe$/i,
@@ -298,6 +304,10 @@ async function install(emuId, consoleId, opts) {
       const f = path.join(dest, p);
       if (p.endsWith('/')) await fsp.mkdir(f, { recursive: true });
       else if (!fs.existsSync(f)) { await fsp.mkdir(path.dirname(f), { recursive: true }); await fsp.writeFile(f, ''); }
+    }
+    // an emulator with its own module settings (WinUAE for CD32): written now, so the Amiga defaults aren't used
+    if (e.module && !fs.existsSync(path.join(dest, 'emu-module.json'))) {
+      await fsp.writeFile(path.join(dest, 'emu-module.json'), JSON.stringify({ name: e.name + (e.module.system ? ` (${e.module.system})` : ''), args: '', romFolders: [], ...e.module }, null, 2));
     }
     // BIOS from the central BIOS folder (copies; nothing moved)
     const c = CONSOLES.find((x) => x.id === consoleId);

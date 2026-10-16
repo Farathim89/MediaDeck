@@ -58,6 +58,8 @@ const SYSTEMS = [
   [/\bmsx\b/, 'Microsoft - MSX'],
   [/colecovision/, 'Coleco - ColecoVision'],
   [/\bms-?dos\b|\bdos\b/, 'Microsoft - DOS'],
+  [/\bcd32\b/, 'Commodore - CD32'],
+  [/\bcdtv\b/, 'Commodore - CDTV'],
   [/amiga/, 'Commodore - Amiga'],
   [/commodore ?64|\bc64\b/, 'Commodore - 64'],
   [/apple ?(ii|2)\b/, 'Apple - II'],
@@ -370,7 +372,7 @@ const SHORT = {
   'Microsoft - Xbox': ['Xbox', 0.71], 'Microsoft - Xbox 360': ['Xbox 360', 0.71], 'Microsoft - MSX': ['MSX', 0.71], 'Microsoft - MSX2': ['MSX2', 0.71], 'Microsoft - DOS': ['DOS', 0.8],
   'Atari - 5200': ['Atari 5200', 0.73], 'Atari - 7800': ['Atari 7800', 0.73], 'Atari - 8-bit': ['Atari 8-bit', 0.73], 'Atari - Lynx': ['Lynx', 0.73], 'Atari - Jaguar': ['Jaguar', 0.73],
   'Bandai - WonderSwan': ['WonderSwan', 1], 'Bandai - WonderSwan Color': ['WonderSwan Color', 1], 'Coleco - ColecoVision': ['ColecoVision', 0.73],
-  'Commodore - Amiga': ['Amiga', 0.8], 'Commodore - 64': ['C64', 0.8], 'Apple - II': ['Apple II', 0.8], 'Commander - X16': ['Commander X16', 1], 'Adobe - Flash': ['Flash', 1.33],
+  'Commodore - Amiga': ['Amiga', 0.8], 'Commodore - CD32': ['Amiga CD32', 0.88], 'Commodore - CDTV': ['CDTV', 0.88], 'Commodore - 64': ['C64', 0.8], 'Apple - II': ['Apple II', 0.8], 'Commander - X16': ['Commander X16', 1], 'Adobe - Flash': ['Flash', 1.33],
   'Arcade - Sega Model 3': ['Model 3', 0.75], 'Sinclair - ZX Spectrum': ['ZX Spectrum', 0.66], 'SNK - Neo Geo': ['Neo Geo', 0.71], MAME: ['Arcade', 0.75],
 };
 function consoleOf(mod, rom) {
