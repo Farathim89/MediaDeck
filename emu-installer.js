@@ -63,7 +63,7 @@ const EMULATORS = {
   // a second WinUAE that starts CD32 discs; module: the emu-module.json it gets (not the Amiga one)
   'winuae-cd32': { name: 'WinUAE', desc: 'Amiga CD32 (needs the CD32 Kickstart 40.060 and its extended ROM)', exe: /^winuae64\.exe$/i,
     src: { page: 'https://www.winuae.net/download/', link: /https:\/\/download\.abime\.net\/winuae\/releases\/WinUAE\d+_x64\.zip/, ver: (l) => (/WinUAE(\d)(\d)(\d)/.exec(l) || []).slice(1).join('.') }, portable: ['winuae.ini'], biosTo: 'Roms', biosFiles: /\.(rom|bin|cd32|ext)$/i,
-    module: { system: 'Amiga CD32', exe: 'winuae64.exe', gameArgs: '-portable -s use_gui=no -s gfx_fullscreen_amiga=true -s quickstart=cd32,0 -cdimage "{rom}"', romExtensions: ['cue', 'iso', 'chd', 'ccd'], hotkeys: { options: 'F12', pause: 'Pause' } } },
+    module: { system: 'Amiga CD32', exe: 'winuae64.exe', gameArgs: '-portable -s use_gui=no -s gfx_fullscreen_amiga=true -s quickstart=cd32,0 -s "cdimage0={rom},image"', romExtensions: ['cue', 'iso', 'chd', 'ccd'], hotkeys: { options: 'F12', pause: 'Pause' } } },
   mesen: { name: 'Mesen', desc: 'Accurate NES, SNES, Master System and PC Engine', exe: /^mesen\.exe$/i, multi: true,
     src: { gh: 'SourMesen/Mesen2', asset: /_Windows\.zip$/i } },
   snes9x: { name: 'Snes9x', desc: 'Fast, well-known Super Nintendo emulator', exe: /^snes9x-x64\.exe$/i,
