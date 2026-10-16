@@ -262,9 +262,13 @@ function arcadeShortName(mod, system, rom) {
   return system === 'MAME' ? base : null;
 }
 
+// libretro's folder names that differ from the console's name ("DOS", not "Microsoft - DOS")
+const LIBRETRO_DIR = { 'Microsoft - DOS': 'DOS' };
+
 async function findCover(mod, game, net, opts = {}) {
-  const system = systemFor(mod, game.rom);
-  if (!system) return null;
+  const own = systemFor(mod, game.rom);
+  if (!own) return null;
+  const system = LIBRETRO_DIR[own] || own;
   if (system === 'Sony - PlayStation 3' && game.serial) {
     const img = await gametdbCover(game.serial, net);
     if (img) return img;

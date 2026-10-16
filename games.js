@@ -292,7 +292,10 @@ function launchArgs(mod, rom) {
   const tokens = [];
   const re = /"([^"]*)"|(\S+)/g;
   let m;
-  while ((m = re.exec(mod.gameArgs || '"{rom}"'))) tokens.push(m[1] !== undefined ? m[1] : m[2]);
+  // a file type can start differently (DOSBox: a game's .conf goes in with --conf)
+  const ext = path.extname(rom).slice(1).toLowerCase();
+  const args = (mod.extArgs && mod.extArgs[ext]) || mod.gameArgs || '"{rom}"';
+  while ((m = re.exec(args))) tokens.push(m[1] !== undefined ? m[1] : m[2]);
   let core = null;
   if (tokens.some((t) => t.includes('{core}'))) {
     const name = pickCore(mod, rom, folder);

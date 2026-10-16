@@ -67,7 +67,9 @@ const KNOWN = [
   { name: 'ZEsarUX', system: 'ZX Spectrum', exes: ['zesarux.exe'], gameArgs: '--configfile "{emudir}\\zesarux.cfg" --fullscreen --nowelcomemessage --quickexit "{rom}"', romExtensions: ['tap', 'tzx', 'pzx', 'z80', 'sna', 'szx', 'trd', 'scl', 'dsk'], hotkeys: { options: 'F5' } },
   { name: 'AppleWin', system: 'Apple II', exes: ['applewin.exe'], gameArgs: '-conf "{emudir}\\AppleWin.ini" -f -d1 "{rom}"', romExtensions: ['dsk', 'do', 'po', 'nib', 'woz', '2mg'], hotkeys: { options: 'F8', saveState: 'F11', loadState: 'F12', pause: 'Pause' } },
   { name: 'openMSX', system: 'MSX', exes: ['openmsx.exe'], gameArgs: '-cart "{rom}" -command "set fullscreen on"', romExtensions: ['rom', 'mx1', 'mx2', 'col'], hotkeys: { options: 'F10', saveState: 'Alt+F8', loadState: 'Alt+F7', pause: 'Pause' } },
-  { name: 'DOSBox Staging', system: 'DOS', exes: ['dosbox.exe'], gameArgs: '--fullscreen "{rom}"', romExtensions: ['exe', 'com', 'bat', 'img', 'ima', 'iso', 'cue'], hotkeys: { pause: 'Alt+Pause', screenshot: 'Ctrl+F5' } },
+  // DOS games: best as a folder with the game installed in _C and a <Game>.conf that mounts C:, the CD and
+  // starts it (the CD images themselves are not listed: they only work through such a .conf)
+  { name: 'DOSBox Staging', system: 'DOS', exes: ['dosbox.exe'], gameArgs: '--fullscreen "{rom}"', extArgs: { conf: '--fullscreen --conf "{rom}"' }, romExtensions: ['conf', 'exe', 'com', 'bat'], hotkeys: { pause: 'Alt+Pause', screenshot: 'Ctrl+F5' } },
   { name: 'x16emu', system: 'Commander X16', exes: ['x16emu.exe'], gameArgs: '-fullscreen -prg "{rom}" -run', romExtensions: ['prg'], hotkeys: { screenshot: 'Ctrl+P' } },
   { name: 'Ruffle', system: 'Flash', exes: ['ruffle.exe'], gameArgs: '--fullscreen "{rom}"', romExtensions: ['swf'], hotkeys: { pause: 'Ctrl+P' } },
   { name: 'BizHawk', system: 'Multi-system', exes: ['emuhawk.exe'], gameArgs: '"{rom}"', romExtensions: ['nes', 'sfc', 'gb', 'gba', 'n64', 'zip'] },
@@ -134,6 +136,7 @@ async function detect(dir, folderName) {
     hidden: false,
     ...(k && k.hotkeys ? { hotkeys: k.hotkeys } : {}),
     ...(k && k.attached ? { attached: true } : {}),
+    ...(k && k.extArgs ? { extArgs: k.extArgs } : {}),
   };
 }
 
@@ -146,6 +149,8 @@ function normalise(mod, id, baseDir, moduleFile) {
     exe,
     args: mod.args || '',
     gameArgs: mod.gameArgs || '"{rom}"',
+    // per file type, other start arguments: { conf: '--conf "{rom}"' }
+    extArgs: mod.extArgs && typeof mod.extArgs === 'object' ? mod.extArgs : null,
     romExtensions: mod.romExtensions || [],
     romFolders: mod.romFolders || [],
     hidden: !!mod.hidden,
@@ -278,7 +283,9 @@ function addKnownExtensions(mod) {
   const have = new Set((data.romExtensions || []).map((e) => e.toLowerCase()));
   const missing = k.romExtensions.filter((e) => !have.has(e));
   const addControls = (k.hotkeys && !data.hotkeys) || (k.control && !data.control);
-  if (!missing.length && !addControls) return;
+  const addExtArgs = k.extArgs && Object.keys(k.extArgs).some((e) => !(data.extArgs && data.extArgs[e]));
+  if (!missing.length && !addControls && !addExtArgs) return;
+  if (addExtArgs) { data.extArgs = { ...k.extArgs, ...(data.extArgs || {}) }; mod.extArgs = data.extArgs; }
   data.romExtensions = [...(data.romExtensions || []), ...missing];
   // In-game overlay: hotkeys the emulator listens to (change them here if you change them there)
   if (k.hotkeys && !data.hotkeys) data.hotkeys = k.hotkeys;

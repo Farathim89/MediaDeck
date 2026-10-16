@@ -563,6 +563,8 @@ function startTestSwitch() {
         return send({ ok: !!w, title: w ? w.getTitle() : null });
       }
       if (u.pathname === '/app-updates') { try { return send(await appUpdatesAtStart(true)); } catch (e) { return send({ error: e.message }); } }
+      // installs an emulator for a console, like Settings → Install emulators (it goes through the window's own call)
+      if (u.pathname === '/emu-install') return send(await win.webContents.executeJavaScript(`api.installEmulators([${JSON.stringify({ emuId: u.searchParams.get('emu'), consoleId: u.searchParams.get('console') })}]).then((r) => r.results || r)`));
       if (u.pathname === '/apps-install') { const r = await installApps(String(u.searchParams.get('ids') || '').split(',').filter(Boolean)); return send(r.results || r); }
       if (u.pathname === '/apps') return send(await appInstaller.status(net, u.searchParams.has('check')));
       // MediaDeck's own update: check, or (with install) download it, close, update and start again
