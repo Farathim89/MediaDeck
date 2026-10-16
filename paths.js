@@ -9,7 +9,8 @@
 const { app } = require('electron');
 const path = require('path');
 
-const ROOT = app.isPackaged ? path.dirname(process.execPath) : __dirname;
+// (from source, MEDIADECK_ROOT can point at an installed MediaDeck folder, to try new code on its data)
+const ROOT = app.isPackaged ? path.dirname(process.execPath) : (process.env.MEDIADECK_ROOT || __dirname);
 const TOOLS = app.isPackaged ? path.join(process.resourcesPath, 'tools') : path.join(__dirname, 'tools');
 
 module.exports = {

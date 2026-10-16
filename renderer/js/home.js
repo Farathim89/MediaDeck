@@ -309,6 +309,56 @@ const Home = (() => {
     return sec;
   }
 
+  // ---------- Versions of one game ----------
+  // The card shows the best one: a release before Sample / Beta / Proto / Demo, then USA, World,
+  // Europe, other regions, Japan, then the newest Rev, then a plain file before a zip
+  const REGION_RANK = { usa: 0, world: 1, europe: 2, japan: 4 };
+  const versionScore = (g) => {
+    const v = String(g.version || '').toLowerCase();
+    const rev = parseFloat((/(?:rev\s*|v)(\d+(?:\.\d+)?)/.exec(v) || [])[1] || 0);
+    return (/sample|demo|beta|proto|kiosk/.test(v) ? 1000 : 0)
+      + (REGION_RANK[String(g.region || '').toLowerCase()] ?? 3) * 100
+      - rev
+      + (/\.(zip|7z)$/i.test(g.rom) ? 0.5 : 0);
+  };
+  function groupVersions(list) {
+    const byTitle = new Map();
+    for (const g of list) {
+      const key = g.title.toLowerCase();
+      if (!byTitle.has(key)) byTitle.set(key, []);
+      byTitle.get(key).push(g);
+    }
+    const out = [];
+    for (const g of list) {
+      const all = byTitle.get(g.title.toLowerCase());
+      if (!all) continue;   // already shown
+      byTitle.delete(g.title.toLowerCase());
+      if (all.length === 1) { out.push(g); continue; }
+      const sorted = all.slice().sort((a, b) => versionScore(a) - versionScore(b));
+      out.push({ ...sorted[0], versions: sorted });
+    }
+    return out;
+  }
+  // "USA · Rev 1 · SFC" for each version (the file name too where two would read the same)
+  function versionLabels(versions) {
+    const base = versions.map((v) => [v.region || 'No region', v.version || 'Release', v.type].filter(Boolean).join('  ·  '));
+    return base.map((l, i) => (base.indexOf(l) !== base.lastIndexOf(l) ? `${l}  —  ${versions[i].rom.split(/[\\/]/).pop()}` : l));
+  }
+  const pickKey = (g) => `mediadeck.version:${g.moduleId}:${g.title.toLowerCase()}`;
+  async function chooseVersion(g) {
+    let last = null;
+    try { last = localStorage.getItem(pickKey(g)); } catch {}
+    const labels = versionLabels(g.versions);
+    const rom = await UI.menu({
+      title: g.title, message: `${g.versions.length} versions — which one?`,
+      focus: g.versions.some((v) => v.rom === last) ? last : g.versions[0].rom,
+      items: g.versions.map((v, i) => ({ label: labels[i], value: v.rom, icon: v.rom === last ? 'check' : 'play' })),
+    });
+    if (!rom) return null;
+    try { localStorage.setItem(pickKey(g), rom); } catch {}
+    return { ...g.versions.find((v) => v.rom === rom), moduleId: g.moduleId };
+  }
+
   // ---------- Game cards ----------
   function gameCard(g, t, meta) {
     const b = document.createElement('button');
@@ -324,7 +374,7 @@ const Home = (() => {
         <span class="game-art-title">${UI.esc(g.title)}</span>
       </div>
       <div class="card-name">${UI.esc(g.title)}</div>
-      <div class="card-meta">${UI.esc(meta || [g.region, g.version, g.type].filter(Boolean).join(' · '))}</div>`;
+      <div class="card-meta">${UI.esc(meta || (g.versions ? [g.region, `${g.versions.length} versions`] : [g.region, g.version, g.type]).filter(Boolean).join(' · '))}</div>`;
     if (t) fillLogo(t, b.querySelector('.game-logo'));
     b.addEventListener('click', () => startGame(b._game, t));
     b.addEventListener('contextmenu', (e) => { e.preventDefault(); Nav.focus(b, { scroll: false }); gameOptions(b._game, t); });
@@ -332,6 +382,7 @@ const Home = (() => {
   }
 
   async function startGame(g, t) {
+    if (g.versions && g.versions.length > 1) { g = await chooseVersion(g); if (!g) return; }
     if (!(await App.beforeLaunch(g.title))) return;
     const busy = UI.toast(`Starting ${g.title}…`, { spinner: true, duration: 0 });
     const r = await api.launchGame(g.moduleId, g.rom);
@@ -342,8 +393,8 @@ const Home = (() => {
   async function gameOptions(g, t) {
     const inRecent = activeTab === 'emus' && !emuDetail && Nav.current && Nav.current.closest('.recent:not(.favs)');
     const isFav = (await api.favGames()).some((x) => x.rom === g.rom);
-    const c = await UI.menu({ title: g.title, message: [g.region, g.type, t && t.name].filter(Boolean).join('  ·  '), items: [
-      { label: 'Start', icon: 'play', value: 'start' },
+    const c = await UI.menu({ title: g.title, message: [g.versions ? `${g.versions.length} versions` : g.region, g.versions ? '' : g.type, t && t.name].filter(Boolean).join('  ·  '), items: [
+      { label: g.versions ? 'Choose version…' : 'Start', icon: 'play', value: 'start' },
       { label: isFav ? 'Remove from favourites' : 'Add to favourites', icon: 'star', value: 'fav' },
       { label: 'Open its folder', icon: 'folder', value: 'folder' },
       ...(t ? [{ label: `Open ${t.name} without a game`, icon: 'external', value: 'emu' }] : []),
@@ -429,9 +480,11 @@ const Home = (() => {
       }));
     }
     const q = query.trim().toLowerCase();
-    const list = q ? all.filter((g) => g.title.toLowerCase().includes(q)) : all;
+    // versions of one game (Rev 1, Sample, other regions, .smc / .sfc) on one card; starting it asks which
+    const shown = cfg().settings.groupVersions === false ? all : groupVersions(all);
+    const list = q ? shown.filter((g) => g.title.toLowerCase().includes(q)) : shown;
     const favs = new Set((await api.favGames()).map((x) => x.rom));
-    sec.querySelector('.games-count').textContent = q ? `${list.length} of ${all.length}` : all.length;
+    sec.querySelector('.games-count').textContent = q ? `${list.length} of ${shown.length}` : shown.length;
 
     let bar = sec.querySelector('.letters-bar');
     if (!bar) { bar = document.createElement('div'); bar.className = 'game-bar letters-bar'; sec.querySelector('.game-grid').before(bar); }
@@ -465,7 +518,7 @@ const Home = (() => {
     for (const g of list) {
       const card = gameCard({ ...g, moduleId: t.moduleId }, t);
       card.dataset.letter = letterOf(g.title);
-      if (favs.has(g.rom)) card.classList.add('is-fav');
+      if (favs.has(g.rom) || (g.versions && g.versions.some((v) => favs.has(v.rom)))) card.classList.add('is-fav');
       frag.appendChild(card);
       observer.observe(card.querySelector('.thumb'));
     }
@@ -1001,5 +1054,6 @@ const Home = (() => {
     Nav.focus(target);
   }
 
-  return { el, init, enter, resume, handle, refocus() { if (Nav.current) Nav.focus(Nav.current); } };
+  // showConsoleById: for the test switch (opens a console's games page)
+  return { el, init, enter, resume, handle, refocus() { if (Nav.current) Nav.focus(Nav.current); }, showConsoleById: (id) => { const c = consoleById(id); if (c) showConsole(c); return !!c; } };
 })();

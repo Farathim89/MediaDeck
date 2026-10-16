@@ -59,6 +59,7 @@ function defaultConfig() {
       startDs4: false,
       inGameOverlay: false,
       showEmptyConsoles: false,
+      groupVersions: true,
       checkEmuUpdates: true,
       checkAppUpdates: true,
       autoCovers: true,

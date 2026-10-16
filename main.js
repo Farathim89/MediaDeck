@@ -574,6 +574,8 @@ function startTestSwitch() {
         return send({ ok: true });
       }
       if (u.pathname === '/toasts') return send(await win.webContents.executeJavaScript(`(() => { const t = [...document.querySelectorAll('.toast')]; const r = t.map((x) => ({ text: x.textContent.trim(), mark: x.dataset.mark || '', out: x.classList.contains('out') })); t.forEach((x) => { x.dataset.mark = 'seen'; }); return r; })()`));
+      // opens a console's games page
+      if (u.pathname === '/open-console') return send({ ok: await win.webContents.executeJavaScript(`Home.showConsoleById(${JSON.stringify(u.searchParams.get('id') || '')})`) });
       // opens a Settings page (and, with run=installEmulators, the emulator installer)
       if (u.pathname === '/open-settings') { await win.webContents.executeJavaScript(`App.open(Settings, ${JSON.stringify({ section: u.searchParams.get('section') || 'general' })})`); return send({ ok: true }); }
       if (u.pathname === '/twitch-key') { twitch.key(u.searchParams.get('a')); return send({ ok: true }); }

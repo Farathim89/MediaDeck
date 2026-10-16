@@ -121,6 +121,7 @@ const Settings = (() => {
         { label: 'Recently played', desc: 'Where the last 5 games show on the Consoles tab', type: 'choice', key: 'recentPosition', options: () => [
           { value: 'below', label: 'Below the consoles' }, { value: 'above', label: 'Above the consoles' }] },
         { label: 'Check for updates at start', desc: 'Once a day, a while after MediaDeck opens. Only asks the emulators\' download pages.', type: 'toggle', key: 'checkEmuUpdates' },
+        { label: 'Group versions of a game', desc: 'Rev 1, Sample, other regions, .smc / .sfc: one card, and starting it asks which version', type: 'toggle', key: 'groupVersions' },
         { label: 'Show consoles without games', desc: 'Off: a console only gets a card once its emulator has games for it', type: 'toggle', key: 'showEmptyConsoles' },
         { label: 'Open the Emu_modules folder', type: 'action', run: () => api.openPath(s().emuModulesPath || (info && info.emuDir)) },
         { label: 'Download covers automatically', desc: 'Once a day, a while after start: box art for games that have none (new games too). Game names / PS3 serials go to libretro and GameTDB.', type: 'toggle', key: 'autoCovers' },
