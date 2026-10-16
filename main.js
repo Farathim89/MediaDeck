@@ -574,6 +574,8 @@ function startTestSwitch() {
         return send({ ok: true });
       }
       if (u.pathname === '/toasts') return send(await win.webContents.executeJavaScript(`(() => { const t = [...document.querySelectorAll('.toast')]; const r = t.map((x) => ({ text: x.textContent.trim(), mark: x.dataset.mark || '', out: x.classList.contains('out') })); t.forEach((x) => { x.dataset.mark = 'seen'; }); return r; })()`));
+      // one console's games as MediaDeck lists them (title, region, version, file) — for the duplicates check
+      if (u.pathname === '/console-game-list') return send(((await consoleGames(u.searchParams.get('id'))) || { list: [] }).list.map((g) => ({ title: g.title, region: g.region, version: g.version, type: g.type, rom: g.rom })));
       // opens a console's games page
       if (u.pathname === '/open-console') return send({ ok: await win.webContents.executeJavaScript(`Home.showConsoleById(${JSON.stringify(u.searchParams.get('id') || '')})`) });
       // opens a Settings page (and, with run=installEmulators, the emulator installer)
