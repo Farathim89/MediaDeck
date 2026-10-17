@@ -1018,7 +1018,7 @@ async function consoleGames(consoleId, moduleId, fresh) {
 async function importBiosFiles(sources) {
   const say = (text) => { if (win && !win.isDestroyed()) win.webContents.send('emu-install-progress', { text, pct: 0 }); };
   const r = await require('./bios-import').importBios(sources, P.BIOS, { sevenZip: P.tool('7za.exe'), tempDir: app.getPath('temp'), progress: say });
-  r.copied = r.added.length ? setupScan.biosSync(P.BIOS, await emuModules.scan(emuDir())).length : 0;
+  r.copied = r.added.length ? (await setupScan.biosSync(P.BIOS, await emuModules.scan(emuDir()))).length : 0;
   r.added = r.added.map(({ folder, name }) => ({ folder, name }));
   return r;
 }
@@ -1745,6 +1745,13 @@ if (!app.requestSingleInstanceLock()) {
     // The browser cache would keep thumbnail links, which contain file paths: empty it
     await session.defaultSession.clearCache().catch(() => {});
     await syncEmulators();
+    // BIOS files added to BIOS\<console> by hand go to the emulators that need them (only missing ones; in the background)
+    setTimeout(async () => {
+      try {
+        const copied = await setupScan.biosSync(P.BIOS, await emuModules.scan(emuDir()));
+        if (copied.length) console.log(`[bios] ${copied.length} BIOS files copied to the emulators: ${copied.slice(0, 8).join('; ')}${copied.length > 8 ? ' …' : ''}`);
+      } catch (e) { console.error('[bios]', e.message); }
+    }, 8000);
     // PCSX2 folders on a drive that is gone → its own sub folders (relocate.js)
     try {
       for (const m of await emuModules.scan(emuDir())) {

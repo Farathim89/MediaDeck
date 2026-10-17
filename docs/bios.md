@@ -55,6 +55,6 @@ NES, SNES, Nintendo 64, Game Boy, Master System, Mega Drive, PC Engine (cartridg
 
 ## BIOS files added later
 
-An emulator gets the BIOS files **when MediaDeck installs it**. If you add BIOS files afterwards, open the **BIOS check** and press **Copy BIOS files to the emulators**: it copies the new files into each emulator's own BIOS folder (only files that aren't there yet - nothing is overwritten or moved).
+An emulator gets the BIOS files when MediaDeck installs it - and **every time MediaDeck starts**, BIOS files you added to `BIOS\<console>` since then are copied into the emulators that need them, by themselves (only files that aren't there yet - nothing is overwritten or moved). *Import BIOS files…* copies straight away; the BIOS check's **Copy BIOS files to the emulators** does it without waiting for a restart.
 
 Next: [Controllers](controllers.md)

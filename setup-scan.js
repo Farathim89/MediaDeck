@@ -211,21 +211,23 @@ function biosStatus(biosDir, installedModules, systems) {
 }
 
 // BIOS added after an emulator was installed: copied from BIOS\<console> into the emulator's own BIOS folder, as
-// the installer does (only files that aren't there yet; never overwrites, nothing is moved). Returns the copies.
-function biosSync(biosDir, installedModules) {
+// the installer does (only files that aren't there yet; never overwrites, nothing is moved). Runs at every start (in the
+// background), after a BIOS import and from the BIOS check's button. Returns the copies.
+async function biosSync(biosDir, installedModules) {
+  const fsp = fs.promises;
   const copied = [];
   for (const m of installedModules || []) {
     const id = emuInstaller.emuIdOf(m);
     const e = id && emuInstaller.EMULATORS[id];
-    if (!e || !e.biosTo || !e.biosFiles || !m.dir) continue;
+    if (!e || !e.biosTo || !e.biosFiles || !m.ok) continue;
     for (const c of emuInstaller.CONSOLES.filter((x) => x.bios && x.emus.includes(id))) {
       const from = path.join(biosDir, c.bios);
       let files = [];
       try { files = fs.readdirSync(from).filter((f) => e.biosFiles.test(f) && fs.statSync(path.join(from, f)).isFile()); } catch { continue; }
-      const to = path.join(m.dir, e.biosTo);
+      const to = path.join(path.dirname(m.exe), e.biosTo);
       for (const f of files) {
         if (fs.existsSync(path.join(to, f))) continue;
-        try { fs.mkdirSync(to, { recursive: true }); fs.copyFileSync(path.join(from, f), path.join(to, f)); copied.push(`${e.name}: ${f}`); } catch {}
+        try { await fsp.mkdir(to, { recursive: true }); await fsp.copyFile(path.join(from, f), path.join(to, f), fs.constants.COPYFILE_EXCL); copied.push(`${e.name}: ${f}`); } catch {}
       }
     }
   }
