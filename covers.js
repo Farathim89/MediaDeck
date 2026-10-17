@@ -267,6 +267,47 @@ function arcadeShortName(mod, system, rom) {
 // libretro's folder names that differ from the console's name ("DOS", not "Microsoft - DOS")
 const LIBRETRO_DIR = { 'Microsoft - DOS': 'DOS' };
 
+// Xbox 360: libretro has hardly any boxes; XboxUnity (the cover database Aurora uses) has them by title ID,
+// read from the disc's default.xex. Its covers are whole case wraps (back | spine | front): the front is cut out.
+function xbox360TitleId(rom) {
+  if (!/\.iso$/i.test(rom)) return null;
+  let fd;
+  try {
+    fd = fs.openSync(rom, 'r');
+    const read = (pos, len) => { const b = Buffer.alloc(len); const n = fs.readSync(fd, b, 0, len, pos); return b.subarray(0, n); };
+    for (const base of [0, 0x2080000, 0xFD90000, 0x18300000]) {
+      const vd = read(base + 0x10000, 0x800);
+      if (vd.subarray(0, 20).toString('latin1') !== 'MICROSOFT*XBOX*MEDIA') continue;
+      const dir = read(base + vd.readUInt32LE(0x14) * 2048, Math.min(vd.readUInt32LE(0x18), 1 << 20));
+      const i = dir.toString('latin1').toLowerCase().indexOf('default.xex');
+      if (i < 14) return null;
+      const x = read(base + dir.readUInt32LE(i - 10) * 2048, 0x3000);
+      if (x.subarray(0, 4).toString('latin1') !== 'XEX2') return null;
+      const count = Math.min(x.readUInt32BE(0x14), 64);
+      for (let k = 0; k < count; k++) {
+        const key = x.readUInt32BE(0x18 + k * 8), val = x.readUInt32BE(0x1c + k * 8);
+        if (key === 0x00040006 && val + 16 <= x.length) return x.readUInt32BE(val + 12).toString(16).toUpperCase().padStart(8, '0');
+      }
+      return null;
+    }
+  } catch {} finally { if (fd !== undefined) fs.closeSync(fd); }
+  return null;
+}
+
+async function xboxUnityCover(titleId, net, cropFront) {
+  try {
+    const r = await net.fetch(`https://xboxunity.net/Resources/Lib/CoverInfo.php?titleid=${titleId}`);
+    if (!r.ok) return null;
+    const covers = ((await r.json()).Covers || [])
+      .sort((a, b) => (Number(b.Official) - Number(a.Official)) || (Number(b.Rating) - Number(a.Rating)));
+    for (const c of covers.slice(0, 3)) {
+      const img = await fetchImage(`https://xboxunity.net/Resources/Lib/Cover.php?size=large&cid=${encodeURIComponent(c.CoverID)}`, net);
+      if (img) return cropFront ? cropFront(img) : img;
+    }
+  } catch {}
+  return null;
+}
+
 async function findCover(mod, game, net, opts = {}) {
   const own = systemFor(mod, game.rom);
   if (!own) return null;
@@ -309,6 +350,11 @@ async function findCover(mod, game, net, opts = {}) {
   if (system === 'MAME' || system === 'SNK - Neo Geo') {
     const short = arcadeShortName(mod, system, game.rom);
     const img = short && await arcadeCover(short, net);
+    if (img) return img;
+  }
+  if (system === 'Microsoft - Xbox 360') {
+    const tid = xbox360TitleId(game.rom);
+    const img = tid && await xboxUnityCover(tid, net, opts.cropFront);
     if (img) return img;
   }
   const extra = EXTRA_SOURCES[system];
@@ -381,4 +427,4 @@ function consoleOf(mod, rom) {
   return { console: name, ratio };
 }
 
-module.exports = { downloadAll, systemFor, consoleOf, parseSwitchTdb, switchMatch, libretroMatch };
+module.exports = { downloadAll, systemFor, consoleOf, parseSwitchTdb, switchMatch, libretroMatch, xbox360TitleId };

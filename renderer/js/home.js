@@ -558,7 +558,7 @@ const Home = (() => {
   async function getCovers(t) {
     const ok = await UI.confirm('Download covers?',
       `Box art for the ${t.console ? t.console.name : t.name} games comes from the libretro thumbnail library (the one RetroArch uses). ` +
-      'Game names are sent to it to find the pictures; nothing else. Covers are stored encrypted on this PC.',
+      'Game names are sent to it to find the pictures (PS3 serials go to GameTDB, Xbox 360 title IDs to XboxUnity); nothing else. Covers are stored encrypted on this PC.',
       'Download');
     if (!ok) return;
     const toast = UI.toast(`Looking for covers…`, { spinner: true, duration: 0 });

@@ -124,8 +124,8 @@ const Settings = (() => {
         { label: 'Group versions of a game', desc: 'Rev 1, Sample, other regions, .smc / .sfc: one card, and starting it asks which version', type: 'toggle', key: 'groupVersions' },
         { label: 'Show consoles without games', desc: 'Off: a console only gets a card once its emulator has games for it', type: 'toggle', key: 'showEmptyConsoles' },
         { label: 'Open the Emu_modules folder', type: 'action', run: () => api.openPath(s().emuModulesPath || (info && info.emuDir)) },
-        { label: 'Download covers automatically', desc: 'Once a day, a while after start: box art for games that have none (new games too). Game names / PS3 serials go to libretro and GameTDB.', type: 'toggle', key: 'autoCovers' },
-        { label: 'Download covers for all emulators', desc: 'Box art from the libretro library (game names are sent to it), PS3 and Switch from GameTDB. Stored encrypted.', type: 'action',
+        { label: 'Download covers automatically', desc: 'Once a day, a while after start: box art for games that have none (new games too). Game names / PS3 serials / Xbox 360 title IDs go to libretro, GameTDB and XboxUnity.', type: 'toggle', key: 'autoCovers' },
+        { label: 'Download covers for all emulators', desc: 'Box art from the libretro library (game names are sent to it), PS3 and Switch from GameTDB, Xbox 360 from XboxUnity (title IDs). Stored encrypted.', type: 'action',
           run: () => downloadAllCovers() },
         { label: 'Look for new emulators', type: 'action', value: () => (info && info.emuCount != null ? `${info.emuCount} found` : ''), run: () => rescan(true) },
         ...gameFolderRows(),
@@ -316,7 +316,7 @@ const Settings = (() => {
 
   async function downloadAllCovers() {
     const ok = await UI.confirm('Download covers for all games?',
-      'Box art comes from the libretro thumbnail library (the one RetroArch uses). Game names are sent to it to find the pictures; nothing else. This can take a few minutes.',
+      'Box art comes from the libretro thumbnail library (the one RetroArch uses). Game names are sent to it to find the pictures (PS3 serials go to GameTDB, Xbox 360 title IDs to XboxUnity); nothing else. This can take a few minutes.',
       'Download');
     if (!ok) return;
     const emus = App.state.config.tiles.filter((t) => t.section === 'emulators' && t.moduleId);

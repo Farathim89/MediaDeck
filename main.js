@@ -1175,6 +1175,13 @@ const coverOpts = (extra = {}) => ({
   net, switchIndex, libretroIndex, extraIndex,
   has: (rom) => server.hasCover(rom),
   save: (rom, img) => server.saveCover(rom, img),
+  // an Xbox 360 case wrap (back | spine | front) -> its front, the box's shape (0.71)
+  cropFront: (buf) => {
+    const im = nativeImage.createFromBuffer(buf);
+    const { width, height } = im.getSize();
+    const w = Math.round(height * 0.7083);
+    return width > w * 1.3 ? im.crop({ x: width - w, y: 0, width: w, height }).toJPEG(90) : buf;
+  },
   ...extra,
 });
 
