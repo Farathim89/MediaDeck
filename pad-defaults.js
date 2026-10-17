@@ -248,15 +248,8 @@ const SETUP = {
     writeIni(file, ini);
     return true;
   },
-  // xemu binds the first controller by itself (auto_bind) - unless that was switched off for one particular controller
-  xemu: (dir) => {
-    const file = path.join(dir, 'xemu.toml');
-    const ini = readIni(file);
-    if (iniGet(ini, 'input', 'auto_bind') !== 'false') return false;
-    iniSet(ini, 'input', 'auto_bind', 'true');
-    writeIni(file, ini);
-    return true;
-  },
+  // (xemu binds the first controller by itself. auto_bind = false is left alone: with DS4Windows it binds both the real
+  // PlayStation controller and the virtual Xbox one, so every button comes twice - switched off for that on purpose.)
   cemu: (dir) => exists(dir, 'portable') && newFile(path.join(dir, 'portable', 'controllerProfiles', 'controller0.xml'), CEMU_XML),
   rpcs3: (dir) => newFile(path.join(dir, 'config', 'input_configs', 'global', 'Default.yml'), RPCS3_YML),
   // Supermodel: XInput instead of DirectInput, Start / Coin on Start / Back (its other controls are joystick ones already)
