@@ -282,8 +282,10 @@ const Settings = (() => {
     selfLatest = latest;
     if (UI.isOpen) { UI.toast(`MediaDeck ${latest} is out. Settings → About → Check for MediaDeck updates`, { icon: 'refresh', duration: 9000 }); return; }
     const news = notes.length ? `What's new: ${notes.join(' · ')}. ` : '';
-    const ok = await UI.confirm(`MediaDeck ${latest} is out`, `${news}It downloads the new version, closes, updates itself and starts again. Your settings, apps, emulators and games stay.`, 'Update now');
-    if (!ok) return;
+    const c = await UI.menu({ title: `MediaDeck ${latest} is out`,
+      message: `${news}It downloads the new version, closes, updates itself and starts again. Your settings, apps, emulators and games stay.`,
+      items: [{ label: 'Update now', icon: 'check', value: 'update' }, { label: 'Later', icon: 'close', value: 'later' }] });
+    if (c !== 'update') return;
     const x = await api.selfInstall();
     if (x && x.error) UI.toast(x.error, { icon: 'alert', error: true, duration: 8000 });
   });
