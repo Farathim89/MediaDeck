@@ -1067,6 +1067,20 @@ async function launchGame(moduleId, rom) {
   const game = (await gamesFor(mod)).find((g) => g.rom === rom);
   if (!game) return { ok: false, error: 'This game is not in the emulator\'s game folders any more.' };
   if (!fs.existsSync(rom)) return { ok: false, error: 'The game file was not found (is its drive connected?).' };
+  if (mod.pcGames) {
+    // a PC game: the program its .game file names (its saves linked into MediaDeck when it says so)
+    const g = readPcGame(rom);
+    const exe = g && g.exe ? P.resolve(g.exe) : '';
+    if (!exe || !fs.existsSync(exe)) return { ok: false, error: `The game's program was not found:\n${exe || rom}` };
+    if (g.saveLink) { try { ensureSaveLink(g.saveLink); } catch (e) { console.error('[saves]', e.message); } }
+    const r = await startProgram(exe, splitArgs(g.args || ''), g.cwd ? P.resolve(g.cwd) : path.dirname(exe), game.title, { emulator: 'PC games' });
+    if (r.ok) {
+      loadRecent();
+      recent = [{ moduleId, ...game, t: Date.now() }, ...recent.filter((x) => x.rom !== rom)].slice(0, 20);
+      writeGames(RECENT_FILE, recent);
+    }
+    return r;
+  }
   let args;
   try { args = games.launchArgs(mod, rom); } catch (e) { return { ok: false, error: e.message }; }
   const r = await startProgram(mod.exe, args, path.dirname(mod.exe), game.title,
@@ -1358,7 +1372,7 @@ async function autoCovers() {
   for (const c of await consoleList(true)) {
     if (running && isAlive(running.pid)) break;   // never while a game runs
     const mod = await moduleById(c.emulator);
-    if (!mod) continue;
+    if (!mod || mod.pcGames) continue;           // PC games: covers are the pictures next to them
     try {
       const r = await covers.downloadAll(mod, (await consoleGames(c.id)).list, coverOpts({
         skip: recent, missed: (rom) => { state.misses[rom] = Date.now(); },
@@ -1432,7 +1446,34 @@ async function relinkMovedFolders() {
   return out;
 }
 
+// PC games: Games\PC\PC games holds one <Name>.game per Windows game (and <Name>.jpg as its cover); the module
+// Emu_modules\PC games.emu.json makes it a console. Both are made when they aren't there.
+const PC_GAMES_DIR = path.join(P.GAMES, 'PC', 'PC games');
+function ensurePcGames() {
+  try {
+    fs.mkdirSync(PC_GAMES_DIR, { recursive: true });
+    const file = path.join(emuDir(), 'PC games.emu.json');
+    if (!fs.existsSync(file)) {
+      writeJson(file, { name: 'PC games', system: 'PC games', pcGames: true, exe: '', args: '', gameArgs: '',
+        romExtensions: ['game'], romFolders: [P.rel(PC_GAMES_DIR)], hidden: false });
+    }
+  } catch (e) { console.error('[pc games]', e.message); }
+}
+// A .game file: { exe, args, cwd, saveLink } - exe / cwd relative to MediaDeck's folder when they are in it
+const readPcGame = (file) => { try { return JSON.parse(fs.readFileSync(file, 'utf8').replace(/^﻿/, '')); } catch { return null; } };
+function addPcGame(exe, name, image) {
+  const clean = String(name || path.basename(exe, path.extname(exe))).replace(/[<>:"/\\|?*]+/g, ' ').trim() || 'Game';
+  let file = path.join(PC_GAMES_DIR, `${clean}.game`);
+  for (let n = 2; fs.existsSync(file); n++) file = path.join(PC_GAMES_DIR, `${clean} (${n}).game`);
+  fs.mkdirSync(PC_GAMES_DIR, { recursive: true });
+  writeJson(file, { exe: P.rel(exe), args: '' });
+  if (image && fs.existsSync(image)) fs.copyFileSync(image, file.replace(/\.game$/, path.extname(image).toLowerCase()));
+  gameCache.clear();
+  return file;
+}
+
 async function syncEmulators() {
+  ensurePcGames();
   let mods = [];
   try { mods = await emuModules.scan(emuDir()); } catch (e) { console.error('[emu]', e.message); }
   for (const m of mods) { try { emuModules.addKnownExtensions(m); } catch {} }
@@ -1449,7 +1490,7 @@ async function syncEmulators() {
     next.push({ ...t, moduleId: m.id, path: m.exe, args: m.args, system: m.system });
   }
   for (const m of visible) {
-    if (claimed.has(m.id)) continue;
+    if (claimed.has(m.id) || m.pcGames) continue;      // PC games is a console, not a program to open
     next.push({
       id: 'm-' + m.id.replace(/[^a-z0-9]+/gi, '-').toLowerCase(), section: 'emulators', moduleId: m.id,
       name: m.name, subtitle: m.system, path: m.exe, args: m.args, system: m.system, image: '', style: 'plain',
@@ -1535,6 +1576,7 @@ function registerIpc() {
   ipcMain.handle('covers-download', async (e, moduleId, consoleId) => {
     const mod = await moduleById(moduleId);
     if (!mod) return null;
+    if (mod.pcGames) return { found: 0, total: 0 };     // PC games: covers are the pictures next to them
     const list = consoleId ? (await consoleGames(consoleId, moduleId)).list : await gamesFor(mod);
     return covers.downloadAll(mod, list, coverOpts({
       progress: (p) => win && !win.isDestroyed() && win.webContents.send('covers-progress', { moduleId, ...p }),
@@ -1710,6 +1752,9 @@ function registerIpc() {
   // BIOS import (bios-import.js): the user's own BIOS files from a folder / zip, recognised by checksum, into
   // BIOS\<console>, then copied to the emulators that need them
   ipcMain.handle('bios-import', (e, sources) => importBiosFiles(sources));
+  // PC games: a new .game for a program; the folder they are in
+  ipcMain.handle('pcgame-add', (e, exe, name) => { try { return { ok: true, file: addPcGame(exe, name) }; } catch (err) { return { ok: false, error: err.message }; } });
+  ipcMain.handle('pcgame-folder', () => { fs.mkdirSync(PC_GAMES_DIR, { recursive: true }); return shell.openPath(PC_GAMES_DIR); });
   ipcMain.handle('bios-open', (e, sub) => { const d = path.join(P.BIOS, sub || ''); fs.mkdirSync(d, { recursive: true }); return shell.openPath(d); });
   ipcMain.handle('app-info', () => ({ dataDir: DATA, emuDir: emuDir(), appsDir: P.APPS, appDir: P.ROOT, gamesDir: P.GAMES, version: app.getVersion(), electron: process.versions.electron }));
   ipcMain.handle('save-config', (e, next) => {

@@ -77,6 +77,8 @@ contextBridge.exposeInMainWorld('api', {
   biosOpen: invoke('bios-open'),
   biosSync: invoke('bios-sync'),
   biosImport: invoke('bios-import'),
+  pcGameAdd: invoke('pcgame-add'),
+  pcGameFolder: invoke('pcgame-folder'),
   getProgress: invoke('get-progress'),
   onPlayerClosed: (fn) => ipcRenderer.on('player-closed', (e, progress) => fn(progress)),
   onDrivesChanged: (fn) => ipcRenderer.on('drives-changed', (e, data) => fn(data)),

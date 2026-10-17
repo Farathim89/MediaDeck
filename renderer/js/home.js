@@ -737,6 +737,7 @@ const Home = (() => {
 
   // A console's page: which emulator plays it (dropdown), that emulator's buttons, the games
   function renderConsolePage(c) {
+    if (c.system === 'PC - Windows') return renderPcGamesPage(c);
     const t = emuTile(c.emulator) || { id: 'm-' + c.emulator, moduleId: c.emulator, name: emuName(c) };
     const view = { ...t, console: c };
     const many = c.emulators.length > 1;
@@ -773,6 +774,47 @@ const Home = (() => {
       if (consoleById(c.id)) showGameGrid({ ...view, console: consoleById(c.id) }, true); else closeEmuDetail();
     });
     pageEl.querySelector('[data-act="covers"]').addEventListener('click', () => getCovers(view));
+  }
+
+  // PC games: Windows games started directly (each one a .game file in Games\PC\PC games, its cover next to it)
+  function renderPcGamesPage(c) {
+    const view = { id: 'm-' + c.emulator, moduleId: c.emulator, name: 'PC games', console: c };
+    pageEl.innerHTML = `
+      <div class="app-page console-page">
+        <div class="app-hero">
+          <div class="app-logo console-logo"></div>
+          <div class="app-info">
+            <div class="hero-kicker">Console</div>
+            <h1 class="app-name">${UI.esc(c.name)}</h1>
+            <div class="app-sub">Windows games, started straight from here</div>
+          </div>
+        </div>
+        <div class="app-actions">
+          <button class="btn primary focusable" data-group="actions" data-act="add">${Icons.plus}<span>Add a PC game…</span></button>
+          <button class="btn focusable" data-group="actions" data-act="folder">${Icons.folder}<span>Open the folder</span></button>
+        </div>
+        <section class="app-section games-section">
+          <h2>Games <small class="games-count"></small></h2>
+          <div class="empty-box games-box">${Icons.gamepad}<div><b>Looking for games…</b><span></span></div></div>
+          <div class="game-grid"></div>
+        </section>
+      </div>`;
+    consoleIcon(c, pageEl.querySelector('.console-logo'));
+    UI.glow(null);
+    showGameGrid(view);
+    pageEl.querySelector('[data-act="folder"]').addEventListener('click', () => api.pcGameFolder());
+    pageEl.querySelector('[data-act="add"]').addEventListener('click', async () => {
+      const exe = await api.pickFile({ title: 'The game\'s program (.exe)', filters: [{ name: 'Programs', extensions: ['exe'] }] });
+      if (!exe) return;
+      const guess = exe.split(/[\\/]/).pop().replace(/\.exe$/i, '');
+      const name = await UI.prompt({ title: 'Name of the game', message: 'As it shows on its card. A picture with the same name next to it in the folder becomes its cover.', value: guess, okLabel: 'Add' });
+      if (name === null) return;
+      const r = await api.pcGameAdd(exe, name || guess);
+      if (!r || !r.ok) { UI.toast((r && r.error) || 'Could not add the game', { icon: 'alert', error: true }); return; }
+      UI.toast(`${name || guess} added to PC games`, { icon: 'check' });
+      await loadConsoles();
+      showGameGrid({ ...view, console: consoleById(c.id) || c }, true);
+    });
   }
 
   // The dropdown: which emulator plays this console (remembered per console)

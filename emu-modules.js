@@ -173,9 +173,11 @@ function normalise(mod, id, baseDir, moduleFile) {
     coverFrom: mod.coverFrom && typeof mod.coverFrom === 'object' ? mod.coverFrom : null,
     // installed / updated from the install list: { version, stamp, date }
     installer: mod.installer && typeof mod.installer === 'object' ? mod.installer : null,
+    // PC games: no emulator - each game file (.game) says which program to start (main.js launchGame)
+    pcGames: !!mod.pcGames,
     moduleFile,
     dir: baseDir,
-    ok: fs.existsSync(exe),
+    ok: mod.pcGames ? true : fs.existsSync(exe),
   };
 }
 
