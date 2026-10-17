@@ -22,6 +22,10 @@ Streamlink (BSD-2-Clause), Windows build with its own Python
 7-Zip command line (7za.exe) (GNU LGPL, with unRAR restriction) - Igor Pavlov
   https://www.7-zip.org                                                      (resources\tools\7za.exe)
 
+BIOS checksums (resources\app.asar: bios-db.json) - file names, sizes and MD5 checksums only, no BIOS data;
+  from libretro-database dat/System.dat (CC BY-SA 4.0), https://github.com/libretro/libretro-database
+  - picked for MediaDeck's consoles, two names changed for the emulators (build/make-bios-db.js)
+
 Loaded from the internet while running
 --------------------------------------
 SmartTwitchTV web interface (GPL-3.0) - https://github.com/fgl27/SmartTwitchTV

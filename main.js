@@ -690,6 +690,7 @@ function startTestSwitch() {
         if (u.searchParams.has('step')) await win.webContents.executeJavaScript(`Setup.show(${Number(u.searchParams.get('step')) || 0})`);
         return send({ ok: true });
       }
+      if (u.pathname === '/bios-import') return send(await importBiosFiles([u.searchParams.get('path')]));
       if (u.pathname === '/page-text') return send({ text: await win.webContents.executeJavaScript('document.body.innerText') });
       if (u.pathname === '/open-settings') { await win.webContents.executeJavaScript(`App.open(Settings, ${JSON.stringify({ section: u.searchParams.get('section') || 'general' })})`); return send({ ok: true }); }
       if (u.pathname === '/twitch-key') { twitch.key(u.searchParams.get('a')); return send({ ok: true }); }
@@ -1010,6 +1011,16 @@ async function consoleGames(consoleId, moduleId, fresh) {
   const list = (await gamesFor(mod, fresh)).filter((g) => mine(g.rom))
     .map((g) => ({ ...g, ...covers.consoleOf(mod, g.rom), storedCover: (!g.cover || g.coverIsIcon) && server.hasCover(g.rom) }));
   return { moduleId: mod.id, list };
+}
+
+// BIOS import (bios-import.js): the user's own BIOS files from a folder / zip, recognised by checksum, into
+// BIOS\<console>, then copied to the emulators that need them
+async function importBiosFiles(sources) {
+  const say = (text) => { if (win && !win.isDestroyed()) win.webContents.send('emu-install-progress', { text, pct: 0 }); };
+  const r = await require('./bios-import').importBios(sources, P.BIOS, { sevenZip: P.tool('7za.exe'), tempDir: app.getPath('temp'), progress: say });
+  r.copied = r.added.length ? setupScan.biosSync(P.BIOS, await emuModules.scan(emuDir())).length : 0;
+  r.added = r.added.map(({ folder, name }) => ({ folder, name }));
+  return r;
 }
 
 let recent = null; // [{ moduleId, rom, title, region, type, cover, t }]
@@ -1666,6 +1677,9 @@ function registerIpc() {
   ipcMain.handle('setup-starter', () => { const made = emuInstaller.makeStarterFolders(P.GAMES); return { path: P.GAMES, made }; });
   ipcMain.handle('bios-status', async (e, systems) => { setupScan.makeBiosFolders(P.BIOS); return setupScan.biosStatus(P.BIOS, await emuModules.scan(emuDir()), systems); });
   ipcMain.handle('bios-sync', async () => setupScan.biosSync(P.BIOS, await emuModules.scan(emuDir())));
+  // BIOS import (bios-import.js): the user's own BIOS files from a folder / zip, recognised by checksum, into
+  // BIOS\<console>, then copied to the emulators that need them
+  ipcMain.handle('bios-import', (e, sources) => importBiosFiles(sources));
   ipcMain.handle('bios-open', (e, sub) => { const d = path.join(P.BIOS, sub || ''); fs.mkdirSync(d, { recursive: true }); return shell.openPath(d); });
   ipcMain.handle('app-info', () => ({ dataDir: DATA, emuDir: emuDir(), appsDir: P.APPS, appDir: P.ROOT, gamesDir: P.GAMES, version: app.getVersion(), electron: process.versions.electron }));
   ipcMain.handle('save-config', (e, next) => {

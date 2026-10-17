@@ -33,6 +33,7 @@ const Help = (() => {
     { id: 'bios', title: 'BIOS files', icon: 'disc', desc: 'What they are and where they go', blocks: [
       ['What a BIOS is', 'Some consoles (PlayStation, PS2, Saturn, Sega CD, Xbox, Neo Geo …) need their own start-up program to run games. It isn\'t part of the games and MediaDeck never downloads it - dump it from your own console.'],
       ['Where it goes', `In MediaDeck's ${k('BIOS')} folder, in the console's folder - e.g. ${k('BIOS\\Sony - PlayStation\\scph5501.bin')}. Settings → Emulators → ${k('BIOS check')} shows, per console, which files it needs, which are there and opens the folder.`],
+      ['Import them in one go', `Your BIOS files in a folder or zip, named any way? ${k('BIOS check')} → ${k('Import BIOS files…')}: each file is recognised by its checksum, named and put in its console's folder, and copied to the emulators. Your folder is only read.`],
       ['Emulators installed before', `An emulator gets the BIOS files when MediaDeck installs it. Added files later? ${k('BIOS check')} → ${k('Copy BIOS files to the emulators')} copies the new ones (nothing is overwritten).`],
       ['PS3 and Switch', 'They need firmware, not a BIOS file: install it from RPCS3\'s File menu (PS3UPDAT.PUP from playstation.com) and Ryujinx\'s Tools menu (prod.keys and the firmware from your own Switch).'],
     ] },

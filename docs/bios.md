@@ -11,6 +11,19 @@ MediaDeck\BIOS\Sony - PlayStation\scph5501.bin
 MediaDeck\BIOS\Sega - Saturn\mpr-17933.bin
 ```
 
+## The quick way: Import BIOS files
+
+Have your BIOS files in a folder (or a zip) already, named any way? Settings → Emulators → **BIOS check** (or the setup's BIOS step) → **Import BIOS files…** and pick that folder:
+
+- every file is recognised by its **checksum**, gets the name the emulators look for and goes into the right `BIOS\<console>` folder (Xbox files, Switch keys and the PS3 firmware by their exact names);
+- zips and 7z files inside are looked into;
+- files that are named like a BIOS but don't match a known good dump are listed (a bad or changed dump);
+- the new files are copied to the emulators that need them.
+
+Your folder is only read - nothing in it is moved or renamed, and a different file already in `BIOS\<console>` is kept. The checksums come from [libretro-database](https://github.com/libretro/libretro-database); MediaDeck has no BIOS files in it.
+
+## By hand
+
 These folders are **made for you** at the first start - one per console that needs a BIOS, each with a `What goes here.txt` that names the files. Just drop the files in.
 
 Settings → Emulators → **BIOS check** shows, for every console you have games for, which files it needs, which are there, and opens the folder they go in.

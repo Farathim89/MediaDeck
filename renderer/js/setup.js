@@ -138,9 +138,10 @@ const Setup = (() => {
       const body = bios.length ? bios.map((b) => row({ act: 'biosdir', id: b.folder, label: b.name, desc: state(b), icon: icon(b),
         value: b.ok ? '' : 'Open its folder' })).join('') : info('No BIOS needed', 'None of your consoles needs a BIOS file.', OK);
       frame('BIOS files', 'Some consoles need a BIOS (the console\'s own start-up program) to run games. MediaDeck never downloads them: '
-        + 'dump them from your own consoles and put them in the console\'s folder in MediaDeck\'s BIOS folder - names as shown.'
+        + 'dump them from your own consoles. Have them in a folder or zip already? Import BIOS files… recognises each one and puts it in place; '
+        + 'or put them in the console\'s folder in MediaDeck\'s BIOS folder yourself - names as shown.'
         + (missing ? `<br><b>${n(missing, 'console needs', 'consoles need')} a BIOS that isn't there yet.</b>` : ''),
-        body, (only ? button('close', 'Done', true) : button('back', 'Back')) + button('recheck', 'Check again') + button('sync', 'Copy BIOS files to the emulators')
+        body, (only ? button('close', 'Done', true) : button('back', 'Back')) + button('import', 'Import BIOS files…', !missing ? false : true) + button('recheck', 'Check again') + button('sync', 'Copy BIOS files to the emulators')
         + (only ? '' : button('next', 'Next', true)));
     },
 
@@ -224,6 +225,24 @@ const Setup = (() => {
     }
     if (a === 'biosdir') return api.openPath(id);
     if (a === 'recheck') return views.bios();
+    if (a === 'import') {
+      const p = await api.pickFile({ folder: true, title: 'The folder with your BIOS files' });
+      if (!p) return;
+      busy = true;
+      let r;
+      try { busyFrame('BIOS files', 'Recognising your BIOS files by their checksums…'); r = await api.biosImport([p]); }
+      finally { busy = false; }
+      const by = {};
+      for (const x of r.added) (by[x.folder] = by[x.folder] || []).push(x.name);
+      const lines = Object.entries(by).map(([f, names]) => `${f}: ${names.length > 4 ? `${names.slice(0, 4).join(', ')} and ${names.length - 4} more` : names.join(', ')}`);
+      const msg = [r.added.length ? `${n(r.added.length, 'BIOS file', 'BIOS files')} added:\n${lines.join('\n')}` : 'No new BIOS files in that folder.',
+        r.already ? `${n(r.already, 'file was', 'files were')} already there.` : '',
+        r.kept.length ? `Kept the different file already in: ${r.kept.slice(0, 3).join(', ')}${r.kept.length > 3 ? ' …' : ''}` : '',
+        r.badDumps.length ? `Not a known good dump (checksum doesn't match): ${[...new Set(r.badDumps)].slice(0, 5).join(', ')}` : '',
+        r.copied ? `${n(r.copied, 'file', 'files')} copied to the emulators.` : ''].filter(Boolean).join('\n\n');
+      await UI.menu({ title: 'BIOS import', message: msg, items: [{ label: 'OK', value: true, icon: 'check' }] });
+      return views.bios();
+    }
     if (a === 'sync') {
       const ok = await UI.confirm('Copy BIOS files to the emulators?', 'Emulators get their BIOS files from MediaDeck\'s BIOS folder only when they are installed. '
         + 'This copies the files you added since into each emulator\'s own BIOS folder (only missing ones; nothing is overwritten or moved).', 'Copy');

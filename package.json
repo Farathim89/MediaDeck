@@ -33,6 +33,7 @@
     "asar": true,
     "files": [
       "*.js",
+      "bios-db.json",
       "!build/**",
       "renderer/**",
       "package.json"
