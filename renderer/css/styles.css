@@ -620,3 +620,22 @@ svg { display: block; }
 .game-art .thumb-img, .game-art.fit .thumb-img { object-fit: cover; }
 .console-bar { margin-bottom: 0.2rem; }
 .console-chip small { font-weight: 500; opacity: 0.6; margin-left: 0.15rem; }
+
+/* Settings → Emulators → Game cards: small covers (more on the screen) or a list without covers */
+[data-game-view="small"] .games-section .game-grid {
+  grid-template-columns: repeat(auto-fill, minmax(calc(2.6rem + 5.6rem * var(--art-ratio, 0.75)), 1fr)); gap: 1.1rem 0.8rem;
+}
+[data-game-view="small"] .games-section .game-art-title { font-size: 0.85rem; left: 0.6rem; right: 0.6rem; bottom: 0.6rem; }
+[data-game-view="small"] .games-section .game-art .game-logo { width: 1.5rem; height: 1.5rem; top: 0.5rem; left: 0.5rem; }
+[data-game-view="small"] .games-section .game-card .card-name { font-size: 0.85rem; margin-top: 0.4rem; }
+[data-game-view="small"] .games-section .game-card .card-meta { font-size: 0.75rem; }
+[data-game-view="list"] .games-section .game-grid { display: flex; flex-direction: column; gap: 0.2rem; padding: 0.4rem 0.4rem 1.2rem; }
+[data-game-view="list"] .games-section .game-card {
+  flex-direction: row; align-items: center; gap: 1rem; padding: 0.55rem 1rem; border-radius: 0.7rem; background: var(--surface-1);
+}
+[data-game-view="list"] .games-section .game-card .game-art { display: none; }
+[data-game-view="list"] .games-section .game-card .card-name { display: block; margin: 0; flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+[data-game-view="list"] .games-section .game-card .card-meta { margin: 0; flex: none; color: var(--muted); }
+[data-game-view="list"] .games-section .game-card.focused { transform: none; background: var(--focus-bg); box-shadow: 0 0 0 0.14rem var(--focus-ring); }
+[data-game-view="list"] .games-section .game-card.focused .card-name { color: var(--focus-ink); }
+[data-game-view="list"] .games-section .game-card.is-fav .card-name::after { content: " ★"; color: #fcd34d; }

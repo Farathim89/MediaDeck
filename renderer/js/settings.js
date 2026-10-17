@@ -120,6 +120,9 @@ const Settings = (() => {
           value: () => s().emuModulesPath || (info && info.emuDir) || '', after: () => rescan(true) },
         { label: 'Recently played', desc: 'Where the last 5 games show on the Consoles tab', type: 'choice', key: 'recentPosition', options: () => [
           { value: 'below', label: 'Below the consoles' }, { value: 'above', label: 'Above the consoles' }] },
+        { label: 'Game cards', desc: 'How a console\'s games are shown: big covers, small covers (more on the screen), or a list of names without covers', type: 'choice', key: 'gameView',
+          options: () => [{ value: 'big', label: 'Big covers' }, { value: 'small', label: 'Small covers' }, { value: 'list', label: 'List (no covers)' }],
+          after: (v) => App.applyGameView(v) },
         { label: 'Check for updates at start', desc: 'Once a day, a while after MediaDeck opens. Only asks the emulators\' download pages.', type: 'toggle', key: 'checkEmuUpdates' },
         { label: 'Group versions of a game', desc: 'Rev 1, Sample, other regions, .smc / .sfc: one card, and starting it asks which version', type: 'toggle', key: 'groupVersions' },
         { label: 'Show consoles without games', desc: 'Off: a console only gets a card once its emulator has games for it', type: 'toggle', key: 'showEmptyConsoles' },

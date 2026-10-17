@@ -63,6 +63,7 @@ function defaultConfig() {
       checkEmuUpdates: true,
       checkAppUpdates: true,
       autoCovers: true,
+      gameView: 'big',           // a console's games: 'big' covers, 'small' covers, or a 'list' without covers
       twitchQuality: 'best',
       hideCursor: 10,
       hiddenDrives: [],

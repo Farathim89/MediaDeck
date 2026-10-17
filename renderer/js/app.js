@@ -9,6 +9,7 @@ const App = {
   async init() {
     this.state = await api.getState();
     this.applyTheme(this.state.config.settings.theme);
+    this.applyGameView(this.state.config.settings.gameView);
     for (const s of [Home, MediaHome, Browser, Photos, Settings]) s.init();
     Input.setHandler((action) => this.dispatch(action));
     api.onAppFocus(() => { if (this.current && this.current.refocus) this.current.refocus(); });
@@ -38,6 +39,11 @@ const App = {
 
   applyTheme(id) {
     document.documentElement.dataset.theme = this.THEMES.some((t) => t.id === id) ? id : 'oled';
+  },
+
+  // A console's games: big covers, small covers or a list (no covers loaded)
+  applyGameView(v) {
+    document.documentElement.dataset.gameView = ['small', 'list'].includes(v) ? v : 'big';
   },
 
   async chooseTheme() {
