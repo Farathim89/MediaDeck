@@ -668,6 +668,22 @@ function startTestSwitch() {
         return send(await covers.downloadAll(mod, (await consoleGames(c.id)).list, coverOpts()));
       }
       if (u.pathname === '/console-games') { const r = await consoleGames(u.searchParams.get('id')); return send({ moduleId: r.moduleId, count: r.list.length, first: r.list.slice(0, 3).map((g) => g.title) }); }
+      // a whole games folder moved (from -> to): the emulators' game folders, Recently played, favourites, the
+      // games folder setting and paths in the emulators' own settings follow it
+      if (u.pathname === '/relink-folder') {
+        const from = u.searchParams.get('from'), to = u.searchParams.get('to');
+        if (!from || !to || !fs.existsSync(to)) return send({ error: 'from / to missing, or to does not exist' });
+        const done = await relinkFolder(from, to);
+        done.settings = require('./relocate').relocate(from, to, [P.EMU, P.APPS], P.EMU_BACKUPS).map((f) => path.relative(P.ROOT, f));
+        const gf = P.resolve(config.settings.gamesFolder || '');
+        if (gf && (gf.toLowerCase() === path.resolve(from).toLowerCase() || gf.toLowerCase().startsWith(path.resolve(from).toLowerCase() + path.sep))) {
+          config.settings.gamesFolder = P.rel(path.join(to, gf.slice(path.resolve(from).length)));
+          writeJson(CONFIG_FILE, config);
+          done.gamesFolder = config.settings.gamesFolder;
+        }
+        gameCache.clear();
+        return send(done);
+      }
       if (u.pathname === '/launch-tile') { const t = config.tiles.find((x) => x.id === u.searchParams.get('id')); return send(t ? await launch(t) : { ok: false, error: 'no such tile' }); }
       if (u.pathname === '/launch') return send(await launchGame(u.searchParams.get('module'), u.searchParams.get('rom')));
       if (u.pathname === '/state') return send({ running: running && isAlive(running.pid) ? { pid: running.pid, name: running.name, emulator: running.emulator } : null, focused: !!(win && !win.isDestroyed() && win.isFocused()), minimized: !!(win && !win.isDestroyed() && win.isMinimized()) });
