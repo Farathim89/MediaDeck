@@ -5,6 +5,8 @@
 //     licence and the third-party notices
 //  3. dist\MediaDeck-<version>-portable.zip (top folder "MediaDeck") and SHA256SUMS.txt
 // Nothing personal goes in: no data, no other apps, no emulators, no BIOS.
+// For signing in between (the release workflow): --no-zip stops after step 2; --zip-only <folder> does step 3 for a
+// release folder (the signed one).
 const { execFileSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
@@ -19,6 +21,8 @@ const ZIP = path.join(DIST, `MediaDeck-${version}-portable.zip`);
 //   npm run dist -- --apps "D:\MediaDeck\Apps"
 const argApps = process.argv.indexOf('--apps');
 const APPS_SRC = argApps > 0 ? path.resolve(process.argv[argApps + 1]) : path.join(ROOT, 'Apps');
+const argZipOnly = process.argv.indexOf('--zip-only');
+const NO_ZIP = process.argv.includes('--no-zip');
 
 // What of each bundled tool ships (paths relative to Apps\<tool>)
 const BUNDLE = {
@@ -37,23 +41,38 @@ function copyTree(from, to, keep, rel = '') {
   }
 }
 
-console.log(`MediaDeck ${version}: electron-builder…`);
-execFileSync(process.execPath, [require.resolve('electron-builder/cli.js'), '--win', '--x64', '--dir', '--publish', 'never'], { cwd: ROOT, stdio: 'inherit' });
+function buildFolder() {
+  console.log(`MediaDeck ${version}: electron-builder…`);
+  execFileSync(process.execPath, [require.resolve('electron-builder/cli.js'), '--win', '--x64', '--dir', '--publish', 'never'], { cwd: ROOT, stdio: 'inherit' });
 
-console.log('Putting the release folder together…');
-fs.rmSync(STAGE, { recursive: true, force: true });
-copyTree(path.join(DIST, 'win-unpacked'), STAGE, () => true);
-for (const [tool, keep] of Object.entries(BUNDLE)) {
-  const src = path.join(APPS_SRC, tool);
-  if (!fs.existsSync(path.join(src, '.mediadeck-version.json'))) throw new Error(`${src} is missing (install it from Settings → Apps first, or pass --apps <folder>)`);
-  copyTree(src, path.join(STAGE, 'Apps', tool), keep);
+  console.log('Putting the release folder together…');
+  fs.rmSync(STAGE, { recursive: true, force: true });
+  copyTree(path.join(DIST, 'win-unpacked'), STAGE, () => true);
+  for (const [tool, keep] of Object.entries(BUNDLE)) {
+    const src = path.join(APPS_SRC, tool);
+    if (!fs.existsSync(path.join(src, '.mediadeck-version.json'))) throw new Error(`${src} is missing (install it from Settings → Apps first, or pass --apps <folder>)`);
+    copyTree(src, path.join(STAGE, 'Apps', tool), keep);
+  }
+  fs.copyFileSync(path.join(ROOT, 'LICENSE'), path.join(STAGE, 'LICENSE.txt'));
+  fs.copyFileSync(path.join(__dirname, 'THIRD-PARTY-NOTICES.txt'), path.join(STAGE, 'THIRD-PARTY-NOTICES.txt'));
 }
-fs.copyFileSync(path.join(ROOT, 'LICENSE'), path.join(STAGE, 'LICENSE.txt'));
-fs.copyFileSync(path.join(__dirname, 'THIRD-PARTY-NOTICES.txt'), path.join(STAGE, 'THIRD-PARTY-NOTICES.txt'));
 
-console.log('Zipping…');
-fs.rmSync(ZIP, { force: true });
-execFileSync(path.join(ROOT, 'tools', '7za.exe'), ['a', '-tzip', '-mx=7', ZIP, STAGE], { stdio: 'ignore' });
-const sha = crypto.createHash('sha256').update(fs.readFileSync(ZIP)).digest('hex');
-fs.writeFileSync(path.join(DIST, 'SHA256SUMS.txt'), `${sha}  ${path.basename(ZIP)}\n`);
-console.log(`${path.basename(ZIP)}  ${(fs.statSync(ZIP).size / 1048576).toFixed(1)} MB\nSHA-256 ${sha}`);
+// The zip's top folder is "MediaDeck" (it unpacks to MediaDeck\MediaDeck.exe), whatever the folder is called
+function zipFolder(folder) {
+  console.log('Zipping…');
+  const src = path.resolve(folder);
+  const top = src === STAGE ? STAGE : path.join(DIST, '_zip', 'MediaDeck');
+  if (top !== STAGE) { fs.rmSync(path.dirname(top), { recursive: true, force: true }); copyTree(src, top, () => true); }
+  fs.rmSync(ZIP, { force: true });
+  execFileSync(path.join(ROOT, 'tools', '7za.exe'), ['a', '-tzip', '-mx=7', ZIP, top], { stdio: 'ignore' });
+  if (top !== STAGE) fs.rmSync(path.dirname(top), { recursive: true, force: true });
+  const sha = crypto.createHash('sha256').update(fs.readFileSync(ZIP)).digest('hex');
+  fs.writeFileSync(path.join(DIST, 'SHA256SUMS.txt'), `${sha}  ${path.basename(ZIP)}\n`);
+  console.log(`${path.basename(ZIP)}  ${(fs.statSync(ZIP).size / 1048576).toFixed(1)} MB\nSHA-256 ${sha}`);
+}
+
+if (argZipOnly > 0) zipFolder(process.argv[argZipOnly + 1]);
+else {
+  buildFolder();
+  if (!NO_ZIP) zipFolder(STAGE);
+}
