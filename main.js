@@ -15,6 +15,7 @@ const youtube = require('./youtube');
 const twitch = require('./twitch');
 const appInstaller = require('./app-installer');
 const selfUpdate = require('./self-update');
+const setupScan = require('./setup-scan');
 const overlay = require('./overlay');
 const dgram = require('dgram');
 
@@ -52,11 +53,15 @@ function writeJson(file, data) {
 function loadConfig() {
   const defaults = defaultConfig();
   config = readJson(CONFIG_FILE, null);
+  const fresh = !config;
   if (!config) {
     config = defaults;
     writeJson(CONFIG_FILE, config);
   }
+  // the first-start setup: new installs only (an install from before it already is set up)
+  const setupKnown = !!(config.settings && 'setupDone' in config.settings);
   config.settings = { ...defaults.settings, ...(config.settings || {}) };
+  if (!fresh && !setupKnown) config.settings.setupDone = true;
   config.tiles = config.tiles || [];
   config.favorites = config.favorites || [];
   if (!config.tiles.some((t) => t.builtin === 'youtube')) {
@@ -599,6 +604,14 @@ function startTestSwitch() {
       // opens a console's games page
       if (u.pathname === '/open-console') return send({ ok: await win.webContents.executeJavaScript(`Home.showConsoleById(${JSON.stringify(u.searchParams.get('id') || '')})`) });
       // opens a Settings page (and, with run=installEmulators, the emulator installer)
+      // the setup / help screens (tests): /open-screen?screen=setup|help&only=bios&step=2&topic=bios
+      if (u.pathname === '/open-screen') {
+        const scr = u.searchParams.get('screen') === 'help' ? 'Help' : 'Setup';
+        const params = { only: u.searchParams.get('only') || undefined, topic: u.searchParams.get('topic') || undefined };
+        await win.webContents.executeJavaScript(`App.open(${scr}, ${JSON.stringify(params)})`);
+        if (u.searchParams.has('step')) await win.webContents.executeJavaScript(`Setup.show(${Number(u.searchParams.get('step')) || 0})`);
+        return send({ ok: true });
+      }
       if (u.pathname === '/open-settings') { await win.webContents.executeJavaScript(`App.open(Settings, ${JSON.stringify({ section: u.searchParams.get('section') || 'general' })})`); return send({ ok: true }); }
       if (u.pathname === '/twitch-key') { twitch.key(u.searchParams.get('a')); return send({ ok: true }); }
       if (u.pathname === '/twitch-play') { playTwitch(u.searchParams.get('video') ? { video: u.searchParams.get('video'), time: u.searchParams.get('time') || '' } : { channel: u.searchParams.get('channel') }); return send({ ok: true }); }
@@ -1555,6 +1568,13 @@ function registerIpc() {
       { windowsHide: true }, (err) => resolve(!err));
   }));
   ipcMain.handle('open-path', (e, p) => shell.openPath(p || emuDir()));
+  // First-start setup and BIOS check (setup-scan.js; reads only)
+  ipcMain.handle('setup-find', () => setupScan.findGamesFolders([P.ROOT]));
+  ipcMain.handle('setup-scan', async (e, root) => setupScan.scanGames(root || await gamesRoot(await emuModules.scan(emuDir())), await emuModules.scan(emuDir())));
+  ipcMain.handle('setup-root', async () => gamesRoot(await emuModules.scan(emuDir())));
+  ipcMain.handle('bios-status', async (e, systems) => setupScan.biosStatus(P.BIOS, await emuModules.scan(emuDir()), systems));
+  ipcMain.handle('bios-sync', async () => setupScan.biosSync(P.BIOS, await emuModules.scan(emuDir())));
+  ipcMain.handle('bios-open', (e, sub) => { const d = path.join(P.BIOS, sub || ''); fs.mkdirSync(d, { recursive: true }); return shell.openPath(d); });
   ipcMain.handle('app-info', () => ({ dataDir: DATA, emuDir: emuDir(), appsDir: P.APPS, appDir: P.ROOT, version: app.getVersion(), electron: process.versions.electron }));
   ipcMain.handle('save-config', (e, next) => {
     // The window's size and full-screen state belong to this process; keep them.

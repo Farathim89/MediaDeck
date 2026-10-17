@@ -26,6 +26,7 @@
       <div class="tabs"></div>
       <div class="sidebar-bottom">
         <button class="icon-btn focusable" id="btn-settings" data-group="sys" aria-label="Settings"></button>
+        <button class="icon-btn focusable" id="btn-help" data-group="sys" aria-label="Help"></button>
         <button class="icon-btn focusable" id="btn-power" data-group="sys" aria-label="Power"></button>
       </div>
     </nav>
@@ -94,6 +95,26 @@
     </section>
   </main>
 
+  <!-- First-start setup (also the BIOS check) -->
+  <main id="setup" class="screen"></main>
+
+  <!-- Help -->
+  <main id="help" class="screen">
+    <nav class="sidebar">
+      <div class="brand">
+        <button class="icon-btn focusable back-btn" data-group="help-back" aria-label="Back"></button>
+        <span class="brand-name">Help</span>
+      </div>
+      <div class="tabs"></div>
+    </nav>
+    <section class="content">
+      <header class="content-top">
+        <div class="clock"><div class="clock-time">--:--</div><div class="clock-date"></div></div>
+      </header>
+      <div class="settings-page"></div>
+    </section>
+  </main>
+
   <!-- Photo viewer -->
   <main id="photos" class="screen">
     <img class="photo photo-a" alt="">
@@ -116,6 +137,8 @@
   <script src="js/photos.js"></script>
   <script src="js/rom-folders.js"></script>
   <script src="js/settings.js"></script>
+  <script src="js/setup.js"></script>
+  <script src="js/help.js"></script>
   <script src="js/app.js"></script>
 </body>
 </html>

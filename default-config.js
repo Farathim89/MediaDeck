@@ -64,6 +64,7 @@ function defaultConfig() {
       checkAppUpdates: true,
       checkMediaDeckUpdates: true,   // at every start: a new MediaDeck version → a window asks whether to update
       autoCovers: true,
+      setupDone: false,          // the first-start setup ran (or was skipped); Settings → About runs it again
       gameView: 'big',           // a console's games: 'big' covers, 'small' covers, or a 'list' without covers
       twitchQuality: 'best',
       hideCursor: 10,

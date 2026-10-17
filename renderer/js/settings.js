@@ -113,6 +113,7 @@ const Settings = (() => {
       items: () => [
         { label: 'Install emulators', desc: 'Pick a console, tick the emulators you want, and they are downloaded and set up', type: 'action', icon: 'plus',
           run: () => installEmulators() },
+        { label: 'BIOS check', desc: 'Which BIOS files your consoles need, which are there, and where they go', type: 'action', run: () => App.open(Setup, { only: 'bios' }) },
         { label: 'Check for updates', desc: 'Newer versions of your emulators. Settings, saves and BIOS stay.', type: 'action', icon: 'refresh',
           value: () => (updateInfo == null ? '' : updateInfo ? `${updateInfo} available` : 'All up to date'), run: () => updateEmulators() },
         { label: 'Games folder', desc: 'Where your games are, one folder per console (or per maker, then console). New emulators get their console\'s folder from here.', type: 'folder', key: 'gamesFolder' },
@@ -176,6 +177,8 @@ const Settings = (() => {
       id: 'about', title: 'About', icon: 'info', desc: 'MediaDeck',
       items: [
         { label: 'Version', type: 'info', value: () => (info ? `${info.version}  ·  Electron ${info.electron}` : '') },
+        { label: 'Help & guide', desc: 'The controller, adding games, BIOS files, saves and fixes for common problems', type: 'action', run: () => App.open(Help) },
+        { label: 'Run the setup again', desc: 'Games folder, emulators, BIOS, controller and covers, step by step', type: 'action', run: () => App.open(Setup) },
         { label: 'Check for MediaDeck updates', desc: 'From MediaDeck\'s GitHub releases. Your settings, apps and emulators stay.', type: 'action',
           value: () => (selfLatest ? `${selfLatest} available - install` : ''), run: () => selfUpdateNow() },
         { label: 'Check for MediaDeck updates at start', desc: 'At every start: when there is a new version, a window asks whether to update (never while a game runs)', type: 'toggle', key: 'checkMediaDeckUpdates' },

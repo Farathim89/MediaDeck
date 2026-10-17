@@ -981,6 +981,9 @@ const Home = (() => {
   btnPower.innerHTML = Icons.power;
 
   btnSettings.addEventListener('click', () => App.open(Settings));
+  const btnHelp = document.getElementById('btn-help');
+  btnHelp.innerHTML = Icons.info;
+  btnHelp.addEventListener('click', () => App.open(Help));
 
 
   // Also the PS / Guide button at home (main → 'power-menu')

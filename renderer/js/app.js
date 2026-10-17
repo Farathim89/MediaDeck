@@ -10,7 +10,7 @@ const App = {
     this.state = await api.getState();
     this.applyTheme(this.state.config.settings.theme);
     this.applyGameView(this.state.config.settings.gameView);
-    for (const s of [Home, MediaHome, Browser, Photos, Settings]) s.init();
+    for (const s of [Home, MediaHome, Browser, Photos, Settings, Setup, Help]) s.init();
     Input.setHandler((action) => this.dispatch(action));
     api.onAppFocus(() => { if (this.current && this.current.refocus) this.current.refocus(); });
     api.onDrivesChanged((data) => { MediaHome.drivesChanged(data); Browser.drivesChanged(data); });
@@ -26,6 +26,8 @@ const App = {
     api.onToast((text) => UI.toast(text, { icon: 'check' }));
     this.startClock();
     this.open(Home);
+    // a new install: the first-start setup (Settings → About runs it again)
+    if (this.state.config.settings.setupDone === false) this.open(Setup);
   },
 
   THEMES: [
