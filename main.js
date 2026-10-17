@@ -684,6 +684,7 @@ function startTestSwitch() {
         gameCache.clear();
         return send(done);
       }
+      if (u.pathname === '/scan-games') return send(await win.webContents.executeJavaScript('Home.scanGames().then((r) => ({ added: r.added, removed: r.removed, total: r.total }))'));
       if (u.pathname === '/launch-tile') { const t = config.tiles.find((x) => x.id === u.searchParams.get('id')); return send(t ? await launch(t) : { ok: false, error: 'no such tile' }); }
       if (u.pathname === '/launch') return send(await launchGame(u.searchParams.get('module'), u.searchParams.get('rom')));
       if (u.pathname === '/state') return send({ running: running && isAlive(running.pid) ? { pid: running.pid, name: running.name, emulator: running.emulator } : null, focused: !!(win && !win.isDestroyed() && win.isFocused()), minimized: !!(win && !win.isDestroyed() && win.isMinimized()) });
@@ -1564,6 +1565,19 @@ function registerIpc() {
   ipcMain.handle('get-state', () => ({ config, progress, server: server.status() }));
   ipcMain.handle('watch-drives', (e, on) => setDriveWatch(on));
   ipcMain.handle('emu-rescan', async () => { await relinkMovedFolders().catch(() => {}); const mods = await syncEmulators(); return { config, mods, dir: emuDir() }; });
+  // New games added while MediaDeck runs: every emulator's game folders are read again (and new emulators found)
+  ipcMain.handle('games-rescan', async () => {
+    // (counted by game file: two emulators can share a folder)
+    const known = new Set([...gameCache.values()].flatMap((v) => v.list.map((g) => g.rom.toLowerCase())));
+    gameCache.clear();
+    await relinkMovedFolders().catch(() => {});
+    const mods = await syncEmulators();
+    const now = new Set();
+    for (const m of mods.filter((x) => !x.hidden && x.ok)) for (const g of await gamesFor(m, true)) now.add(g.rom.toLowerCase());
+    const added = known.size ? [...now].filter((r) => !known.has(r)).length : 0;
+    const removed = known.size ? [...known].filter((r) => !now.has(r)).length : 0;
+    return { config, total: now.size, added, removed };
+  });
   ipcMain.handle('emu-add', async (e, exePath, name) => {
     const id = await emuModules.add(emuDir(), exePath, name);
     await syncEmulators();
@@ -1822,6 +1836,8 @@ function registerIpc() {
   });
   ipcMain.handle('toggle-fullscreen', () => { win.setFullScreen(!win.isFullScreen()); return win.isFullScreen(); });
   ipcMain.handle('quit', () => app.quit());
+  // Restart MediaDeck (the Exit menu): a new copy starts as this one closes
+  ipcMain.handle('restart-app', () => { app.relaunch({ args: process.argv.slice(1).filter((a) => a !== '--test') }); app.quit(); });
   ipcMain.handle('power', (e, action) => {
     const cmds = { sleep: ['rundll32.exe', ['powrprof.dll,SetSuspendState', '0,1,0']], restart: ['shutdown', ['/r', '/t', '0']], shutdown: ['shutdown', ['/s', '/t', '0']] };
     if (cmds[action]) spawn(cmds[action][0], cmds[action][1], { detached: true, stdio: 'ignore' }).unref();

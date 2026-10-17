@@ -84,7 +84,7 @@ Regions and revisions of one game (USA, Europe, Japan, Rev 1, `.sfc` / `.smc`) s
 
 ## New games
 
-Copy them into their console's folder. MediaDeck lists them the next time you open that console (or after a restart), and their box art comes by itself once a day - or straight away with *Covers* on the console's page.
+Copy them into their console's folder. MediaDeck finds them when it comes back to the front, or straight away with **Scan for new games** on the console's page, and their box art comes by itself once a day - or straight away with *Covers* on the console's page.
 
 ## Sorting a pile of new games
 

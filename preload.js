@@ -18,6 +18,8 @@ contextBridge.exposeInMainWorld('api', {
   clearCache: invoke('clear-cache'),
   toggleFullscreen: invoke('toggle-fullscreen'),
   quit: invoke('quit'),
+  restartApp: invoke('restart-app'),
+  rescanGames: invoke('games-rescan'),
   openYouTube: invoke('youtube-open'),
   youtubeAction: invoke('youtube-action'),
   onYouTubeMenu: (fn) => ipcRenderer.on('youtube-menu', () => fn()),

@@ -756,6 +756,7 @@ const Home = (() => {
           <button class="btn focusable" data-group="actions" data-act="open">${Icons.play}<span>Open ${UI.esc(t.name)}</span></button>
           <button class="btn focusable" data-group="actions" data-act="folders">${Icons.folder}<span>Game folders</span></button>
           <button class="btn focusable" data-group="actions" data-act="covers">${Icons.image}<span>Covers</span></button>
+          <button class="btn focusable" data-group="actions" data-act="scan">${Icons.refresh}<span>Scan for new games</span></button>
         </div>
         <section class="app-section games-section">
           <h2>Games <small class="games-count"></small></h2>
@@ -774,6 +775,7 @@ const Home = (() => {
       if (consoleById(c.id)) showGameGrid({ ...view, console: consoleById(c.id) }, true); else closeEmuDetail();
     });
     pageEl.querySelector('[data-act="covers"]').addEventListener('click', () => getCovers(view));
+    pageEl.querySelector('[data-act="scan"]').addEventListener('click', () => scanGames());
   }
 
   // PC games: Windows games started directly (each one a .game file in Games\PC\PC games, its cover next to it)
@@ -792,6 +794,7 @@ const Home = (() => {
         <div class="app-actions">
           <button class="btn primary focusable" data-group="actions" data-act="add">${Icons.plus}<span>Add a PC game…</span></button>
           <button class="btn focusable" data-group="actions" data-act="folder">${Icons.folder}<span>Open the folder</span></button>
+          <button class="btn focusable" data-group="actions" data-act="scan">${Icons.refresh}<span>Scan for new games</span></button>
         </div>
         <section class="app-section games-section">
           <h2>Games <small class="games-count"></small></h2>
@@ -803,6 +806,7 @@ const Home = (() => {
     UI.glow(null);
     showGameGrid(view);
     pageEl.querySelector('[data-act="folder"]').addEventListener('click', () => api.pcGameFolder());
+    pageEl.querySelector('[data-act="scan"]').addEventListener('click', () => scanGames());
     pageEl.querySelector('[data-act="add"]').addEventListener('click', async () => {
       const exe = await api.pickFile({ title: 'The game\'s program (.exe)', filters: [{ name: 'Programs', extensions: ['exe'] }] });
       if (!exe) return;
@@ -832,6 +836,37 @@ const Home = (() => {
     UI.toast(`${c.name} games now start in ${emuName(consoleById(c.id))}`, { icon: 'gamepad' });
   }
 
+  // New games added while MediaDeck runs (and new emulators): every game folder read again, the page redrawn.
+  // quiet: in the background (MediaDeck back in front after a while) - only says something when games came or went
+  let scanning = null;
+  async function scanGames(quiet) {
+    if (scanning) return scanning;
+    const t = quiet ? null : UI.toast('Looking for new games…', { spinner: true, duration: 0 });
+    scanning = (async () => {
+      try {
+        const r = await api.rescanGames();
+        App.state.config = r.config;
+        await loadConsoles();
+        if (!quiet || r.added || r.removed) {
+          if (emuDetail && consoleById(emuDetail)) { const wasScan = Nav.current && Nav.current.dataset.act === 'scan'; renderPage(); const b = wasScan && pageEl.querySelector('[data-act="scan"]'); if (b) Nav.focus(b); }
+          else if (activeTab === 'emus' || activeTab === 'home') { const focusId = Nav.current && (Nav.current.dataset.console || Nav.current.dataset.id); renderTabs(); renderPage(); const back = focusId && (pageEl.querySelector(`[data-console="${focusId}"]`) || pageEl.querySelector(`[data-id="${focusId}"]`)); if (back) Nav.focus(back); }
+        }
+        const n = (x, one, many) => `${x} ${x === 1 ? one : many}`;
+        const msg = r.added ? `${n(r.added, 'new game', 'new games')} found` : 'No new games';
+        if (!quiet || r.added || r.removed) UI.toast(`${msg}${r.removed ? ` · ${n(r.removed, 'game', 'games')} gone` : ''} · ${r.total} in all`, { icon: 'gamepad', duration: 4000 });
+        return r;
+      } finally { if (t) t.remove(); scanning = null; }
+    })();
+    return scanning;
+  }
+  // Back in front after 2+ minutes away (a game, another program): look for new games in the background
+  let awaySince = 0;
+  if (api.onWinActive) api.onWinActive((on) => {
+    if (!on) { awaySince = Date.now(); return; }
+    if (awaySince && Date.now() - awaySince > 120000) scanGames(true).catch(() => {});
+    awaySince = 0;
+  });
+
   async function consoleOptions(c) {
     const t = emuTile(c.emulator);
     const choice = await UI.menu({ title: c.name, message: `Played with ${emuName(c)}`, items: [
@@ -839,7 +874,9 @@ const Home = (() => {
       ...(c.emulators.length > 1 ? [{ label: 'Choose emulator', icon: 'edit', value: 'emu' }] : []),
       ...(t ? [{ label: `Open ${t.name}`, icon: 'play', value: 'open' }] : []),
       { label: 'Game folders', icon: 'folder', value: 'folders' },
+      { label: 'Scan for new games', icon: 'refresh', value: 'scan' },
     ] });
+    if (choice === 'scan') return scanGames();
     if (choice === 'show') showConsole(c);
     if (choice === 'emu') { await chooseEmulator(c); }
     if (choice === 'open' && t) open(t);
@@ -1030,13 +1067,17 @@ const Home = (() => {
 
   // Also the PS / Guide button at home (main → 'power-menu')
   async function powerMenu() {
+    // Sleep / restart / shut down the PC can be hidden (Settings → General)
+    const pc = App.state.config.settings.powerMenuPc !== false;
     const c = await UI.menu({ title: 'Power', items: [
-      { label: 'Sleep', icon: 'moon', value: 'sleep' },
-      { label: 'Restart PC', icon: 'restart', value: 'restart' },
-      { label: 'Shut down PC', icon: 'power', value: 'shutdown', danger: true },
+      ...(pc ? [{ label: 'Sleep', icon: 'moon', value: 'sleep' },
+        { label: 'Restart PC', icon: 'restart', value: 'restart' },
+        { label: 'Shut down PC', icon: 'power', value: 'shutdown', danger: true }] : []),
+      { label: 'Restart MediaDeck', icon: 'refresh', value: 'restart-app' },
       { label: 'Exit MediaDeck', icon: 'exit', value: 'quit' },
     ] });
     if (c === 'quit') return api.quit();
+    if (c === 'restart-app') return api.restartApp();
     if (c === 'sleep') return api.power('sleep');
     if (c === 'restart' && await UI.confirm('Restart the PC?', 'Unsaved work in other programs will be lost.', 'Restart', true)) api.power('restart');
     if (c === 'shutdown' && await UI.confirm('Shut down the PC?', 'Unsaved work in other programs will be lost.', 'Shut down', true)) api.power('shutdown');
@@ -1131,5 +1172,5 @@ const Home = (() => {
   }
 
   // showConsoleById: for the test switch (opens a console's games page)
-  return { el, init, enter, resume, handle, powerMenu, refocus() { if (Nav.current) Nav.focus(Nav.current); }, showConsoleById: (id) => { const c = consoleById(id); if (c) showConsole(c); return !!c; } };
+  return { el, init, enter, resume, handle, powerMenu, scanGames, refocus() { if (Nav.current) Nav.focus(Nav.current); }, showConsoleById: (id) => { const c = consoleById(id); if (c) showConsole(c); return !!c; } };
 })();

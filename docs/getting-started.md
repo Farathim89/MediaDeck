@@ -37,7 +37,7 @@ At the first start MediaDeck walks you through the setup. Every step can be skip
 
 - **Tabs** on the left: Home, the Media Player, YouTube, Twitch, your apps and **Consoles**.
 - **Consoles** shows your consoles by maker; a console's page has its games (with box art), its emulator and buttons like *Covers* and *Game folders*.
-- At the bottom: **Settings**, **?** (Help) and **Power** (sleep, restart, shut down, exit MediaDeck).
+- At the bottom: **Settings**, **?** (Help) and **Power**: Restart MediaDeck, Exit MediaDeck and - unless switched off in Settings → General - sleep, restart and shut down the PC.
 - The **PS / Guide button** opens the same Exit menu at home; over a game it opens MediaDeck's menu (see [Controllers](controllers.md)).
 - **Recently played** and **Favourite games** rows sit on the Consoles tab (Settings → Emulators → Recently played: above or below the consoles).
 

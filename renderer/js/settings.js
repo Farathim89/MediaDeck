@@ -22,6 +22,7 @@ const Settings = (() => {
           run: async () => { s().fullscreen = await api.toggleFullscreen(); } },
         { label: '24-hour clock', type: 'toggle', key: 'clock24h' },
         { label: 'Minimise when an app starts', desc: 'MediaDeck comes back when the app closes', type: 'toggle', key: 'minimizeOnLaunch' },
+        { label: 'Sleep, restart and shut down PC in the Exit menu', desc: 'Off: the Exit menu (Power button, PS / Guide at home) only has Restart MediaDeck and Exit MediaDeck', type: 'toggle', key: 'powerMenuPc' },
         { label: 'Hide the mouse pointer', desc: 'In full-screen apps and games, when the mouse has not moved for a while', type: 'choice', key: 'hideCursor', options: () => [
           { value: 0, label: 'Never' }, { value: 5, label: 'After 5 seconds' }, { value: 10, label: 'After 10 seconds' }, { value: 30, label: 'After 30 seconds' }] },
       ],
@@ -132,6 +133,7 @@ const Settings = (() => {
         { label: 'Download covers automatically', desc: 'Once a day, a while after start: box art for games that have none (new games too). Game names / PS3 serials / Xbox 360 title IDs go to libretro, GameTDB and XboxUnity.', type: 'toggle', key: 'autoCovers' },
         { label: 'Download covers for all emulators', desc: 'Box art from the libretro library (game names are sent to it), PS3 and Switch from GameTDB, Xbox 360 from XboxUnity (title IDs). Stored encrypted.', type: 'action',
           run: () => downloadAllCovers() },
+        { label: 'Scan for new games', desc: 'Reads every game folder again - for games added while MediaDeck runs (it also looks by itself when it comes back to the front)', type: 'action', run: () => Home.scanGames() },
         { label: 'Look for new emulators', type: 'action', value: () => (info && info.emuCount != null ? `${info.emuCount} found` : ''), run: () => rescan(true) },
         ...gameFolderRows(),
       ],

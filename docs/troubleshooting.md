@@ -3,7 +3,7 @@
 **A game doesn't show up**
 - Check it is in a console folder MediaDeck uses: the console's page → *Game folders*.
 - Check the emulator plays its file type (for example DuckStation opens `.cue`, `.chd`, `.iso`, `.pbp`, `.m3u` - a CloneCD `.ccd` / `.img` needs a `.cue`; see [Your games folder](games-folder.md)).
-- New games are read when you open the console's page - restart MediaDeck if you added them while it was open.
+- Added games while MediaDeck was open? **Scan for new games** on the console's page (or Y on a console, or Settings → Emulators). MediaDeck also looks by itself when it comes back to the front after a few minutes away.
 
 **A console doesn't show up**
 - It needs a folder named after it in your games folder, and an emulator installed for it (Settings → Emulators → *Install emulators*).
