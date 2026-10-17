@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- SignPath artifact configuration "programs" for the MediaDeck project (pasted into SignPath's project settings).
+     The release workflow sends MediaDeck's own programs only: MediaDeck.exe and the helpers built from launcher\*.cs.
+     7-Zip, mpv, FFmpeg, Streamlink and Electron's DLLs are not ours and are not signed. -->
+<artifact-configuration xmlns="http://signpath.io/artifact-configuration/v1">
+  <zip-file>
+    <pe-file path="MediaDeck.exe">
+      <authenticode-sign />
+    </pe-file>
+    <directory path="resources">
+      <directory path="tools">
+        <pe-file path="keys.exe">
+          <authenticode-sign />
+        </pe-file>
+        <pe-file path="padwatch.exe">
+          <authenticode-sign />
+        </pe-file>
+        <pe-file path="cursorhide.exe">
+          <authenticode-sign />
+        </pe-file>
+      </directory>
+    </directory>
+  </zip-file>
+</artifact-configuration>

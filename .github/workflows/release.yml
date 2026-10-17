@@ -1,0 +1,102 @@
+# Builds MediaDeck on GitHub from this source and makes a draft release with the portable zip and SHA256SUMS.txt.
+# MediaDeck's own programs (MediaDeck.exe and the helpers built from launcher\*.cs) are signed by SignPath when the
+# repository has the secret SIGNPATH_API_TOKEN and the variable SIGNPATH_ORGANIZATION_ID; without them it builds
+# unsigned. Third-party files (7-Zip, mpv, FFmpeg, Streamlink, Electron's DLLs) are left as their makers ship them.
+# Run it from the Actions tab: Release -> Run workflow (the version comes from package.json).
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      release:
+        description: Make the draft release (off = only build and keep the zip as a workflow artifact)
+        type: boolean
+        default: true
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    env:
+      SIGNPATH_API_TOKEN: ${{ secrets.SIGNPATH_API_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Helpers from source (keys, padwatch, cursorhide)
+        run: node build/build-helpers.js
+
+      - name: Media tools (mpv, FFmpeg, Streamlink)
+        run: node build/fetch-apps.js "$env:RUNNER_TEMP\apps"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build the release folder
+        run: node build/build.js --apps "$env:RUNNER_TEMP\apps" --no-zip
+
+      # Only MediaDeck's own programs go to SignPath; they come back signed and replace the unsigned ones
+      - name: Programs to sign
+        if: env.SIGNPATH_API_TOKEN != ''
+        run: |
+          New-Item -ItemType Directory -Force dist\to-sign\resources\tools | Out-Null
+          Copy-Item dist\MediaDeck\MediaDeck.exe dist\to-sign\
+          foreach ($t in 'keys.exe', 'padwatch.exe', 'cursorhide.exe') { Copy-Item "dist\MediaDeck\resources\tools\$t" dist\to-sign\resources\tools\ }
+
+      - name: Upload for signing
+        id: unsigned
+        if: env.SIGNPATH_API_TOKEN != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: MediaDeck-to-sign
+          path: dist/to-sign
+          if-no-files-found: error
+
+      - name: Sign (SignPath)
+        if: env.SIGNPATH_API_TOKEN != ''
+        uses: signpath/github-action-submit-signing-request@v1
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: MediaDeck
+          signing-policy-slug: release-signing
+          artifact-configuration-slug: programs
+          github-artifact-id: ${{ steps.unsigned.outputs.artifact-id }}
+          wait-for-completion: true
+          output-artifact-directory: dist/signed
+
+      - name: Put the signed programs in and check them
+        if: env.SIGNPATH_API_TOKEN != ''
+        run: |
+          Copy-Item dist\signed\* dist\MediaDeck\ -Recurse -Force
+          $files = 'MediaDeck.exe', 'resources\tools\keys.exe', 'resources\tools\padwatch.exe', 'resources\tools\cursorhide.exe'
+          $bad = $files | Where-Object { (Get-AuthenticodeSignature "dist\MediaDeck\$_").Status -ne 'Valid' }
+          if ($bad) { throw "Not signed: $($bad -join ', ')" }
+          $files | ForEach-Object { "$_ : $((Get-AuthenticodeSignature "dist\MediaDeck\$_").SignerCertificate.Subject)" }
+
+      - name: Zip
+        run: node build/build.js --zip-only dist\MediaDeck
+
+      - name: Keep the zip (workflow artifact)
+        uses: actions/upload-artifact@v4
+        with:
+          name: MediaDeck-portable
+          path: |
+            dist/MediaDeck-*-portable.zip
+            dist/SHA256SUMS.txt
+
+      - name: Draft release
+        if: inputs.release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $v = node -p "require('./package.json').version"
+          $signed = if ($env:SIGNPATH_API_TOKEN) { 'MediaDeck''s programs are signed (SignPath).' } else { 'Not signed.' }
+          gh release create "v$v" "dist\MediaDeck-$v-portable.zip" dist\SHA256SUMS.txt --draft --title "MediaDeck $v" --notes "Built on GitHub from $env:GITHUB_SHA. $signed Write the release notes, then publish."
