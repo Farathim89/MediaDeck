@@ -945,7 +945,7 @@ function startProgram(exe, args, cwd, name, meta = {}) {
     let child;
     try {
       // Some programs (Ryujinx) crash when started without any console: they start attached
-      child = spawn(exe, args, { cwd, detached: !(meta && meta.attached), stdio: 'ignore' });
+      child = spawn(exe, args, { cwd, detached: !(meta && meta.attached), stdio: 'ignore', ...(meta && meta.env ? { env: { ...process.env, ...meta.env } } : {}) });
     } catch (e) {
       return resolve({ ok: false, error: e.message });
     }
@@ -1099,8 +1099,10 @@ async function launchGame(moduleId, rom) {
   }
   let args;
   try { args = games.launchArgs(mod, rom); } catch (e) { return { ok: false, error: e.message }; }
+  // Mednafen keeps its settings in %HOME%\.mednafen when HOME is set (Git Bash, MSYS): always its own folder
+  const env = emuInstaller.emuIdOf(mod) === 'mednafen' ? { MEDNAFEN_HOME: path.dirname(mod.exe) } : null;
   const r = await startProgram(mod.exe, args, path.dirname(mod.exe), game.title,
-    { emulator: mod.name, control: mod.control, hotkeys: mod.hotkeys || {}, closeSteps: mod.closeSteps || 1, holdToClose: mod.holdToClose || 0, attached: !!mod.attached });
+    { emulator: mod.name, env, control: mod.control, hotkeys: mod.hotkeys || {}, closeSteps: mod.closeSteps || 1, holdToClose: mod.holdToClose || 0, attached: !!mod.attached });
   if (r.ok) {
     loadRecent();
     recent = [{ moduleId, ...game, t: Date.now() }, ...recent.filter((x) => x.rom !== rom)].slice(0, 20);

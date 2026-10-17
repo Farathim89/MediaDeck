@@ -189,6 +189,58 @@ const MGBA_PAD = {
   axisDownAxis: '+1', axisDownValue: '16384', axisUpAxis: '-1', axisUpValue: '-16384',
 };
 
+// ---------- Mednafen: "<setting> keyboard 0x0 89 || joystick <id> button_14" lines in mednafen.cfg ----------
+// XInput numbers as Mednafen reads them: d-pad 0-3, Start 4, Back 5, LS 6, RS 7, LB 8, RB 9, A 12, B 13, X 14, Y 15;
+// abs_2 / abs_3 = right stick (up = +), abs_4 / abs_5 = triggers. The pad's id: the one already in the file (Mednafen
+// writes it when a pad is set up in it), else a standard XInput gamepad's.
+const MEDNAFEN_XINPUT = '0x000000000000000000010004f3ff0000';
+const dpad = (pre, [u, d, l, r] = ['up', 'down', 'left', 'right']) => ({ [`${pre}.${u}`]: 'button_0', [`${pre}.${d}`]: 'button_1', [`${pre}.${l}`]: 'button_2', [`${pre}.${r}`]: 'button_3' });
+const rstick = (pre, [u, d, l, r]) => ({ [`${pre}.${u}`]: 'abs_3+', [`${pre}.${d}`]: 'abs_3-', [`${pre}.${l}`]: 'abs_2-', [`${pre}.${r}`]: 'abs_2+' });
+const MEDNAFEN_PADS = {
+  // Saturn: A B C on the bottom row = X A B, X Y Z on top = LB Y RB, L R = triggers
+  ...dpad('ss.input.port1.gamepad'), 'ss.input.port1.gamepad.a': 'button_14', 'ss.input.port1.gamepad.b': 'button_12', 'ss.input.port1.gamepad.c': 'button_13',
+  'ss.input.port1.gamepad.x': 'button_8', 'ss.input.port1.gamepad.y': 'button_15', 'ss.input.port1.gamepad.z': 'button_9',
+  'ss.input.port1.gamepad.ls': 'abs_4+', 'ss.input.port1.gamepad.rs': 'abs_5+', 'ss.input.port1.gamepad.start': 'button_4',
+  // Lynx: A (right) = B, B = A, Option 1 / 2 = LB / RB, Pause = Start
+  ...dpad('lynx.input.builtin.gamepad'), 'lynx.input.builtin.gamepad.a': 'button_13', 'lynx.input.builtin.gamepad.b': 'button_12',
+  'lynx.input.builtin.gamepad.option_1': 'button_8', 'lynx.input.builtin.gamepad.option_2': 'button_9', 'lynx.input.builtin.gamepad.pause': 'button_4',
+  // Virtual Boy: left d-pad = d-pad, right d-pad = right stick
+  ...dpad('vb.input.builtin.gamepad', ['up-l', 'down-l', 'left-l', 'right-l']), ...rstick('vb.input.builtin.gamepad', ['up-r', 'down-r', 'left-r', 'right-r']),
+  'vb.input.builtin.gamepad.a': 'button_13', 'vb.input.builtin.gamepad.b': 'button_12', 'vb.input.builtin.gamepad.lt': 'button_8', 'vb.input.builtin.gamepad.rt': 'button_9',
+  'vb.input.builtin.gamepad.select': 'button_5', 'vb.input.builtin.gamepad.start': 'button_4',
+  // WonderSwan: X pad = d-pad, Y pad = right stick
+  ...dpad('wswan.input.builtin.gamepad', ['up-x', 'down-x', 'left-x', 'right-x']), ...rstick('wswan.input.builtin.gamepad', ['up-y', 'down-y', 'left-y', 'right-y']),
+  'wswan.input.builtin.gamepad.a': 'button_13', 'wswan.input.builtin.gamepad.b': 'button_12', 'wswan.input.builtin.gamepad.start': 'button_4',
+  // PC Engine / PC-FX: I (right) = B, II = A, III-VI = X Y LB RB, Select / Run = Back / Start
+  ...dpad('pce.input.port1.gamepad'), 'pce.input.port1.gamepad.i': 'button_13', 'pce.input.port1.gamepad.ii': 'button_12', 'pce.input.port1.gamepad.iii': 'button_14',
+  'pce.input.port1.gamepad.iv': 'button_15', 'pce.input.port1.gamepad.v': 'button_8', 'pce.input.port1.gamepad.vi': 'button_9',
+  'pce.input.port1.gamepad.select': 'button_5', 'pce.input.port1.gamepad.run': 'button_4',
+  ...dpad('pcfx.input.port1.gamepad'), 'pcfx.input.port1.gamepad.i': 'button_13', 'pcfx.input.port1.gamepad.ii': 'button_12', 'pcfx.input.port1.gamepad.iii': 'button_14',
+  'pcfx.input.port1.gamepad.iv': 'button_15', 'pcfx.input.port1.gamepad.v': 'button_8', 'pcfx.input.port1.gamepad.vi': 'button_9',
+  'pcfx.input.port1.gamepad.select': 'button_5', 'pcfx.input.port1.gamepad.run': 'button_4',
+  // Game Gear: 1 / 2 = A / B; Neo Geo Pocket: A / B = A / B, Option = Start
+  ...dpad('gg.input.builtin.gamepad'), 'gg.input.builtin.gamepad.button1': 'button_12', 'gg.input.builtin.gamepad.button2': 'button_13', 'gg.input.builtin.gamepad.start': 'button_4',
+  ...dpad('ngp.input.builtin.gamepad'), 'ngp.input.builtin.gamepad.a': 'button_12', 'ngp.input.builtin.gamepad.b': 'button_13', 'ngp.input.builtin.gamepad.option': 'button_4',
+};
+// Adds the controller to every control above that is in the file and has no joystick yet (keyboard keys stay)
+function mednafenPads(file) {
+  let text;
+  try { text = fs.readFileSync(file, 'latin1'); } catch { return false; }
+  const id = (/joystick (0x[0-9a-f]{32})/i.exec(text) || [])[1] || MEDNAFEN_XINPUT;
+  let changed = 0;
+  const out = text.split(/(\r?\n)/).map((line) => {
+    const m = /^(\S+) (.*)$/.exec(line);
+    if (!m || !MEDNAFEN_PADS[m[1]] || /joystick/i.test(m[2])) return line;
+    changed++;
+    const bind = `joystick ${id} ${MEDNAFEN_PADS[m[1]]}`;
+    return `${m[1]} ${m[2].trim() ? `${m[2].trim()} || ${bind}` : bind}`;
+  });
+  if (!changed) return false;
+  backup(file);
+  fs.writeFileSync(file, out.join(''), 'latin1');
+  return true;
+}
+
 // Per emulator (the installer's ids): (its program folder, { installed: just installed by MediaDeck }) → true when it
 // set something up. Each one only when the emulator really reads its settings from its own folder (portable) - one
 // that uses Documents / AppData is left alone (its settings are there).
@@ -250,6 +302,8 @@ const SETUP = {
   },
   // (xemu binds the first controller by itself. auto_bind = false is left alone: with DS4Windows it binds both the real
   // PlayStation controller and the virtual Xbox one, so every button comes twice - switched off for that on purpose.)
+  // Mednafen writes mednafen.cfg at its first start; without it there is nothing to add to yet
+  mednafen: (dir) => mednafenPads(path.join(dir, 'mednafen.cfg')),
   cemu: (dir) => exists(dir, 'portable') && newFile(path.join(dir, 'portable', 'controllerProfiles', 'controller0.xml'), CEMU_XML),
   rpcs3: (dir) => newFile(path.join(dir, 'config', 'input_configs', 'global', 'Default.yml'), RPCS3_YML),
   // Supermodel: XInput instead of DirectInput, Start / Coin on Start / Back (its other controls are joystick ones already)
