@@ -534,15 +534,25 @@ async function installApps(ids, quiet = false) {
 
 // MediaDeck itself, at every start (the built app; from source it's a git pull): a new version → the update window,
 // once MediaDeck is in front and nothing of ours runs (never over a game)
+// MediaDeck's own update: checked at start and every 6 hours while it runs (on a TV it can run for days). A new
+// version is offered once per version, when MediaDeck is in front and free (no game, video or other window open);
+// it keeps waiting for that, without a time limit.
+let selfUpdateOffered = '';
+let selfUpdateWaiting = null;
 async function selfUpdateAtStart() {
   if (!app.isPackaged || config.settings.checkMediaDeckUpdates === false) return;
   let me;
   try { me = await selfUpdate.check(net); } catch { return; }
-  if (!me.update) return;
-  const tell = (tries = 0) => {
+  if (!me.update || me.latest === selfUpdateOffered) return;
+  clearTimeout(selfUpdateWaiting);
+  const tell = async () => {
+    selfUpdateWaiting = null;
     if (!win || win.isDestroyed()) return;
-    const busy = (running && isAlive(running.pid)) || mpv.isOpen() || !win.isFocused();
-    if (busy) { if (tries < 240) setTimeout(() => tell(tries + 1), 15000); return; }
+    let busy = (running && isAlive(running.pid)) || mpv.isOpen() || !win.isFocused();
+    // another window (a menu, a message) open in MediaDeck: wait until it is closed
+    if (!busy) busy = await win.webContents.executeJavaScript('!!(window.UI && UI.isOpen) || App.current !== Home').catch(() => false);
+    if (busy) { selfUpdateWaiting = setTimeout(tell, 15000); return; }
+    selfUpdateOffered = me.latest;
     win.webContents.send('mediadeck-update', { latest: me.latest, notes: me.notes || [] });
   };
   tell();
@@ -1911,6 +1921,7 @@ if (!app.requestSingleInstanceLock()) {
     startPadWatch();
     // a while after start, so it never slows the home screen down
     setTimeout(() => { if (!process.argv.includes('--test')) selfUpdateAtStart().catch(() => {}); }, 6000);
+    setInterval(() => { if (!process.argv.includes('--test')) selfUpdateAtStart().catch(() => {}); }, 6 * 3600e3);
     setTimeout(() => { if (!process.argv.includes('--test')) { checkUpdatesAtStart(); appUpdatesAtStart().catch((e) => console.error('[apps] updates:', e.message)); } }, 15000);
     setTimeout(() => { if (!process.argv.includes('--test')) autoCovers().catch((e) => console.error('[covers]', e.message)); }, 60000);
     // Bring the home screen back from anywhere
