@@ -58,4 +58,25 @@ function relocate(oldRoot, newRoot, dirs, backupDir) {
   return changed;
 }
 
-module.exports = { relocate, styles, files };
+// PCSX2 keeps its folders (BIOS, memory cards, save states …) as full paths. One that isn't there any more (an old
+// drive), while PCSX2's own sub folder of that name is, is pointed at the sub folder - written relative, so it
+// moves with MediaDeck. Without its BIOS folder PCSX2 quits at once when a game starts. Returns the keys changed.
+const PCSX2_FOLDERS = { Bios: 'bios', Snapshots: 'snaps', SaveStates: 'sstates', MemoryCards: 'memcards', Cheats: 'cheats',
+  Cache: 'cache', Covers: 'covers', Patches: 'patches', Textures: 'textures', Videos: 'videos', InputProfiles: 'inputprofiles' };
+function pcsx2Folders(dir) {
+  const pads = require('./pad-defaults');
+  const file = path.join(dir, 'inis', 'PCSX2.ini');
+  if (!fs.existsSync(file)) return [];
+  const ini = pads.readIni(file);
+  const changed = [];
+  for (const [key, sub] of Object.entries(PCSX2_FOLDERS)) {
+    const v = (pads.iniGet(ini, 'Folders', key) || '').trim();
+    if (!v || !path.isAbsolute(v) || fs.existsSync(v) || !fs.existsSync(path.join(dir, sub))) continue;
+    pads.iniSet(ini, 'Folders', key, sub);
+    changed.push(`${key}: ${v} -> ${sub}`);
+  }
+  if (changed.length) pads.writeIni(file, ini);
+  return changed;
+}
+
+module.exports = { relocate, pcsx2Folders, styles, files };

@@ -1731,6 +1731,15 @@ if (!app.requestSingleInstanceLock()) {
     // The browser cache would keep thumbnail links, which contain file paths: empty it
     await session.defaultSession.clearCache().catch(() => {});
     await syncEmulators();
+    // PCSX2 folders on a drive that is gone → its own sub folders (relocate.js)
+    try {
+      for (const m of await emuModules.scan(emuDir())) {
+        if (m.ok && emuInstaller.emuIdOf(m) === 'pcsx2') {
+          const fixed = require('./relocate').pcsx2Folders(path.dirname(m.exe));
+          if (fixed.length) console.log(`[pcsx2] folders fixed: ${fixed.join('; ')}`);
+        }
+      }
+    } catch (e) { console.error('[pcsx2]', e.message); }
     server = new MediaServer({ dataDir: DATA, getSettings: () => config.settings, cacheKey: cacheKey() });
     await server.start();
     // game folders that moved (e.g. into maker folders) are followed, with their covers
