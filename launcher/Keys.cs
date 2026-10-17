@@ -1,7 +1,8 @@
 ﻿// Small helper for the in-game overlay.
 //   keys.exe focus <hwnd>          bring a window to the front (Windows normally blocks this
 //                                  for programs in the background)
-//   keys.exe confirm <pid>        press Yes/OK in that program's own "confirm shutdown/exit" dialog
+//   keys.exe confirm <pid> [secs]  press Yes/OK in that program's own "confirm shutdown/exit" dialog
+//                                  (secs: keep looking that long, until it shows or the program is gone)
 //   keys.exe send <pid> <combo>    bring the game's window (pid or its child) to the front and
 //                                  press a key combo, e.g. "F1", "Shift+F1", "Ctrl+P"
 // Keys are sent as hardware scan codes, which emulators (DirectInput / raw input) understand.
@@ -69,7 +70,16 @@ static class Keys
         var titles = new System.Text.RegularExpressions.Regex("confirm|shut ?down|exit|quit|close|stop", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
         var root = System.Windows.Automation.AutomationElement.RootElement;
         var mine = new System.Windows.Automation.PropertyCondition(System.Windows.Automation.AutomationElement.ProcessIdProperty, pid);
-        foreach (System.Windows.Automation.AutomationElement w in root.FindAll(System.Windows.Automation.TreeScope.Descendants, mine))
+        // only that program's own windows (searching the whole desktop takes seconds): its top-level windows and
+        // the windows inside them (DuckStation's "Confirm Exit" sits in its main window)
+        var windows = new List<System.Windows.Automation.AutomationElement>();
+        var isWindow = new System.Windows.Automation.PropertyCondition(System.Windows.Automation.AutomationElement.ControlTypeProperty, System.Windows.Automation.ControlType.Window);
+        foreach (System.Windows.Automation.AutomationElement top in root.FindAll(System.Windows.Automation.TreeScope.Children, mine))
+        {
+            windows.Add(top);
+            foreach (System.Windows.Automation.AutomationElement inner in top.FindAll(System.Windows.Automation.TreeScope.Descendants, isWindow)) windows.Add(inner);
+        }
+        foreach (var w in windows)
         {
             if (w.Current.ControlType != System.Windows.Automation.ControlType.Window) continue;
             // The dialog is about closing: by its title, or by its text ("Are you sure you want to exit?")
@@ -132,7 +142,18 @@ static class Keys
         {
             if (a.Length >= 2 && a[0] == "focus") { Focus(new IntPtr(long.Parse(a[1]))); return 0; }
             if (a.Length >= 2 && a[0] == "game") { var h = WindowOf(int.Parse(a[1])); if (h == IntPtr.Zero) return 2; Focus(h); return 0; }
-            if (a.Length >= 2 && a[0] == "confirm") return Confirm(int.Parse(a[1])) ? 0 : 3;
+            if (a.Length >= 2 && a[0] == "confirm")
+            {
+                int pid = int.Parse(a[1]);
+                var until = DateTime.Now.AddSeconds(a.Length >= 3 ? double.Parse(a[2], System.Globalization.CultureInfo.InvariantCulture) : 0);
+                do
+                {
+                    if (Confirm(pid)) return 0;
+                    try { if (Process.GetProcessById(pid).HasExited) return 4; } catch (ArgumentException) { return 4; }   // gone
+                    Thread.Sleep(150);
+                } while (DateTime.Now < until);
+                return 3;
+            }
             if (a.Length >= 3 && a[0] == "send")
             {
                 var h = WindowOf(int.Parse(a[1]));
@@ -144,7 +165,7 @@ static class Keys
             }
         }
         catch (Exception e) { Console.Error.WriteLine(e.Message); return 1; }
-        Console.Error.WriteLine("usage: keys focus <hwnd> | keys game <pid> | keys confirm <pid> | keys send <pid> <combo>");
+        Console.Error.WriteLine("usage: keys focus <hwnd> | keys game <pid> | keys confirm <pid> [secs] | keys send <pid> <combo>");
         return 1;
     }
 }

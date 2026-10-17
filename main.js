@@ -711,14 +711,10 @@ async function closeRunning(force) {
   await killTree(pid, force);
   if (force) await wait(800);
   else {
-    // closed, or asking "Are you sure?" (DuckStation, PCSX2): answered as soon as it shows - the player chose Close
-    for (let i = 0; i < 10 && isAlive(pid); i++) {
-      await wait(300);
-      if (i % 2 === 1 && isAlive(pid) && (await keysExe(['confirm', String(pid)]))) {
-        for (let t = 0; t < 10 && isAlive(pid); t++) await wait(300);
-        break;
-      }
-    }
+    // closed, or asking "Are you sure?" (DuckStation, PCSX2): keys.exe answers it as soon as it shows (it keeps
+    // looking up to 4 s, and stops when the program is gone) - the player chose Close
+    await keysExe(['confirm', String(pid), (running && running.closeSteps || 1) > 1 ? '0' : '4']);   // (not MAME32's game list)
+    for (let t = 0; t < 10 && isAlive(pid); t++) await wait(300);
   }
   // Programs that need more than one close (MAME32: game, then its game list)
   // (MAME32 needs a moment between them, and sometimes one more: keep trying while it's there)
