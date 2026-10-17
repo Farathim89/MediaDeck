@@ -178,6 +178,7 @@ const Settings = (() => {
         { label: 'Version', type: 'info', value: () => (info ? `${info.version}  ·  Electron ${info.electron}` : '') },
         { label: 'Check for MediaDeck updates', desc: 'From MediaDeck\'s GitHub releases. Your settings, apps and emulators stay.', type: 'action',
           value: () => (selfLatest ? `${selfLatest} available - install` : ''), run: () => selfUpdateNow() },
+        { label: 'Check for MediaDeck updates at start', desc: 'At every start: when there is a new version, a window asks whether to update (never while a game runs)', type: 'toggle', key: 'checkMediaDeckUpdates' },
         { label: 'App folder', type: 'info', value: () => (info ? info.appDir : '') },
         { label: 'Exit MediaDeck', type: 'action', run: () => api.quit() },
       ],
@@ -275,7 +276,17 @@ const Settings = (() => {
     const x = await api.selfInstall();
     if (x && x.error) UI.toast(x.error, { icon: 'alert', error: true, duration: 8000 });
   }
-  if (api.onSelfUpdate) api.onSelfUpdate((v) => { selfLatest = v; UI.toast(`MediaDeck ${v} is out. Settings → About → Check for MediaDeck updates`, { icon: 'refresh', duration: 9000 }); });
+  // At start (main → 'mediadeck-update'): the update window; when another window is open only a toast
+  if (api.onSelfUpdate) api.onSelfUpdate(async (v) => {
+    const { latest, notes = [] } = typeof v === 'string' ? { latest: v } : v;
+    selfLatest = latest;
+    if (UI.isOpen) { UI.toast(`MediaDeck ${latest} is out. Settings → About → Check for MediaDeck updates`, { icon: 'refresh', duration: 9000 }); return; }
+    const news = notes.length ? `What's new: ${notes.join(' · ')}. ` : '';
+    const ok = await UI.confirm(`MediaDeck ${latest} is out`, `${news}It downloads the new version, closes, updates itself and starts again. Your settings, apps, emulators and games stay.`, 'Update now');
+    if (!ok) return;
+    const x = await api.selfInstall();
+    if (x && x.error) UI.toast(x.error, { icon: 'alert', error: true, duration: 8000 });
+  });
 
   // ---------- Controllers ----------
   let ctl = null;

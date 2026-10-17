@@ -170,7 +170,7 @@ function catalog(installedModules) {
 // the normal release pages (no such limit) give the same tag and file names, without dates.
 async function githubLatest(gh, net) {
   const r = await net.fetch(`https://api.github.com/repos/${gh}/releases/latest`, { headers: { Accept: 'application/vnd.github+json' } });
-  if (r.ok) { const j = await r.json(); return { tag: j.tag_name, assets: (j.assets || []).map((a) => ({ name: a.name, url: a.browser_download_url, size: a.size, date: a.updated_at || '', digest: a.digest || '' })) }; }
+  if (r.ok) { const j = await r.json(); return { tag: j.tag_name, body: j.body || '', assets: (j.assets || []).map((a) => ({ name: a.name, url: a.browser_download_url, size: a.size, date: a.updated_at || '', digest: a.digest || '' })) }; }
   if (r.status !== 403 && r.status !== 429) throw new Error(`GitHub: ${r.status}`);
   const page = await net.fetch(`https://github.com/${gh}/releases/latest`);
   const tag = decodeURIComponent((/\/releases\/tag\/([^/?#]+)/.exec(page.url || '') || [])[1] || '');

@@ -62,6 +62,7 @@ function defaultConfig() {
       groupVersions: true,
       checkEmuUpdates: true,
       checkAppUpdates: true,
+      checkMediaDeckUpdates: true,   // at every start: a new MediaDeck version → a window asks whether to update
       autoCovers: true,
       gameView: 'big',           // a console's games: 'big' covers, 'small' covers, or a 'list' without covers
       twitchQuality: 'best',

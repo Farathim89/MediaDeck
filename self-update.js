@@ -1,5 +1,5 @@
 // MediaDeck updates itself from its GitHub releases (the portable folder zip):
-//  1. check: the latest release's version against this one (once a day at start, or from Settings → About)
+//  1. check: the latest release's version against this one (at every start, or from Settings → About)
 //  2. install: download the zip, check its SHA-256 (from the release), unpack it to a temp folder,
 //     then a small PowerShell script waits for MediaDeck to close, copies the new program files over
 //     the old ones and starts MediaDeck again. data, Apps, Emu_modules, Emulator backups and BIOS are
@@ -28,7 +28,9 @@ async function check(net) {
   const rel = await emu.githubLatest(REPO, net);
   const asset = rel.assets.find((a) => ASSET.test(a.name));
   const latest = rel.tag.replace(/^v/i, '');
-  return { current: app.getVersion(), latest, update: !!asset && newer(latest, app.getVersion()), asset, canInstall: app.isPackaged };
+  // what's new: the release notes' bold headings ("- **Game cards: big covers, small covers or a list.** …")
+  const notes = [...String(rel.body || '').matchAll(/^\s*-\s+\*\*(.+?)\*\*/gm)].map((m) => m[1].replace(/[.:]\s*$/, '')).slice(0, 4);
+  return { current: app.getVersion(), latest, update: !!asset && newer(latest, app.getVersion()), asset, canInstall: app.isPackaged, notes };
 }
 
 // Downloads and unpacks the new version, then hands over to the script and quits

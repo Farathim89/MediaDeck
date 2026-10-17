@@ -420,13 +420,25 @@ async function installApps(ids, quiet = false) {
   return { results, config };
 }
 
+// MediaDeck itself, at every start (the built app; from source it's a git pull): a new version → the update window,
+// once MediaDeck is in front and nothing of ours runs (never over a game)
+async function selfUpdateAtStart() {
+  if (!app.isPackaged || config.settings.checkMediaDeckUpdates === false) return;
+  let me;
+  try { me = await selfUpdate.check(net); } catch { return; }
+  if (!me.update) return;
+  const tell = (tries = 0) => {
+    if (!win || win.isDestroyed()) return;
+    const busy = (running && isAlive(running.pid)) || mpv.isOpen() || !win.isFocused();
+    if (busy) { if (tries < 240) setTimeout(() => tell(tries + 1), 15000); return; }
+    win.webContents.send('mediadeck-update', { latest: me.latest, notes: me.notes || [] });
+  };
+  tell();
+}
+
 async function appUpdatesAtStart(force = false) {
   const last = readJson(APP_UPDATES_FILE, null);
   if (!force && (!config.settings.checkAppUpdates || (last && Date.now() - Date.parse(last.checked) < 20 * 3600e3))) return { skipped: true };
-  // MediaDeck itself (the built app; from source it's a git pull)
-  if (app.isPackaged) {
-    try { const me = await selfUpdate.check(net); if (me.update && win && !win.isDestroyed()) win.webContents.send('mediadeck-update', me.latest); } catch {}
-  }
   const list = await appInstaller.status(net, true);
   const todo = list.filter((x) => x.update && !x.setup);   // (driver installers only matter when installing)
   writeJson(APP_UPDATES_FILE, { checked: new Date().toISOString(), list: todo.map(({ id, name, version, latest }) => ({ id, name, version, latest })) });
@@ -1638,6 +1650,7 @@ if (!app.requestSingleInstanceLock()) {
     startCursorHide();
     startPadWatch();
     // a while after start, so it never slows the home screen down
+    setTimeout(() => { if (!process.argv.includes('--test')) selfUpdateAtStart().catch(() => {}); }, 6000);
     setTimeout(() => { if (!process.argv.includes('--test')) { checkUpdatesAtStart(); appUpdatesAtStart().catch((e) => console.error('[apps] updates:', e.message)); } }, 15000);
     setTimeout(() => { if (!process.argv.includes('--test')) autoCovers().catch((e) => console.error('[covers]', e.message)); }, 60000);
     // Bring the home screen back from anywhere
