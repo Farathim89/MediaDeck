@@ -666,6 +666,7 @@ function startTestSwitch() {
         return send(await covers.downloadAll(mod, (await consoleGames(c.id)).list, coverOpts()));
       }
       if (u.pathname === '/console-games') { const r = await consoleGames(u.searchParams.get('id')); return send({ moduleId: r.moduleId, count: r.list.length, first: r.list.slice(0, 3).map((g) => g.title) }); }
+      if (u.pathname === '/launch-tile') { const t = config.tiles.find((x) => x.id === u.searchParams.get('id')); return send(t ? await launch(t) : { ok: false, error: 'no such tile' }); }
       if (u.pathname === '/launch') return send(await launchGame(u.searchParams.get('module'), u.searchParams.get('rom')));
       if (u.pathname === '/state') return send({ running: running && isAlive(running.pid) ? { pid: running.pid, name: running.name, emulator: running.emulator } : null, focused: !!(win && !win.isDestroyed() && win.isFocused()), minimized: !!(win && !win.isDestroyed() && win.isMinimized()) });
       // Clicks the menu item whose text contains "label" (the open dialog in MediaDeck)
