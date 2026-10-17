@@ -62,6 +62,10 @@ function loadConfig() {
   const setupKnown = !!(config.settings && 'setupDone' in config.settings);
   config.settings = { ...defaults.settings, ...(config.settings || {}) };
   if (!fresh && !setupKnown) config.settings.setupDone = true;
+  // A new MediaDeck keeps its games in its own folder: Games\<maker>\<console>, one folder per console, made now
+  if (fresh) {
+    try { emuInstaller.makeStarterFolders(P.GAMES); config.settings.gamesFolder = P.rel(P.GAMES); writeJson(CONFIG_FILE, config); } catch {}
+  }
   config.tiles = config.tiles || [];
   config.favorites = config.favorites || [];
   if (!config.tiles.some((t) => t.builtin === 'youtube')) {
@@ -74,16 +78,66 @@ function loadConfig() {
     config.tiles.splice(at, 0, { id: 'twitch', section: 'apps', builtin: 'twitch', name: 'Twitch', subtitle: 'TV app · no ads', path: '', args: '', image: '' });
     writeJson(CONFIG_FILE, config);
   }
+  relockAll();
   progress = readProgress();
 }
 
-// ---------- Watched history: encrypted on disk ----------
-// Windows DPAPI (via safeStorage): only this Windows account on this PC can read it,
-// so the file shows no file or folder names.
+// ---------- Private files: encrypted on disk ----------
+// History, favourites and the cover / thumbnail cache key are encrypted, so the files show no file or folder names.
+// Portable (Settings → About, the default): locked with a key kept in data\portable.key, so the MediaDeck folder
+// works on any PC (a USB stick, another drive). Off: Windows DPAPI - only this Windows account on this PC can read
+// them. Files locked either way are always read; a file that can't be read is kept aside, never overwritten.
+const PORTABLE_KEY_FILE = path.join(DATA, 'portable.key');
+const LOCK_MAGIC = Buffer.from('MDK1');
+let portableKey = null;
+const portableData = () => !(config && config.settings && config.settings.portableData === false);
+function pKey() {
+  if (portableKey) return portableKey;
+  try { portableKey = Buffer.from(fs.readFileSync(PORTABLE_KEY_FILE, 'utf8').trim(), 'base64'); } catch {}
+  if (!portableKey || portableKey.length !== 32) {
+    portableKey = crypto.randomBytes(32);
+    fs.mkdirSync(DATA, { recursive: true });
+    fs.writeFileSync(PORTABLE_KEY_FILE, portableKey.toString('base64'));
+  }
+  return portableKey;
+}
+const isPortableLocked = (buf) => buf.length > 32 && buf.subarray(0, 4).equals(LOCK_MAGIC);
+function lock(text) {
+  if (!portableData() && safeStorage.isEncryptionAvailable()) return safeStorage.encryptString(text);
+  const iv = crypto.randomBytes(12);
+  const c = crypto.createCipheriv('aes-256-gcm', pKey(), iv);
+  const body = Buffer.concat([c.update(text, 'utf8'), c.final()]);
+  return Buffer.concat([LOCK_MAGIC, iv, c.getAuthTag(), body]);
+}
+function unlock(buf) {
+  if (!isPortableLocked(buf)) return safeStorage.decryptString(buf);
+  const d = crypto.createDecipheriv('aes-256-gcm', pKey(), buf.subarray(4, 16));
+  d.setAuthTag(buf.subarray(16, 32));
+  return Buffer.concat([d.update(buf.subarray(32)), d.final()]).toString('utf8');
+}
+// A file locked for another PC / Windows account: kept as <file>.other-pc (back on that PC it can be put back)
+function keepUnreadable(file) {
+  try { if (!fs.existsSync(file + '.other-pc')) fs.copyFileSync(file, file + '.other-pc'); } catch {}
+}
+// Files locked the other way are locked again the way the setting says (at start, and when it changes)
+function relockAll() {
+  const want = portableData();
+  for (const file of [PROGRESS_FILE, RECENT_FILE, FAV_FILE, COVER_STATE(), path.join(DATA, 'cache.key')]) {
+    try {
+      const buf = fs.readFileSync(file);
+      if (isPortableLocked(buf) === want) continue;
+      const text = unlock(buf);
+      fs.writeFileSync(file + '.tmp', lock(text));
+      fs.renameSync(file + '.tmp', file);
+    } catch {}
+  }
+}
+
+// ---------- Watched history ----------
 function readProgress() {
   if (fs.existsSync(PROGRESS_FILE)) {
-    try { return JSON.parse(safeStorage.decryptString(fs.readFileSync(PROGRESS_FILE))); }
-    catch (e) { console.error('[progress] could not decrypt:', e.message); return {}; }
+    try { return JSON.parse(unlock(fs.readFileSync(PROGRESS_FILE))); }
+    catch (e) { console.error('[progress] could not decrypt:', e.message); keepUnreadable(PROGRESS_FILE); return {}; }
   }
   // Older plain-text history: take it over, save it encrypted, remove the readable copy
   const old = readJson(OLD_PROGRESS_FILE, null);
@@ -95,32 +149,45 @@ function readProgress() {
   return {};
 }
 
-// Key for the encrypted thumbnail/subtitle cache, itself locked with DPAPI
+// Key for the encrypted covers and thumbnail / subtitle cache, itself locked like the other private files.
+// One that can't be read (locked for another PC) is kept as cache.key.other-pc and tried again at every start,
+// so its covers come back on that PC.
 function cacheKey() {
   const file = path.join(DATA, 'cache.key');
-  try { return Buffer.from(safeStorage.decryptString(fs.readFileSync(file)), 'base64'); } catch {}
+  for (const f of [file, file + '.other-pc']) {
+    try {
+      const key = Buffer.from(unlock(fs.readFileSync(f)), 'base64');
+      if (key.length !== 32) continue;
+      if (f !== file) { fs.renameSync(file, file + `.other-pc-${Date.now()}`); fs.writeFileSync(file, lock(key.toString('base64'))); fs.rmSync(f); }
+      return key;
+    } catch {}
+  }
+  if (fs.existsSync(file)) { keepUnreadable(file); }
   const key = crypto.randomBytes(32);
-  fs.writeFileSync(file, safeStorage.encryptString(key.toString('base64')));
-  // Thumbnails made with an older key can't be read any more
-  fs.rmSync(path.join(DATA, 'cache', 'thumbs'), { recursive: true, force: true });
-  fs.rmSync(path.join(DATA, 'cache', 'subs'), { recursive: true, force: true });
+  fs.writeFileSync(file, lock(key.toString('base64')));
   return key;
 }
 
 // Any other private list (e.g. recently played games), encrypted the same way
 function readSecret(file, fallback) {
-  try { return JSON.parse(safeStorage.decryptString(fs.readFileSync(file))); } catch { return fallback; }
+  let buf;
+  try { buf = fs.readFileSync(file); } catch { return fallback; }
+  try { return JSON.parse(unlock(buf)); } catch { keepUnreadable(file); return fallback; }
 }
 function writeSecret(file, data) {
-  if (!safeStorage.isEncryptionAvailable()) return;
-  fs.writeFileSync(file + '.tmp', safeStorage.encryptString(JSON.stringify(data)));
+  if (!portableData() && !safeStorage.isEncryptionAvailable()) return;
+  fs.writeFileSync(file + '.tmp', lock(JSON.stringify(data)));
   fs.renameSync(file + '.tmp', file);
 }
+// Played / favourite games: their files are kept relative to MediaDeck's folder when they are in it (Games\…)
+const portGame = (g, fn) => ({ ...g, rom: fn(g.rom), ...(typeof g.cover === 'string' && /[\\/]/.test(g.cover) ? { cover: fn(g.cover) } : {}) });
+const readGames = (file) => readSecret(file, []).map((g) => portGame(g, P.resolve));
+const writeGames = (file, list) => writeSecret(file, list.map((g) => portGame(g, P.rel)));
 
 function writeProgress(data) {
-  if (!safeStorage.isEncryptionAvailable()) { console.error('[progress] encryption not available; not saved'); return; }
+  if (!portableData() && !safeStorage.isEncryptionAvailable()) { console.error('[progress] encryption not available; not saved'); return; }
   const tmp = PROGRESS_FILE + '.tmp';
-  fs.writeFileSync(tmp, safeStorage.encryptString(JSON.stringify(data)));
+  fs.writeFileSync(tmp, lock(JSON.stringify(data)));
   fs.renameSync(tmp, PROGRESS_FILE);
 }
 
@@ -550,7 +617,7 @@ function startTestSwitch() {
         const re = new RegExp(u.searchParams.get('match'), 'i');
         const before = loadRecent().length;
         recent = recent.filter((g) => !re.test(g.title));
-        writeSecret(RECENT_FILE, recent);
+        writeGames(RECENT_FILE, recent);
         return send({ removed: before - recent.length, left: recent.map((g) => g.title) });
       }
       if (u.pathname === '/consoles') return send((await consoleList(u.searchParams.has('all'))).map((c) => ({ id: c.id, name: c.name, emulator: c.emulator, emulators: c.emulators.map((e) => e.name), icon: !!c.icon, count: c.count })));
@@ -612,6 +679,7 @@ function startTestSwitch() {
         if (u.searchParams.has('step')) await win.webContents.executeJavaScript(`Setup.show(${Number(u.searchParams.get('step')) || 0})`);
         return send({ ok: true });
       }
+      if (u.pathname === '/page-text') return send({ text: await win.webContents.executeJavaScript('document.body.innerText') });
       if (u.pathname === '/open-settings') { await win.webContents.executeJavaScript(`App.open(Settings, ${JSON.stringify({ section: u.searchParams.get('section') || 'general' })})`); return send({ ok: true }); }
       if (u.pathname === '/twitch-key') { twitch.key(u.searchParams.get('a')); return send({ ok: true }); }
       if (u.pathname === '/twitch-play') { playTwitch(u.searchParams.get('video') ? { video: u.searchParams.get('video'), time: u.searchParams.get('time') || '' } : { channel: u.searchParams.get('channel') }); return send({ ok: true }); }
@@ -934,10 +1002,10 @@ async function consoleGames(consoleId, moduleId, fresh) {
 }
 
 let recent = null; // [{ moduleId, rom, title, region, type, cover, t }]
-const loadRecent = () => (recent = recent || readSecret(RECENT_FILE, []));
+const loadRecent = () => (recent = recent || readGames(RECENT_FILE));
 const FAV_FILE = path.join(DATA, 'favorites.dat');
 let favGames = null;
-const loadFavs = () => (favGames = favGames || readSecret(FAV_FILE, []));
+const loadFavs = () => (favGames = favGames || readGames(FAV_FILE));
 
 async function launchGame(moduleId, rom) {
   const mod = await moduleById(moduleId);
@@ -954,7 +1022,7 @@ async function launchGame(moduleId, rom) {
   if (r.ok) {
     loadRecent();
     recent = [{ moduleId, ...game, t: Date.now() }, ...recent.filter((x) => x.rom !== rom)].slice(0, 20);
-    writeSecret(RECENT_FILE, recent);
+    writeGames(RECENT_FILE, recent);
   }
   return r;
 }
@@ -1271,7 +1339,7 @@ async function relinkFolder(from, to) {
   for (const [file, load, set] of [[RECENT_FILE, loadRecent, (v) => (recent = v)], [FAV_FILE, loadFavs, (v) => (favGames = v)]]) {
     const before = load(), after = deep(before);
     const n = before.filter((x, i) => JSON.stringify(x) !== JSON.stringify(after[i])).length;
-    if (n) { set(after); writeSecret(file, after); done[file === RECENT_FILE ? 'recent' : 'favourites'] = n; }
+    if (n) { set(after); writeGames(file, after); done[file === RECENT_FILE ? 'recent' : 'favourites'] = n; }
   }
   // covers: each game file in the new place takes the cover of the same file in the old place
   if (server) {
@@ -1444,12 +1512,12 @@ function registerIpc() {
     const has = favGames.some((x) => x.rom === game.rom);
     favGames = has ? favGames.filter((x) => x.rom !== game.rom)
       : [...favGames, { moduleId: game.moduleId, rom: game.rom, title: game.title, region: game.region, type: game.type, cover: game.cover }];
-    writeSecret(FAV_FILE, favGames);
+    writeGames(FAV_FILE, favGames);
     return !has;
   });
   ipcMain.handle('recent-remove', (e, rom) => {
     recent = loadRecent().filter((x) => x.rom !== rom);
-    writeSecret(RECENT_FILE, recent);
+    writeGames(RECENT_FILE, recent);
     return true;
   });
   ipcMain.handle('emu-cores', async (e, moduleId) => {
@@ -1461,7 +1529,8 @@ function registerIpc() {
   // The games folder: where most emulators' game folders already are
   const gamesRoot = async (mods) => {
     // set in Settings → Emulators → Games folder; else guessed from the emulators' game folders
-    if (config.settings.gamesFolder && fs.existsSync(config.settings.gamesFolder)) return config.settings.gamesFolder;
+    const set = P.resolve(config.settings.gamesFolder || '');
+    if (set && fs.existsSync(set)) return set;
     const count = new Map();
     // (a console folder inside a maker folder counts for the folder above: <root>\Nintendo\Nintendo Snes)
     const makers = new Set(emuInstaller.CONSOLES.map((c) => c.maker.toLowerCase()).concat(['microsoft', 'philips', 'coleco', 'snk', 'sony', 'sega', 'nintendo']));
@@ -1534,6 +1603,16 @@ function registerIpc() {
     return true;
   });
   ipcMain.handle('controller-status', () => controllerStatus());
+  // Player 1 = the first controller in every installed emulator that has no controller set (pad-defaults.js)
+  ipcMain.handle('pads-setup', async () => {
+    const pads = require('./pad-defaults');
+    const done = [];
+    for (const m of await emuModules.scan(emuDir())) {
+      const id = emuInstaller.emuIdOf(m);
+      if (id && m.ok && pads.apply(id, path.dirname(m.exe))) done.push(m.name);
+    }
+    return [...new Set(done)];
+  });
   ipcMain.handle('apps-status', (e, check) => appInstaller.status(net, !!check));
   ipcMain.handle('apps-install', (e, ids) => installApps(ids));
   ipcMain.handle('self-check', async () => { try { return await selfUpdate.check(net); } catch (err) { return { error: err.message }; } });
@@ -1572,17 +1651,21 @@ function registerIpc() {
   ipcMain.handle('setup-find', () => setupScan.findGamesFolders([P.ROOT]));
   ipcMain.handle('setup-scan', async (e, root) => setupScan.scanGames(root || await gamesRoot(await emuModules.scan(emuDir())), await emuModules.scan(emuDir())));
   ipcMain.handle('setup-root', async () => gamesRoot(await emuModules.scan(emuDir())));
+  // MediaDeck's own Games folder (portable): made with a folder per console when it isn't there
+  ipcMain.handle('setup-starter', () => { const made = emuInstaller.makeStarterFolders(P.GAMES); return { path: P.GAMES, made }; });
   ipcMain.handle('bios-status', async (e, systems) => setupScan.biosStatus(P.BIOS, await emuModules.scan(emuDir()), systems));
   ipcMain.handle('bios-sync', async () => setupScan.biosSync(P.BIOS, await emuModules.scan(emuDir())));
   ipcMain.handle('bios-open', (e, sub) => { const d = path.join(P.BIOS, sub || ''); fs.mkdirSync(d, { recursive: true }); return shell.openPath(d); });
-  ipcMain.handle('app-info', () => ({ dataDir: DATA, emuDir: emuDir(), appsDir: P.APPS, appDir: P.ROOT, version: app.getVersion(), electron: process.versions.electron }));
+  ipcMain.handle('app-info', () => ({ dataDir: DATA, emuDir: emuDir(), appsDir: P.APPS, appDir: P.ROOT, gamesDir: P.GAMES, version: app.getVersion(), electron: process.versions.electron }));
   ipcMain.handle('save-config', (e, next) => {
     // The window's size and full-screen state belong to this process; keep them.
     const { fullscreen, window } = config.settings;
-    const hideBefore = config.settings.hideCursor;
-    config = { ...next, settings: { ...next.settings, fullscreen, window } };
+    const hideBefore = config.settings.hideCursor, portableBefore = portableData();
+    // the games folder: relative when it is inside MediaDeck's folder (Games), so the folder can move
+    config = { ...next, settings: { ...next.settings, fullscreen, window, gamesFolder: P.rel(next.settings.gamesFolder || '') } };
     writeJson(CONFIG_FILE, config);
     if (config.settings.hideCursor !== hideBefore) startCursorHide();
+    if (portableData() !== portableBefore) relockAll();
     return true;
   });
   ipcMain.handle('launch', (e, tile) => launch(tile));

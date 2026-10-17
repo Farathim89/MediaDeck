@@ -116,7 +116,8 @@ const Settings = (() => {
         { label: 'BIOS check', desc: 'Which BIOS files your consoles need, which are there, and where they go', type: 'action', run: () => App.open(Setup, { only: 'bios' }) },
         { label: 'Check for updates', desc: 'Newer versions of your emulators. Settings, saves and BIOS stay.', type: 'action', icon: 'refresh',
           value: () => (updateInfo == null ? '' : updateInfo ? `${updateInfo} available` : 'All up to date'), run: () => updateEmulators() },
-        { label: 'Games folder', desc: 'Where your games are, one folder per console (or per maker, then console). New emulators get their console\'s folder from here.', type: 'folder', key: 'gamesFolder' },
+        { label: 'Games folder', desc: 'Where your games are, one folder per console (or per maker, then console). New emulators get their console\'s folder from here.', type: 'folder', key: 'gamesFolder',
+          value: () => fullPath(s().gamesFolder) },
         { label: 'Emu_modules folder', desc: 'Put an emulator\'s folder here and it shows up in the app', type: 'folder', key: 'emuModulesPath',
           value: () => s().emuModulesPath || (info && info.emuDir) || '', after: () => rescan(true) },
         { label: 'Recently played', desc: 'Where the last 5 games show on the Consoles tab', type: 'choice', key: 'recentPosition', options: () => [
@@ -138,6 +139,11 @@ const Settings = (() => {
     {
       id: 'controllers', title: 'Controllers', icon: 'gamepad', desc: 'PlayStation controllers work everywhere through DS4Windows',
       items: () => [
+        { label: 'Set up the controller in the emulators', desc: 'Player 1 = your first controller in every emulator that has none set yet (buttons by position). Controls you set yourself stay.', type: 'action',
+          run: async () => {
+            const r = await api.padsSetup();
+            UI.toast(r.length ? `Controller set up in ${r.join(', ')}` : 'Every emulator has a controller set up already', { icon: 'check', duration: 5000 });
+          } },
         { label: 'ViGEmBus driver', desc: 'Required: lets DS4Windows make a virtual Xbox controller', type: 'action',
           value: () => ctlLabel(ctl && ctl.vigem), run: () => installPart('vigem', 'ViGEmBus') },
         { label: 'HidHide driver', desc: 'Hides the real PS4 controller from games, so they don\'t see it twice', type: 'action',
@@ -182,6 +188,8 @@ const Settings = (() => {
         { label: 'Check for MediaDeck updates', desc: 'From MediaDeck\'s GitHub releases. Your settings, apps and emulators stay.', type: 'action',
           value: () => (selfLatest ? `${selfLatest} available - install` : ''), run: () => selfUpdateNow() },
         { label: 'Check for MediaDeck updates at start', desc: 'At every start: when there is a new version, a window asks whether to update (never while a game runs)', type: 'toggle', key: 'checkMediaDeckUpdates' },
+        { label: 'Portable: works on any PC', desc: 'On: history, favourites and covers are locked with a key in MediaDeck\'s data folder, so the MediaDeck folder works on another PC or a USB stick. '
+          + 'Off: locked to this Windows account (more private; on another PC they are not readable).', type: 'toggle', key: 'portableData' },
         { label: 'App folder', type: 'info', value: () => (info ? info.appDir : '') },
         { label: 'Exit MediaDeck', type: 'action', run: () => api.quit() },
       ],
@@ -387,6 +395,9 @@ const Settings = (() => {
       if (item && item.value) b.querySelector('.setting-value').innerHTML = valueHtml(item);
     });
   }
+
+  // A path saved relative to MediaDeck's folder (Games) as a full one
+  const fullPath = (p) => (p && !/^([a-z]:|\\)/i.test(p) && info && info.appDir ? `${info.appDir}\\${p}` : p || '');
 
   function valueHtml(item) {
     if (item.type === 'toggle') return `<span class="switch${s()[item.key] !== false && s()[item.key] ? ' on' : ''}"><i></i></span>`;

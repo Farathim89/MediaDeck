@@ -1,6 +1,29 @@
 # Your games folder
 
-MediaDeck finds your games by their folders: **one games folder, with one folder per console in it**, named after the console. Settings → Emulators → *Games folder* tells MediaDeck where it is (the first-start setup finds it by itself).
+MediaDeck finds your games by their folders: **one games folder, with one folder per console in it**, named after the console.
+
+## MediaDeck's own Games folder (portable)
+
+A new MediaDeck makes `MediaDeck\Games` at its first start, with a folder for every console it has an emulator for, sorted by maker:
+
+```
+MediaDeck\Games\
+  Nintendo\
+    NES\   SNES\   Nintendo 64\   Game Boy\   Game Boy Advance\   GameCube\   Wii\   Nintendo DS\ …
+  Sony\
+    PlayStation\   PlayStation 2\   PSP\   PlayStation 3\ …
+  Sega\
+    Master System\   Mega Drive\   Mega CD\   Saturn\   Dreamcast\ …
+  Atari\   Microsoft\   NEC\   SNK\   Commodore\   Arcade\ …
+```
+
+Put each game in its console's folder and that's it. Empty consoles don't show up on the Home screen.
+
+Because the games are inside the MediaDeck folder, **the whole thing is portable**: copy the MediaDeck folder to another drive or a USB stick and it works on any PC, whatever its drive letter - games, emulators, saves, settings and box art included. (Game folders inside MediaDeck are saved relative to it; Settings → About → *Portable: works on any PC* keeps history, favourites and covers readable on other PCs.)
+
+## A games folder you already have
+
+Already have your games somewhere else? The first-start setup finds games folders on your drives and offers them; Settings → Emulators → *Games folder* changes it any time. Any layout like this works:
 
 ```
 Games\

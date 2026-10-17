@@ -57,6 +57,34 @@ const CONSOLES = [
   { id: 'arcade', name: 'Arcade', maker: 'Arcade', folder: 'Arcade\\MAME', games: ['Arcade', 'MAME'], emus: ['mame'] },
 ];
 
+// The games folders a new MediaDeck makes in its own Games folder (Games\<maker>\<name>), per console: short, plain
+// names (a name with its own maker folder: 'Coleco/ColecoVision'); the emulators find them like the names in "games" above
+const STARTER = {
+  nes: ['NES'], snes: ['SNES'], n64: ['Nintendo 64'], gb: ['Game Boy', 'Game Boy Color', 'Game Boy Advance'], gcwii: ['GameCube', 'Wii'],
+  nds: ['Nintendo DS'], '3ds': ['Nintendo 3DS'], wiiu: ['Wii U'], vb: ['Virtual Boy'],
+  ps1: ['PlayStation'], ps2: ['PlayStation 2'], psp: ['PSP'], ps3: ['PlayStation 3'], vita: ['PS Vita'], ps4: ['PlayStation 4'],
+  sms: ['Master System', 'SG-1000'], md: ['Mega Drive', '32X', 'Mega CD'], saturn: ['Saturn'], dc: ['Dreamcast'], gg: ['Game Gear'],
+  pce: ['PC Engine'], pcfx: ['PC-FX'], ngp: ['Neo Geo Pocket', 'Neo Geo Pocket Color'], a2600: ['Atari 2600'], lynx: ['Atari Lynx'],
+  a800: ['Atari 800', 'Atari 5200'], xbox: ['Xbox'], x360: ['Xbox 360'], wswan: ['WonderSwan', 'WonderSwan Color'], model3: ['Sega Model 3'],
+  amiga: ['Amiga'], cd32: ['Amiga CD32'], c64: ['Commodore 64'], zx: ['ZX Spectrum'], apple2: ['Apple II'], msx: ['MSX', 'MSX2', 'Coleco/ColecoVision'],
+  dos: ['DOS'], x16: ['Commander X16'], flash: ['Flash'], arcade: ['MAME'],
+};
+for (const c of CONSOLES) c.games = [...new Set([...(c.games || []), ...(STARTER[c.id] || []).map((n) => n.split('/').pop())])];
+
+// Makes Games\<maker>\<console> for every console (only folders that aren't there; nothing else is touched).
+// Returns how many were made.
+function makeStarterFolders(root) {
+  let made = 0;
+  for (const c of CONSOLES) {
+    for (const name of STARTER[c.id] || []) {
+      const dir = name.includes('/') ? path.join(root, name) : path.join(root, c.maker, name);
+      if (fs.existsSync(dir)) continue;
+      try { fs.mkdirSync(dir, { recursive: true }); made++; } catch {}
+    }
+  }
+  return made;
+}
+
 // Emulators. exe: the program to look for after unpacking. multi: shared by several consoles
 // (goes to Multi-system). portable: files that make it keep its settings in its own folder.
 const EMULATORS = {
@@ -133,13 +161,13 @@ const EMULATORS = {
     src: { gh: 'stella-emu/stella', asset: /windows\.zip$/i } },
   xemu: { name: 'xemu', desc: 'Original Xbox (needs the Xbox BIOS / HDD image)', exe: /^xemu\.exe$/i,
     src: { gh: 'xemu-project/xemu', asset: /^xemu-[\d.]+-windows-x86_64\.zip$/i },
-    biosTo: 'bios', biosFiles: /^(mcpx_1\.0\.bin|Complex_4627\.bin|xbox_hdd\.qcow2|xbox_eeprom\.bin)$/i },
+    portable: ['xemu.toml'], biosTo: 'bios', biosFiles: /^(mcpx_1\.0\.bin|Complex_4627\.bin|xbox_hdd\.qcow2|xbox_eeprom\.bin)$/i },
   cemu: { name: 'Cemu', desc: 'Wii U', exe: /^cemu\.exe$/i,
     src: { gh: 'cemu-project/Cemu', asset: /windows-x64\.zip$/i }, portable: ['portable/'] },
   vita3k: { name: 'Vita3K', desc: 'PS Vita (install the PS Vita firmware from its menu)', exe: /^vita3k\.exe$/i,
-    src: { gh: 'Vita3K/Vita3K', asset: /^windows-latest\.zip$/i } },
+    src: { gh: 'Vita3K/Vita3K', asset: /^windows-latest\.zip$/i }, portable: ['portable/'] },
   shadps4: { name: 'shadPS4', desc: 'PlayStation 4 (early: few games run)', exe: /^shadps4\.exe$/i,
-    src: { gh: 'shadps4-emu/shadPS4', asset: /win64.*\.zip$/i } },
+    src: { gh: 'shadps4-emu/shadPS4', asset: /win64.*\.zip$/i }, portable: ['user/'] },
   xenia: { name: 'Xenia', desc: 'Xbox 360 (Canary build)', exe: /^xenia_canary\.exe$/i,
     src: { gh: 'xenia-canary/xenia-canary-releases', asset: /windows.*\.zip$/i }, portable: ['portable.txt'] },
   mame: { name: 'MAME', desc: 'Arcade (current MAME; needs matching ROM sets)', exe: /^mame\.exe$/i,
@@ -147,6 +175,8 @@ const EMULATORS = {
   retroarch: { name: 'RetroArch', desc: 'All-in-one (cores); used where no standalone exists', exe: /^retroarch\.exe$/i, multi: true,
     src: { page: 'https://www.retroarch.com/?page=platforms', link: /https:\/\/buildbot\.libretro\.com\/stable\/[\d.]+\/windows\/x86_64\/RetroArch\.7z/ } },
 };
+
+const { READY } = require('./pad-defaults');
 
 // ---- where things are ---------------------------------------------------------------------
 function targetDir(emuDir, emuId, consoleId) {
@@ -161,7 +191,9 @@ function catalog(installedModules) {
   const have = new Set(installedModules.map((m) => String(m.name || '').toLowerCase()));
   return CONSOLES.map((c) => ({
     id: c.id, name: c.name, maker: c.maker,
-    emulators: c.emus.map((id) => ({ id, name: EMULATORS[id].name, desc: EMULATORS[id].desc, installed: have.has(EMULATORS[id].name.toLowerCase()) })),
+    // the ones that play with the controller straight away first (the setup suggests the first one)
+    emulators: [...c.emus].sort((a, b) => Number(READY.has(b)) - Number(READY.has(a)))
+      .map((id) => ({ id, name: EMULATORS[id].name, desc: EMULATORS[id].desc, pad: READY.has(id), installed: have.has(EMULATORS[id].name.toLowerCase()) })),
   }));
 }
 
@@ -322,13 +354,15 @@ async function install(emuId, consoleId, opts) {
         }
       }
     }
+    // player 1 = the first controller, ready to play (pad-defaults.js; after the BIOS: PCSX2 needs to know it's there)
+    const padSet = require('./pad-defaults').apply(emuId, dest, { installed: true });
     // the console's game folders (those that exist)
     const romFolders = [];
     for (const cc of e.multi ? CONSOLES.filter((x) => x.emus.includes(emuId)) : [c]) {
       for (const g of cc.games || []) romFolders.push(...gameFolders(opts.gamesRoot, g));
     }
     say(`${e.name} ${version} installed`, 1);
-    return { name: e.name, version, stamp, emuId, dir: dest, biosCopied, romFolders: [...new Set(romFolders)] };
+    return { name: e.name, version, stamp, emuId, dir: dest, biosCopied, padSet, romFolders: [...new Set(romFolders)] };
   } finally {
     fsp.rm(work, { recursive: true, force: true }).catch(() => {});
   }
@@ -402,4 +436,4 @@ async function update(mod, opts) {
   }
 }
 
-module.exports = { CONSOLES, EMULATORS, catalog, install, targetDir, resolveUrl, checkUpdates, update, emuIdOf, githubLatest, download, unpack, findExeDir };
+module.exports = { CONSOLES, EMULATORS, STARTER, makeStarterFolders, catalog, install, targetDir, resolveUrl, checkUpdates, update, emuIdOf, githubLatest, download, unpack, findExeDir };

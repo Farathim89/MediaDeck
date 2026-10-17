@@ -16,6 +16,15 @@ MediaDeck works with Xbox controllers, PlayStation controllers (DualShock 4, Dua
 
 In the video player: **LB / RB** previous / next file, **LT / RT** a big skip back / forward, **Y** the player's options (subtitles, audio, speed).
 
+## In the games: set up for you
+
+Every emulator MediaDeck installs is set up for your controller straight away: **player 1 is your first controller** (Xbox, or PlayStation through DS4Windows), with the buttons by position - the console's bottom button is your bottom button (A / Cross), the right one B / Circle, and so on. Save / load state, pause and the emulator's menu are in the PS / Guide menu, the same for every emulator.
+
+- Emulators you added yourself, or installed before: Settings → Controllers → *Set up the controller in the emulators*. Only emulators that have no controller set yet get one; controls you set yourself stay.
+- Set up by MediaDeck: DuckStation, PCSX2, RPCS3, Dolphin (GameCube pad, and a Wii Remote + Nunchuk on the controller), melonDS, Azahar, RMG, Cemu, Mesen, Snes9x, mGBA, Supermodel, Ymir.
+- Find the controller by themselves: PPSSPP, Flycast, BlastEm, xemu, Xenia, Vita3K, shadPS4, Stella, MAME, RetroArch.
+- The emulator's own controller settings: the PS / Guide menu over a game → *Emulator options*.
+
 ## Over a game: the PS / Guide menu
 
 Press **PS / Guide** (or hold Back + Start) while a game runs. MediaDeck comes to the front with:

@@ -92,14 +92,17 @@ function consoleFolders(root) {
   for (const d of top) {
     const p = path.join(root, d.name);
     const sys = systemOf(d.name);
-    if (sys) { out.push({ system: sys, folder: p }); continue; }
+    const subs = [];
     try {
       for (const e of fs.readdirSync(p, { withFileTypes: true })) {
         if (!e.isDirectory() || e.name.startsWith('_')) continue;
         const s2 = systemOf(e.name);
-        if (s2) out.push({ system: s2, folder: path.join(p, e.name) });
+        if (s2) subs.push({ system: s2, folder: path.join(p, e.name) });
       }
     } catch {}
+    // a maker folder whose own name is a console too (MSX\MSX2, Arcade\Sega Model 3): its console folders count
+    if (sys && !subs.some((x) => x.system !== sys)) out.push({ system: sys, folder: p });
+    else out.push(...subs);
   }
   return out;
 }

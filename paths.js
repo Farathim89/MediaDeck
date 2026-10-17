@@ -5,6 +5,7 @@
 // ROOT\Apps            apps installed from MediaDeck (PlexDeck, ABS-DA, Streamlink, mpv, DS4Windows …)
 // ROOT\Emu_modules     emulators;  ROOT\Emulator backups  files an emulator update replaced
 // ROOT\BIOS            BIOS files you add yourself (never shipped or downloaded)
+// ROOT\Games           a new MediaDeck's games folder: Games\<maker>\<console>, made at the first start
 // TOOLS                MediaDeck's own helper programs (outside app.asar, so Windows can run them)
 const { app } = require('electron');
 const path = require('path');
@@ -21,6 +22,7 @@ module.exports = {
   EMU: path.join(ROOT, 'Emu_modules'),
   EMU_BACKUPS: path.join(ROOT, 'Emulator backups'),
   BIOS: path.join(ROOT, 'BIOS'),
+  GAMES: path.join(ROOT, 'Games'),
   tool: (name) => path.join(TOOLS, name),
   // Paths inside MediaDeck's folder are stored relative to it (Apps\PlexDeck\PlexDeck.exe), so the
   // folder can move (another drive, a USB stick); resolve() turns them back into full paths

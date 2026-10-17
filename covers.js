@@ -42,7 +42,7 @@ const SYSTEMS = [
   [/game ?boy advance|gba/, 'Nintendo - Game Boy Advance'],
   [/game ?boy color|\bgbc\b/, 'Nintendo - Game Boy Color'],
   [/game ?boy|\bgb\b/, 'Nintendo - Game Boy'],
-  [/\bnes\b|8-bit|famicom/, 'Nintendo - Nintendo Entertainment System'],
+  [/\bnes\b|(?<!atari ?)8-bit|famicom/,'Nintendo - Nintendo Entertainment System'],
   [/atari ?2600/, 'Atari - 2600'],
   [/atari ?5200/, 'Atari - 5200'],
   [/atari ?7800/, 'Atari - 7800'],

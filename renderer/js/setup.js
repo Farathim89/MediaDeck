@@ -9,6 +9,10 @@ const Setup = (() => {
   ];
   let step = 0, only = null;
   let root = '', candidates = null, rows = null, bios = null, picks = new Set(), busy = false, padTimer = null, lastPress = '';
+  let appDirs = null, catalog = null;
+  const isOwn = (p) => !!(p && appDirs && p.toLowerCase().replace(/[\\/]+$/, '') === String(appDirs.gamesDir || '').toLowerCase());
+  // With no games yet (a new MediaDeck\Games): the emulators for the best-known consoles, none ticked
+  const POPULAR = ['nes', 'snes', 'n64', 'gb', 'nds', 'gcwii', 'ps1', 'ps2', 'psp', 'md', 'saturn', 'dc'];
   const s = () => App.state.config.settings;
   const save = () => api.saveConfig(App.state.config);
   const esc = (t) => UI.esc(t);
@@ -48,7 +52,7 @@ const Setup = (() => {
 
   // The games folder and its consoles, for whichever step needs them first (also when a step is opened alone)
   async function ensureRows(title) {
-    if (!root) root = s().gamesFolder || await api.setupRoot() || '';
+    if (!root) root = await api.setupRoot() || '';
     if (root && !rows) { busyFrame(title, 'Counting the games…'); rows = await api.setupScan(root); }
   }
 
@@ -59,45 +63,67 @@ const Setup = (() => {
         'Your games, films, music, YouTube and Twitch on the TV, all with the controller.<br>This setup takes a minute: '
         + 'it finds your games, installs the emulators that play them, checks BIOS files and your controller, and gets box art. '
         + 'Every step can be skipped, and everything can be changed later in Settings.',
-        info('What you need', 'Your games in a folder, one folder per console - for example Games\\SNES, Games\\PlayStation '
-          + '(maker folders like Games\\Nintendo\\SNES work too). MediaDeck never downloads games or BIOS files.', '🎮'),
+        info('Your games', 'MediaDeck has its own Games folder with a folder for every console, ready made (Games\\Nintendo\\SNES, Games\\Sony\\PlayStation …) - '
+          + 'or use a games folder you already have. MediaDeck never downloads games or BIOS files.', '🎮')
+        + info('Portable', 'Everything stays in the MediaDeck folder - settings, emulators, saves, covers and the games in its Games folder. '
+          + 'Copy it to another drive or a USB stick and it works on any PC.', '💾'),
         button('skip', 'Skip setup') + button('next', 'Start', true));
     },
 
     async games() {
-      if (!root) root = s().gamesFolder || await api.setupRoot() || '';
-      if (!root && !candidates) {
-        busyFrame('Your games', 'Looking for your games on this PC… (this can take a moment)');
-        candidates = await api.setupFind();
-        root = (candidates[0] && candidates[0].path) || '';
-      }
+      if (!appDirs) appDirs = await api.appInfo();
+      if (!root) root = await api.setupRoot() || '';
+      const own = isOwn(root);
       if (root && !rows) { busyFrame('Your games', 'Counting the games…'); rows = await api.setupScan(root); }
       const games = (rows || []).reduce((a, r) => a + r.games, 0);
-      const list = root
-        ? row({ act: 'pick', label: root, desc: rows && rows.length ? `${n(rows.length, 'console', 'consoles')} · ${n(games, 'game', 'games')}` : 'No console folders found in it', value: 'Change…', icon: rows && rows.length ? OK : NO })
-          + (candidates || []).filter((c) => c.path !== root).slice(0, 3).map((c) => row({ act: 'use', id: c.path, label: c.path, desc: `${n(c.consoles, 'console folder', 'console folders')} - use this one instead`, icon: OPT })).join('')
-          + (rows && rows.length ? `<div class="setup-consoles">${rows.slice(0, 40).map((r) => `<span>${esc(r.name)} <i>${r.games}</i></span>`).join('')}</div>` : '')
-        : row({ act: 'pick', label: 'Choose your games folder…', desc: 'No games folder found on this PC', icon: NO });
-      frame('Your games', 'MediaDeck looks for one folder per console, named after it (SNES, PlayStation 2, Mega Drive …). '
-        + 'Is this where your games are?', list, button('back', 'Back') + button('next', root ? 'Use this folder' : 'Skip', true));
+      // MediaDeck's own Games folder still empty (or none set): games somewhere else on this PC are offered too
+      if ((!root || (own && !games)) && !candidates) {
+        busyFrame('Your games', 'Looking for games on this PC… (this can take a moment)');
+        candidates = await api.setupFind();
+      }
+      const counts = rows && rows.length ? `${n(rows.length, 'console', 'consoles')} · ${n(games, 'game', 'games')}` : '';
+      const others = (candidates || []).filter((c) => c.path !== root).slice(0, 3)
+        .map((c) => row({ act: 'use', id: c.path, label: c.path, desc: `${n(c.consoles, 'console', 'consoles')} · ${n(c.games, 'game', 'games')} - use this folder instead`, icon: OPT })).join('');
+      const list = (own
+        ? row({ act: 'openown', label: `${root} (MediaDeck's own)`, icon: OK, value: 'Open',
+          desc: games ? counts : 'Ready: a folder for every console (Nintendo\\SNES, Sony\\PlayStation, Sega\\Mega Drive …) - put your games in them. '
+            + 'It moves with MediaDeck: copy the MediaDeck folder to another drive or a USB stick and your games come along.' })
+        : (root ? row({ act: 'pick', label: root, desc: counts || 'No console folders found in it', value: 'Change…', icon: rows && rows.length ? OK : NO }) : '')
+          + row({ act: 'own', label: 'Use MediaDeck\'s own Games folder', icon: OPT,
+            desc: 'Portable: MediaDeck\\Games, with a folder for every console made for you. Copy the MediaDeck folder anywhere and the games come along.' }))
+        + (others ? `<div class="settings-heading">${own && !games ? 'Games found on this PC' : 'Other games folders'}</div>${others}` : '')
+        + (own || !root ? row({ act: 'pick', label: 'Choose another folder…', desc: 'A folder with one folder per console, anywhere on this PC', value: 'Change…', icon: OPT }) : '')
+        + (rows && rows.length ? `<div class="setup-consoles">${rows.slice(0, 40).map((r) => `<span>${esc(r.name)} <i>${r.games}</i></span>`).join('')}</div>` : '');
+      frame('Your games', own && !games
+        ? 'Your games go in MediaDeck\'s own Games folder: one folder per console, already made. Already have games somewhere? Pick that folder below.'
+        : 'MediaDeck looks for one folder per console, named after it (SNES, PlayStation 2, Mega Drive …). Is this where your games are?',
+        list, button('back', 'Back') + button('next', root ? 'Use this folder' : 'Skip', true));
     },
 
     async emulators() {
       await ensureRows('Emulators');
-      const need = (rows || []).filter((r) => r.emulator && !r.installed.length);
+      const empty = !(rows || []).length;
+      if (empty && !catalog) catalog = await api.installCatalog();
+      const need = empty
+        ? POPULAR.map((id) => (catalog || []).find((c) => c.id === id)).filter((c) => c && !c.emulators.some((e) => e.installed))
+          .map((c) => ({ consoleId: c.id, consoleName: c.name, emulator: c.emulators[0], installed: [], games: 0 }))
+        : (rows || []).filter((r) => r.emulator && !r.installed.length);
+      views.emulators.need = need;
       const have = (rows || []).filter((r) => r.installed.length);
       const none = (rows || []).filter((r) => !r.emulator && !r.installed.length);
-      if (!picks.size && !views.emulators.touched) need.forEach((r) => picks.add(r.consoleId));
+      if (!picks.size && !views.emulators.touched && !empty) need.forEach((r) => picks.add(r.consoleId));
       const seen = new Set();
       const body = (need.length ? need.filter((r) => !seen.has(r.consoleId) && seen.add(r.consoleId)).map((r) => row({
         act: 'tick', id: r.consoleId, label: `${r.consoleName} - ${r.emulator.name}`,
-        desc: `${r.emulator.desc || ''}${r.emulator.desc ? ' · ' : ''}${n(r.games, 'game', 'games')}`,
+        desc: `${r.emulator.desc || ''}${r.emulator.desc ? ' · ' : ''}${empty ? 'for when you add its games' : n(r.games, 'game', 'games')}`,
         value: `<span class="switch${picks.has(r.consoleId) ? ' on' : ''}"><i></i></span>` })).join('') : '')
         + (have.length ? `<div class="settings-heading">Already installed</div>` + have.map((r) => info(`${r.name} - ${r.installed.join(', ')}`, n(r.games, 'game', 'games'), OK)).join('') : '')
         + (none.length ? `<div class="settings-heading">No emulator in MediaDeck yet</div>` + none.map((r) => info(r.name, `${n(r.games, 'game', 'games')} - add an emulator for it to Emu_modules yourself`, OPT)).join('') : '')
         || info('No consoles found', 'Pick your games folder in the step before, or add emulators later: Settings → Emulators → Install emulators.', OPT);
       const count = [...picks].filter((id) => need.some((r) => r.consoleId === id)).length;
-      frame('Emulators', need.length ? 'These consoles have games but no emulator yet. MediaDeck downloads the ones you tick from their official pages and sets them up (portable, in Emu_modules).'
+      frame('Emulators', empty && need.length ? 'No games yet - tick the consoles you will play and MediaDeck gets their emulators now from their official pages '
+        + '(portable, in Emu_modules), set up for your controller. Others: Settings → Emulators → Install emulators, any time.'
+        : need.length ? 'These consoles have games but no emulator yet. MediaDeck downloads the ones you tick from their official pages and sets them up (portable, in Emu_modules).'
         : 'Every console with games already has an emulator.', body,
         button('back', 'Back') + (count ? button('install', `Install ${n(count, 'emulator', 'emulators')}`, true) + button('next', 'Skip') : button('next', 'Next', true)));
     },
@@ -175,9 +201,11 @@ const Setup = (() => {
       return;
     }
     if (a === 'use') { root = id; rows = null; s().gamesFolder = id; save(); return show(step); }
+    if (a === 'own') { const r = await api.setupStarter(); root = r.path; rows = null; candidates = null; s().gamesFolder = r.path; save(); return show(step); }
+    if (a === 'openown') return api.openPath(root);
     if (a === 'tick') { views.emulators.touched = true; picks.has(id) ? picks.delete(id) : picks.add(id); return views.emulators(); }
     if (a === 'install') {
-      const list = (rows || []).filter((r) => picks.has(r.consoleId) && r.emulator && !r.installed.length)
+      const list = (views.emulators.need || []).filter((r) => picks.has(r.consoleId) && r.emulator && !r.installed.length)
         .filter((r, i, all) => all.findIndex((x) => x.consoleId === r.consoleId) === i).map((r) => ({ emuId: r.emulator.id, consoleId: r.consoleId }));
       if (!list.length) return;
       busy = true;
@@ -249,7 +277,7 @@ const Setup = (() => {
   function init() {}
   function enter(params = {}) {
     only = params.only || null;
-    root = ''; candidates = null; rows = null; bios = null; picks = new Set(); views.emulators.touched = false; lastPress = '';
+    root = ''; candidates = null; rows = null; catalog = null; bios = null; picks = new Set(); views.emulators.touched = false; lastPress = '';
     Nav.setRoot(el);
     UI.glow(null);
     show(only ? STEPS.findIndex((x) => x.id === only) : 0);

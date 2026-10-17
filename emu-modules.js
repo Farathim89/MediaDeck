@@ -18,6 +18,11 @@ const fs = require('fs');
 const fsp = fs.promises;
 const path = require('path');
 
+// Game folders inside MediaDeck's own folder (Games\Sony\PlayStation) are saved relative to it, so the folder
+// can move (another drive letter, a USB stick); in memory they are full paths. (Without Electron: as they are.)
+const P = (() => { try { return require('./paths'); } catch { return null; } })();
+const mapFolder = (f, fn) => (!P ? f : typeof f === 'string' ? fn(f) : f && typeof f === 'object' ? { ...f, path: fn(f.path) } : f);
+
 const MODULE_FILE = 'emu-module.json';
 const POINTER_SUFFIX = '.emu.json';
 const NOT_THE_EMULATOR = /unins|update|crash|setup|install|vc_?redist|dxsetup|pkunzip|cwsdpmi|cheat|helper|elevate|7z|unrar/i;
@@ -152,7 +157,7 @@ function normalise(mod, id, baseDir, moduleFile) {
     // per file type, other start arguments: { conf: '--conf "{rom}"' }
     extArgs: mod.extArgs && typeof mod.extArgs === 'object' ? mod.extArgs : null,
     romExtensions: mod.romExtensions || [],
-    romFolders: mod.romFolders || [],
+    romFolders: (mod.romFolders || []).map((f) => mapFolder(f, P ? P.resolve : null)),
     hidden: !!mod.hidden,
     hotkeys: mod.hotkeys || {},
     control: mod.control || '',
@@ -255,7 +260,7 @@ function setInstaller(mod, rec) {
 
 function setFolders(mod, folders) {
   const data = readJson(mod.moduleFile) || {};
-  data.romFolders = folders;
+  data.romFolders = (folders || []).map((f) => mapFolder(f, P ? P.rel : null));
   writeJson(mod.moduleFile, data);
 }
 
