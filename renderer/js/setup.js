@@ -133,7 +133,9 @@ const Setup = (() => {
       busyFrame('BIOS files', 'Checking the BIOS files…');
       bios = await api.biosStatus(only ? null : (rows || []).map((r) => r.system));
       const icon = (b) => (b.ok ? OK : b.ok === null ? OPT : b.need === 'required' ? NO : OPT);
-      const state = (b) => (b.ok ? `found: ${b.found.join(', ')}` : b.ok === null ? `${b.files}` : `${b.need === 'required' ? 'needed' : b.need === 'cd' ? 'needed for CD games' : 'optional'}: ${b.files}`);
+      // missing: the recommended file names (any one for your region, or all of them for consoles that need several)
+      const recText = (b) => (b.rec && b.rec.length ? `${b.allParts ? 'all of' : b.rec.length > 1 ? 'one of' : ''} ${b.rec.map((r) => `${r.name} (${r.what})`).join(b.allParts ? ', ' : ' · ')}`.trim() : b.files);
+      const state = (b) => (b.ok ? `found: ${b.found.join(', ')}` : b.ok === null ? recText(b) : `${b.need === 'required' ? 'needed' : b.need === 'cd' ? 'needed for CD games' : 'optional'}: ${recText(b)}`);
       const missing = bios.filter((b) => b.ok === false && b.need === 'required').length;
       const body = bios.length ? bios.map((b) => row({ act: 'biosdir', id: b.folder, label: b.name, desc: state(b), icon: icon(b),
         value: b.ok ? '' : 'Open its folder' })).join('') : info('No BIOS needed', 'None of your consoles needs a BIOS file.', OK);

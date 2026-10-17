@@ -30,26 +30,26 @@ Settings → Emulators → **BIOS check** shows, for every console you have game
 
 ## Which consoles need one
 
-| Console | Folder in `BIOS` | Files | Needed? |
+| Console | Folder in `BIOS` | Recommended files | Needed? |
 | --- | --- | --- | --- |
-| PlayStation | `Sony - PlayStation` | `scph5501.bin` (USA), `scph5502.bin` (Europe) or `scph5500.bin` (Japan) - one is enough | required |
-| PlayStation 2 | `Sony - PlayStation 2` | a PS2 BIOS dump (`.bin`), e.g. SCPH-70004 (Europe) or SCPH-39001 (USA) | required |
-| PlayStation 3 | - | firmware `PS3UPDAT.PUP` from playstation.com, installed from RPCS3's *File* menu | required |
-| Switch | `Nintendo - Switch` | `prod.keys` (+ `title.keys`) and a firmware `.zip` from your own Switch, installed in Ryujinx | required |
-| Saturn | `Sega - Saturn` | `mpr-17933.bin` (USA / Europe) or `sega_101.bin` (Japan) | required |
-| Sega CD | `Sega - Mega CD - Sega CD` | `bios_CD_U.bin` / `bios_CD_E.bin` / `bios_CD_J.bin` | for Sega CD games |
-| PC Engine CD | `NEC - PC Engine CD` | `syscard3.pce` | for CD games |
-| PC-FX | `NEC - PC-FX` | `pcfx.rom` | required |
-| Atari Lynx | `Atari - Lynx` | `lynxboot.img` | required |
-| Neo Geo | `SNK - Neo Geo` | `neogeo.zip` | required |
-| CD-i | `Philips - CD-i` | `cdimono1.zip` | required |
-| Xbox | `Microsoft - Xbox` | `mcpx_1.0.bin`, `Complex_4627.bin` and a hard disk image `xbox_hdd.qcow2` | required |
-| Amiga CD32 | `Commodore - Amiga CD32` | the CD32 Kickstart 3.1 (40.060) and its extended ROM | required |
-| Amiga | `Commodore - Amiga` | a Kickstart ROM | required |
-| Dreamcast | `Sega - Dreamcast` | `dc_boot.bin`, `dc_flash.bin` | recommended (Flycast has a replacement) |
-| Game Boy Advance | `Nintendo - Game Boy Advance` | `gba_bios.bin` | optional |
-| Nintendo DS | `Nintendo - DS` | `bios7.bin`, `bios9.bin`, `firmware.bin` | optional |
-| GameCube | `Nintendo - GameCube` | `IPL.bin` | optional (boot animation) |
+| PS1 | `Sony - PlayStation` | one of: <br>`scph5501.bin` USA <sub>MD5 490f666e1afb15b7362b406ed1cea246</sub><br>`scph5502.bin` Europe <sub>MD5 32736f17079d0b2b7024407c39bd3050</sub><br>`scph5500.bin` Japan <sub>MD5 8dd7d5296a650fac7319bce665a6a53c</sub> | required |
+| PS2 | `Sony - PlayStation 2` | one of: <br>`ps2-0200a-20040614.bin` USA, v2.00 <sub>MD5 d333558cc14561c1fdc334c75d5f37b7</sub><br>`ps2-0200e-20040614.bin` Europe, v2.00 <sub>MD5 dc752f160044f2ed5fc1f4964db2a095</sub><br>`ps2-0200j-20040614.bin` Japan, v2.00 <sub>MD5 0eee5d1c779aa50e94edd168b4ebf42e</sub> | required |
+| PS3 | `Sony - PlayStation 3` | `PS3UPDAT.PUP` the official PS3 firmware, free from playstation.com - install it from RPCS3's File menu | required |
+| Switch | `Nintendo - Switch` | all of: <br>`prod.keys` from your own Switch<br>`title.keys` from your own Switch | required |
+| Saturn | `Sega - Saturn` | one of: <br>`mpr-17933.bin` USA / Europe <sub>MD5 3240872c70984b6cbfda1586cab68dbe</sub><br>`sega_101.bin` Japan <sub>MD5 85ec9ca47d8f6807718151cbcca8b964</sub> | required |
+| Sega CD | `Sega - Mega CD - Sega CD` | one of: <br>`bios_CD_U.bin` USA (Sega CD) <sub>MD5 2efd74e3232ff260e371b99f84024f7f</sub><br>`bios_CD_E.bin` Europe (Mega CD) <sub>MD5 e66fa1dc5820d254611fdcdba0662372</sub><br>`bios_CD_J.bin` Japan (Mega CD) <sub>MD5 278a9397d192149e84e820ac621a8edd</sub> | for CD games |
+| Dreamcast | `Sega - Dreamcast` | all of: <br>`dc_boot.bin` boot ROM <sub>MD5 e10c53c2f8b90bab96ead2d368858623</sub><br>`dc_flash.bin` flash memory (settings, region) <sub>MD5 0a93f7940c455905bea6e392dfde92a4</sub> | recommended (Flycast has a replacement) |
+| TurboGrafx-16 | `NEC - PC Engine CD` | one of: <br>`syscard3.pce` Super CD-ROM System Card 3.0 (Japan) <sub>MD5 38179df8f4ac870017db21ebcbf53114</sub><br>`syscard3u.pce` Super System Card 3.0 (USA) <sub>MD5 0754f903b52e3b3342202bdafb13efa5</sub> | for CD games |
+| PC-FX | `NEC - PC-FX` | `pcfx.rom` PC-FX BIOS <sub>MD5 08e36edbea28a017f79f8d4f7ff9b6d7</sub> | required |
+| Lynx | `Atari - Lynx` | `lynxboot.img` Lynx boot ROM <sub>MD5 fcd403db69f54290b51035d82f835e7b</sub> | required |
+| Neo Geo | `SNK - Neo Geo` | `neogeo.zip` the Neo Geo BIOS set (MAME / FBNeo) <sub>MD5 00dad01abdbf8ea9e79ad2fe11bdb182</sub> | required |
+| CD-i | `Philips - CD-i` | `cdimono1.zip` the CD-i (Mono-I) BIOS set (MAME) <sub>MD5 801c529739b83e1490b897f2d3ffbb3a</sub> | required |
+| Xbox | `Microsoft - Xbox` | all of: <br>`mcpx_1.0.bin` MCPX boot ROM (512 bytes)<br>`Complex_4627.bin` flash BIOS (1 MB)<br>`xbox_hdd.qcow2` the hard disk image (see xemu's setup guide) | required |
+| Amiga CD32 | `Commodore - Amiga CD32` | all of: <br>`kick40060.CD32` CD32 Kickstart 3.1 <sub>MD5 5f8924d013dd57a89cf349f4cdedc6b1</sub><br>`kick40060.CD32.ext` CD32 extended ROM <sub>MD5 bb72565701b1b6faece07d68ea5da639</sub> | required |
+| Amiga | `Commodore - Amiga` | one of: <br>`kick34005.A500` Kickstart 1.3 (A500) <sub>MD5 82a21c1890cae844b3df741f2762d48d</sub><br>`kick40068.A1200` Kickstart 3.1 (A1200) <sub>MD5 646773759326fbac3b2311fd8c8793ee</sub> | required |
+| GBA | `Nintendo - Game Boy Advance` | `gba_bios.bin` GBA BIOS <sub>MD5 a860e8c0b6d573d191e4ec7db1b1e4f6</sub> | optional |
+| DS | `Nintendo - DS` | all of: <br>`bios7.bin` ARM7 BIOS <sub>MD5 df692a80a5b1bc90728bc3dfc76cd948</sub><br>`bios9.bin` ARM9 BIOS <sub>MD5 a392174eb3e572fed6447e956bde4b25</sub><br>`firmware.bin` DS firmware <sub>MD5 e45033d9b0fa6b0de071292bba7c9d13</sub> | optional |
+| GameCube | `Nintendo - GameCube` | one of: <br>`gc-ntsc-12.bin` USA IPL (boot animation only) <sub>MD5 b17148254a5799684c7d783206504926</sub><br>`gc-pal-12.bin` Europe IPL (boot animation only) <sub>MD5 db92574caab77a7ec99d4605fd6f2450</sub> | optional |
 
 NES, SNES, Nintendo 64, Game Boy, Master System, Mega Drive, PC Engine (cartridges), PSP, 3DS, Xbox 360 and most others need none.
 

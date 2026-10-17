@@ -63,6 +63,37 @@ const BIOS = [
     files: 'IPL.bin (optional - only for the boot animation)' },
 ];
 
+// Recommended files per BIOS folder: the file names the emulators look for (and the BIOS import gives them),
+// what each one is, and its MD5 from bios-db.json - so a file can be checked. Names only; MediaDeck has no BIOS files.
+const RECOMMENDED = {
+  'Sony - PlayStation': [['scph5501.bin', 'USA'], ['scph5502.bin', 'Europe'], ['scph5500.bin', 'Japan']],
+  'Sony - PlayStation 2': [['ps2-0200a-20040614.bin', 'USA, v2.00'], ['ps2-0200e-20040614.bin', 'Europe, v2.00'], ['ps2-0200j-20040614.bin', 'Japan, v2.00']],
+  'Sony - PlayStation 3': [['PS3UPDAT.PUP', "the official PS3 firmware, free from playstation.com - install it from RPCS3's File menu"]],
+  'Nintendo - Switch': [['prod.keys', 'from your own Switch'], ['title.keys', 'from your own Switch']],
+  'Sega - Saturn': [['mpr-17933.bin', 'USA / Europe'], ['sega_101.bin', 'Japan']],
+  'Sega - Mega CD - Sega CD': [['bios_CD_U.bin', 'USA (Sega CD)'], ['bios_CD_E.bin', 'Europe (Mega CD)'], ['bios_CD_J.bin', 'Japan (Mega CD)']],
+  'Sega - Dreamcast': [['dc_boot.bin', 'boot ROM'], ['dc_flash.bin', 'flash memory (settings, region)']],
+  'NEC - PC Engine CD': [['syscard3.pce', 'Super CD-ROM System Card 3.0 (Japan)'], ['syscard3u.pce', 'Super System Card 3.0 (USA)']],
+  'NEC - PC-FX': [['pcfx.rom', 'PC-FX BIOS']],
+  'Atari - Lynx': [['lynxboot.img', 'Lynx boot ROM']],
+  'SNK - Neo Geo': [['neogeo.zip', 'the Neo Geo BIOS set (MAME / FBNeo)']],
+  'Philips - CD-i': [['cdimono1.zip', 'the CD-i (Mono-I) BIOS set (MAME)']],
+  'Microsoft - Xbox': [['mcpx_1.0.bin', 'MCPX boot ROM (512 bytes)'], ['Complex_4627.bin', 'flash BIOS (1 MB)'], ['xbox_hdd.qcow2', "the hard disk image (see xemu's setup guide)"]],
+  'Commodore - Amiga CD32': [['kick40060.CD32', 'CD32 Kickstart 3.1'], ['kick40060.CD32.ext', 'CD32 extended ROM']],
+  'Commodore - Amiga': [['kick34005.A500', 'Kickstart 1.3 (A500)'], ['kick40068.A1200', 'Kickstart 3.1 (A1200)']],
+  'Nintendo - Game Boy Advance': [['gba_bios.bin', 'GBA BIOS']],
+  'Nintendo - DS': [['bios7.bin', 'ARM7 BIOS'], ['bios9.bin', 'ARM9 BIOS'], ['firmware.bin', 'DS firmware']],
+  'Nintendo - GameCube': [['gc-ntsc-12.bin', 'USA IPL (boot animation only)'], ['gc-pal-12.bin', 'Europe IPL (boot animation only)']],
+};
+// consoles that need every recommended file (the others: any one, for your region)
+const ALL_PARTS = new Set(['Microsoft - Xbox', 'Sega - Dreamcast', 'Nintendo - DS', 'Commodore - Amiga CD32', 'Nintendo - Switch']);
+const MD5_OF = (() => {
+  const m = new Map();
+  try { for (const [md5, [folder, name]] of Object.entries(require('./bios-db.json').files)) if (!m.has(`${folder}|${name}`.toLowerCase())) m.set(`${folder}|${name}`.toLowerCase(), md5); } catch {}
+  return m;
+})();
+const recommended = (folder) => (RECOMMENDED[folder] || []).map(([name, what]) => ({ name, what, md5: MD5_OF.get(`${folder}|${name}`.toLowerCase()) || '' }));
+
 const GAME_EXT = new Set(('nes fds unf sfc smc swc fig n64 z64 v64 gb gbc gba nds 3ds cci cia iso bin cue chd img ccd mds pbp cso '
   + 'gdi cdi rvz wbfs gcz wia nsp xci nsz xex sms gg sg md gen smd 32x pce sgx ngp ngc a26 a52 a78 lnk lyx vb ws wsc '
   + 'adf hdf ipf d64 t64 prg tap tzx z80 dsk rom mx1 mx2 col exe conf swf zip 7z rar m3u elf pkg').split(' '));
@@ -173,7 +204,8 @@ function biosStatus(biosDir, installedModules, systems) {
     if (b.need === 'firmware') ok = null;                                  // installed inside the emulator: can't tell
     else if (b.all) ok = b.all.every((re) => files.some((f) => re.test(f)));
     else ok = files.some((f) => b.match.test(f));
-    return { system: b.system, name: covers.consoleOf({}, path.join(b.system, 'x')).console, need: b.need, files: b.files,
+    const rec = recommended(b.folder).map((r) => ({ ...r, have: files.some((f) => f.toLowerCase() === r.name.toLowerCase()) }));
+    return { system: b.system, name: covers.consoleOf({}, path.join(b.system, 'x')).console, need: b.need, files: b.files, rec, allParts: ALL_PARTS.has(b.folder),
       folder: path.join(biosDir, b.folder), ok, found: files.filter((f) => (b.all ? b.all.some((re) => re.test(f)) : b.match && b.match.test(f))).slice(0, 4) };
   });
 }
@@ -200,8 +232,10 @@ function biosSync(biosDir, installedModules) {
   return copied;
 }
 
-// BIOS\<console> for every console that needs one, each with a note of the files that go in it (made at the first
-// start and when the BIOS check opens; folders and notes that are there are left as they are). Returns how many were made.
+// BIOS\<console> for every console that needs one, each with a note of the files that go in it and the recommended
+// ones with their checksums (made at the first start and when the BIOS check opens; the note is MediaDeck's own and
+// kept up to date, nothing else in the folders is touched). Returns how many folders were made.
+const NOTE_HEAD = ' - BIOS / firmware';
 function makeBiosFolders(biosDir) {
   let made = 0;
   for (const b of BIOS) {
@@ -209,15 +243,22 @@ function makeBiosFolders(biosDir) {
     try {
       if (!fs.existsSync(dir)) { fs.mkdirSync(dir, { recursive: true }); made++; }
       const note = path.join(dir, 'What goes here.txt');
-      if (!fs.existsSync(note)) {
-        const need = b.need === 'required' ? 'Needed' : b.need === 'cd' ? 'Needed for CD games only' : b.need === 'firmware' ? 'Installed from the emulator' : 'Optional';
-        fs.writeFileSync(note, [`${covers.consoleOf({}, path.join(b.system, 'x')).console} - BIOS / firmware`, '',
-          `${need}: ${b.files}`, '', 'Dump them from your own console. MediaDeck never downloads BIOS files.',
-          'After adding them: Settings > Emulators > BIOS check > Copy BIOS files to the emulators.', ''].join('\r\n'));
-      }
+      const need = b.need === 'required' ? 'Needed' : b.need === 'cd' ? 'Needed for CD games only' : b.need === 'firmware' ? 'Installed from the emulator' : 'Optional';
+      const rec = recommended(b.folder);
+      const text = [`${covers.consoleOf({}, path.join(b.system, 'x')).console}${NOTE_HEAD}`, '', `${need}: ${b.files}`, '',
+        ...(rec.length ? [ALL_PARTS.has(b.folder) ? 'Recommended - all of these:' : rec.length > 1 ? 'Recommended - any one of these (for your region):' : 'Recommended:',
+          ...rec.map((r) => `  ${r.name.padEnd(24)} ${r.what}${r.md5 ? `   MD5 ${r.md5}` : ''}`), ''] : []),
+        'Dump them from your own console. MediaDeck never downloads BIOS files.',
+        'Have them in a folder or zip already? Settings > Emulators > BIOS check > Import BIOS files...',
+        'recognises each one by its checksum, names it and puts it here.',
+        'Added files by hand? BIOS check > Copy BIOS files to the emulators.', ''].join('\r\n');
+      let old = null;
+      try { old = fs.readFileSync(note, 'utf8'); } catch {}
+      // a note that isn't MediaDeck's (someone wrote their own) stays
+      if (old !== text && (old === null || old.split(/\r?\n/)[0].endsWith(NOTE_HEAD))) fs.writeFileSync(note, text);
     } catch {}
   }
   return made;
 }
 
-module.exports = { makeBiosFolders, findGamesFolders, scanGames, biosStatus, biosSync, consoleFolders, BIOS, INSTALLER };
+module.exports = { makeBiosFolders, recommended, RECOMMENDED, ALL_PARTS, findGamesFolders, scanGames, biosStatus, biosSync, consoleFolders, BIOS, INSTALLER };
