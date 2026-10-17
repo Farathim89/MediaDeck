@@ -416,7 +416,7 @@ const SHORT = {
   'NEC - PC Engine - TurboGrafx 16': ['TurboGrafx-16', 0.88], 'NEC - PC-FX': ['PC-FX', 1],
   'Nintendo - Wii U': ['Wii U', 0.71], 'Nintendo - Virtual Boy': ['Virtual Boy', 0.73],
   'Sony - PlayStation 4': ['PS4', 0.81], 'Sony - PlayStation 5': ['PS5', 0.81], 'Sony - PlayStation Vita': ['PS Vita', 0.58], 'Sony - PocketStation': ['PocketStation', 1],
-  'Microsoft - Xbox': ['Xbox', 0.71], 'Microsoft - Xbox 360': ['Xbox 360', 0.71], 'Microsoft - MSX': ['MSX', 0.71], 'Microsoft - MSX2': ['MSX2', 0.71], 'Microsoft - DOS': ['DOS', 0.8], 'PC - Windows': ['PC games', 0.7],
+  'Microsoft - Xbox': ['Xbox', 0.71], 'Microsoft - Xbox 360': ['Xbox 360', 0.71], 'Microsoft - MSX': ['MSX', 0.71], 'Microsoft - MSX2': ['MSX2', 0.71], 'Microsoft - DOS': ['DOS', 0.8], 'PC - Windows': ['PC games', 1.78],
   'Atari - 5200': ['Atari 5200', 0.73], 'Atari - 7800': ['Atari 7800', 0.73], 'Atari - 8-bit': ['Atari 8-bit', 0.73], 'Atari - Lynx': ['Lynx', 0.73], 'Atari - Jaguar': ['Jaguar', 0.73],
   'Bandai - WonderSwan': ['WonderSwan', 1], 'Bandai - WonderSwan Color': ['WonderSwan Color', 1], 'Coleco - ColecoVision': ['ColecoVision', 0.73],
   'Commodore - Amiga': ['Amiga', 0.8], 'Commodore - CD32': ['Amiga CD32', 0.88], 'Commodore - CDTV': ['CDTV', 0.88], 'Commodore - 64': ['C64', 0.8], 'Apple - II': ['Apple II', 0.8], 'Commander - X16': ['Commander X16', 1], 'Adobe - Flash': ['Flash', 1.33],
