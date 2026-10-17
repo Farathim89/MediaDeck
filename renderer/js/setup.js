@@ -238,7 +238,9 @@ const Setup = (() => {
       if (lbl) lbl.textContent = `You pressed: ${lastPress}`;
     }
     if (action === 'back') {
-      if (only || step === 0) finish(); else show(step - 1);
+      if (only) finish();
+      else if (step > 0) show(step - 1);
+      else UI.confirm('Skip the setup?', 'You can run it any time from Settings → About → Run the setup again.', 'Skip setup').then((yes) => yes && finish());
       return true;
     }
     return false;

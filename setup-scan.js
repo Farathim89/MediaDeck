@@ -105,6 +105,9 @@ function consoleFolders(root) {
 }
 
 // Games folders on this PC: drive roots and their folders (two levels) that hold two or more console folders
+// a MediaDeck folder (this one or another copy): its BIOS / Emu_modules folders have console names, but no games
+const isMediaDeck = (p) => fs.existsSync(path.join(p, 'MediaDeck.exe')) || fs.existsSync(path.join(p, 'Emu_modules'));
+
 function findGamesFolders(skip = []) {
   const found = [];
   for (const letter of 'CDEFGHIJKLMNOPQRSTUVWXYZ') {
@@ -120,12 +123,17 @@ function findGamesFolders(skip = []) {
       }
     } catch {}
     for (const p of look) {
-      const n = new Set(consoleFolders(p).map((c) => c.system)).size;
-      if (n >= 2 && !skip.some((x) => (p + path.sep).toLowerCase().startsWith((x + path.sep).toLowerCase()))) found.push({ path: p, consoles: n });
+      if (skip.some((x) => (p + path.sep).toLowerCase().startsWith((x + path.sep).toLowerCase())) || isMediaDeck(p)) continue;
+      const cf = consoleFolders(p);
+      const n = new Set(cf.map((c) => c.system)).size;
+      if (n >= 2) found.push({ path: p, consoles: n, cf });
     }
   }
-  // a folder and the same games one level down: keep the one with more consoles (then the shorter path)
-  return found.sort((a, b) => b.consoles - a.consoles || a.path.length - b.path.length).slice(0, 6);
+  // the best first (more consoles, then the shorter path); only folders that really hold games (an emulators
+  // folder has console names too)
+  return found.sort((a, b) => b.consoles - a.consoles || a.path.length - b.path.length).slice(0, 8)
+    .map(({ path: p, consoles, cf }) => ({ path: p, consoles, games: cf.reduce((t, c) => t + Math.min(countGames(c.folder), 5000), 0) }))
+    .filter((c) => c.games > 0).slice(0, 4);
 }
 
 // What the setup shows for a games folder: one row per console found (its folders merged), sorted by games
