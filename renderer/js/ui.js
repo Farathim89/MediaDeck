@@ -165,5 +165,6 @@ const UI = (() => {
     return h;
   }
 
-  return { menu, confirm, prompt, colors, toast, handle, esc, glow, hints, scrollRow, get isOpen() { return !!open; } };
+  return { menu, confirm, prompt, colors, toast, handle, esc, glow, hints, scrollRow, get isOpen() { return !!open; },
+    dismiss: () => close(null) };
 })();

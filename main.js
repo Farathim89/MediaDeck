@@ -237,8 +237,8 @@ function launch(tile) {
 }
 
 // ---------- What's running, and the controller combo to get back ----------
-// While a game or app started from here runs, tools\padwatch.exe watches the controller
-// (Back + Start held 1 s, or the Guide button) so MediaDeck can come back over it.
+// tools\padwatch.exe watches the controllers the whole time MediaDeck runs (only reading them): the PS / Guide
+// button (or Back + Start held 1 s) brings MediaDeck back over a game, and on the home screen opens the Exit menu.
 let running = null;   // { pid, name }
 let padwatch = null;
 
@@ -453,8 +453,7 @@ function startPadWatch() {
   padwatch.on('exit', () => {
     if (padwatch !== me) return;
     padwatch = null;
-    // Stopped by itself while a game still runs: start it again
-    if (running && isAlive(running.pid)) setTimeout(() => { if (running && isAlive(running.pid)) startPadWatch(); }, 1000);
+    if (!quitting) setTimeout(() => { if (!quitting) startPadWatch(); }, 1000);   // stopped by itself: again
   });
 }
 
@@ -477,6 +476,13 @@ function homePressed() {
     return;
   }
   if (alive && config.settings.inGameOverlay) { overlay.show(overlayInfo()); return; }
+  // At home, MediaDeck in front: the Exit menu (pressed again: it closes)
+  if (!alive && !mpv.isOpen() && win.isVisible() && !win.isMinimized() && win.isFocused()) {
+    win.webContents.send('power-menu');
+    return;
+  }
+  // nothing of ours running and MediaDeck in the background: another program has the controller - leave it
+  if (!alive && !mpv.isOpen()) return;
   if (alive) holdOnTop(true);
   bringToFront();
   // Some full-screen games (Mednafen/SDL) minimise themselves and Windows hands the focus to
@@ -588,6 +594,8 @@ function startTestSwitch() {
       if (u.pathname === '/youtube-focus') { youtube.focusInfo.rules = u.searchParams.has('rules'); return send(await youtube.focusInfo()); }
       if (u.pathname === '/youtube-state') return send({ open: youtube.isOpen(), shown: youtube.isShown(), focused: !!(win && !win.isDestroyed() && win.isFocused()) });
       // per console: the games that have no cover yet (title + file name)
+      // covers of games that were moved (a JSON file of [[old path, new path], …])
+      if (u.pathname === '/move-covers') return send({ moved: server.moveCovers(JSON.parse(fs.readFileSync(u.searchParams.get('file'), 'utf8'))) });
       if (u.pathname === '/missing-covers') {
         const out = {};
         for (const c of await consoleList(true)) {
@@ -640,7 +648,10 @@ function stopCursorHide() {
   if (fs.existsSync(exe)) execFile(exe, ['--restore'], { windowsHide: true }, () => {});
 }
 
-function stopPadWatch() {
+// It keeps running between games (the PS button opens the Exit menu at home); only quitting stops it
+let quitting = false;
+function stopPadWatch(force = false) {
+  if (!force) return;
   if (padwatch) { const p = padwatch; padwatch = null; try { p.kill(); } catch {} }
 }
 
@@ -1625,6 +1636,7 @@ if (!app.requestSingleInstanceLock()) {
     });
     createWindow();
     startCursorHide();
+    startPadWatch();
     // a while after start, so it never slows the home screen down
     setTimeout(() => { if (!process.argv.includes('--test')) { checkUpdatesAtStart(); appUpdatesAtStart().catch((e) => console.error('[apps] updates:', e.message)); } }, 15000);
     setTimeout(() => { if (!process.argv.includes('--test')) autoCovers().catch((e) => console.error('[covers]', e.message)); }, 60000);
@@ -1632,9 +1644,10 @@ if (!app.requestSingleInstanceLock()) {
     globalShortcut.register('Control+Alt+Home', bringToFront);
   });
   app.on('will-quit', () => {
+    quitting = true;
     globalShortcut.unregisterAll();
     mpv.stop();
-    stopPadWatch();
+    stopPadWatch(true);
     stopCursorHide();
     if (server) server.stop();
     clearTimeout(progressTimer);

@@ -60,6 +60,7 @@ contextBridge.exposeInMainWorld('api', {
   runningAction: invoke('running-action'),
   runningInfo: invoke('running-info'),
   onRunningMenu: (fn) => ipcRenderer.on('running-menu', (e, info) => fn(info)),
+  onPowerMenu: (fn) => ipcRenderer.on('power-menu', () => fn()),
   controllerStatus: invoke('controller-status'),
   installController: invoke('controller-install'),
   gameBarGet: invoke('gamebar-get'),

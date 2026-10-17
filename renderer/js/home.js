@@ -983,7 +983,8 @@ const Home = (() => {
   btnSettings.addEventListener('click', () => App.open(Settings));
 
 
-  btnPower.addEventListener('click', async () => {
+  // Also the PS / Guide button at home (main → 'power-menu')
+  async function powerMenu() {
     const c = await UI.menu({ title: 'Power', items: [
       { label: 'Sleep', icon: 'moon', value: 'sleep' },
       { label: 'Restart PC', icon: 'restart', value: 'restart' },
@@ -994,7 +995,8 @@ const Home = (() => {
     if (c === 'sleep') return api.power('sleep');
     if (c === 'restart' && await UI.confirm('Restart the PC?', 'Unsaved work in other programs will be lost.', 'Restart', true)) api.power('restart');
     if (c === 'shutdown' && await UI.confirm('Shut down the PC?', 'Unsaved work in other programs will be lost.', 'Shut down', true)) api.power('shutdown');
-  });
+  }
+  btnPower.addEventListener('click', powerMenu);
 
   // ---------- Input ----------
   function handle(action) {
@@ -1084,5 +1086,5 @@ const Home = (() => {
   }
 
   // showConsoleById: for the test switch (opens a console's games page)
-  return { el, init, enter, resume, handle, refocus() { if (Nav.current) Nav.focus(Nav.current); }, showConsoleById: (id) => { const c = consoleById(id); if (c) showConsole(c); return !!c; } };
+  return { el, init, enter, resume, handle, powerMenu, refocus() { if (Nav.current) Nav.focus(Nav.current); }, showConsoleById: (id) => { const c = consoleById(id); if (c) showConsole(c); return !!c; } };
 })();

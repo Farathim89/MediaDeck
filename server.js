@@ -490,9 +490,38 @@ class MediaServer {
   }
 
   // ---------- Game covers (downloaded, stored encrypted) ----------
-  coverFile(rom) { return path.join(this.coverDir, this.vault.name('cover|' + rom.toLowerCase()) + '.enc'); }
-  hasCover(rom) { return fs.existsSync(this.coverFile(rom)); }
-  saveCover(rom, buf) { return this.vault.write(this.coverFile(rom), buf); }
+  // A cover is kept by the game's file name, so moving a game to another folder (region folders, a tidy-up)
+  // keeps it; generic file names (PS3's EBOOT.BIN, default.xex …) by their game folder. Covers stored by the
+  // whole path (MediaDeck 1.0.6 and older) are still read.
+  coverId(rom) {
+    const parts = String(rom).toLowerCase().split(/[\\/]+/);
+    let name = parts.pop() || '';
+    if (/^(eboot\.bin|default\.(xex|xbe)|param\.sfo|main\.dol|boot\.(bin|dol))$/.test(name)) {
+      name = (parts.filter((d) => !/^(usrdir|ps3_game|sys|files)$/.test(d)).pop() || '') + '/' + name;
+    }
+    return 'cover-name|' + name;
+  }
+  coverByName(rom) { return path.join(this.coverDir, this.vault.name(this.coverId(rom)) + '.enc'); }
+  coverByPath(rom) { return path.join(this.coverDir, this.vault.name('cover|' + String(rom).toLowerCase()) + '.enc'); }
+  coverFile(rom) {
+    const byName = this.coverByName(rom);
+    if (fs.existsSync(byName)) return byName;
+    const byPath = this.coverByPath(rom);
+    return fs.existsSync(byPath) ? byPath : byName;
+  }
+  hasCover(rom) { return fs.existsSync(this.coverByName(rom)) || fs.existsSync(this.coverByPath(rom)); }
+  saveCover(rom, buf) { return this.vault.write(this.coverByName(rom), buf); }
+  // Games moved elsewhere: [[old path, new path]] - their covers follow (kept by file name from now on)
+  moveCovers(pairs) {
+    let moved = 0;
+    for (const [from, to] of pairs) {
+      const dst = this.coverByName(to);
+      if (fs.existsSync(dst)) continue;
+      const src = [this.coverByName(from), this.coverByPath(from), this.coverByPath(to)].find((f) => fs.existsSync(f));
+      if (src) { try { fs.renameSync(src, dst); moved++; } catch {} }
+    }
+    return moved;
+  }
 
   async serveCover(res, rom) {
     const file = this.coverFile(rom || '');

@@ -18,6 +18,8 @@ const App = {
       if (this.current && this.current.resume) this.current.resume();
     });
     api.onRunningMenu((info) => this.runningMenu(info));
+    // PS / Guide at home: the Exit menu; pressed again (any menu open): it closes
+    if (api.onPowerMenu) api.onPowerMenu(() => { if (UI.isOpen) UI.dismiss(); else Home.powerMenu(); });
     if (api.onYouTubeMenu) api.onYouTubeMenu(() => this.youtubeMenu());
     if (api.onTwitchMenu) api.onTwitchMenu(() => this.twitchMenu());
     api.onToast((text) => UI.toast(text, { icon: 'check' }));
