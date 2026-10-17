@@ -78,6 +78,8 @@ function loadConfig() {
   }
   if (was !== P.ROOT) writeJson(ROOT_FILE, { root: P.ROOT });
   config.tiles = config.tiles || [];
+  // a tile's program and picture inside MediaDeck's folder are kept relative to it (the folder can move)
+  for (const t of config.tiles) { if (t.path) t.path = P.rel(t.path); if (t.image) t.image = P.rel(t.image); }
   config.favorites = config.favorites || [];
   if (!config.tiles.some((t) => t.builtin === 'youtube')) {
     const at = config.tiles.findIndex((t) => t.builtin === 'media') + 1;
@@ -1715,7 +1717,8 @@ function registerIpc() {
     const { fullscreen, window } = config.settings;
     const hideBefore = config.settings.hideCursor, portableBefore = portableData();
     // the games folder: relative when it is inside MediaDeck's folder (Games), so the folder can move
-    config = { ...next, settings: { ...next.settings, fullscreen, window, gamesFolder: P.rel(next.settings.gamesFolder || '') } };
+    config = { ...next, settings: { ...next.settings, fullscreen, window, gamesFolder: P.rel(next.settings.gamesFolder || '') },
+      tiles: (next.tiles || []).map((t) => ({ ...t, ...(t.path ? { path: P.rel(t.path) } : {}), ...(t.image ? { image: P.rel(t.image) } : {}) })) };
     writeJson(CONFIG_FILE, config);
     if (config.settings.hideCursor !== hideBefore) startCursorHide();
     if (portableData() !== portableBefore) relockAll();
@@ -1741,7 +1744,7 @@ function registerIpc() {
   });
   ipcMain.handle('file-icon', (e, file) => fileIcon(file));
   ipcMain.handle('image-data', async (e, file) => {
-    try { return nativeImage.createFromPath(file).toDataURL(); } catch { return null; }
+    try { return nativeImage.createFromPath(P.resolve(file)).toDataURL(); } catch { return null; }
   });
   ipcMain.handle('open-external-player', (e, file) => {
     const vlc = config.settings.vlcPath;
