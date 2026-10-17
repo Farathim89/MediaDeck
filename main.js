@@ -315,8 +315,35 @@ function launch(tile) {
       shell.openPath(target).then((err) => resolve(err ? { ok: false, error: err } : { ok: true }));
       return;
     }
+    if (tile.saveLink) { try { ensureSaveLink(tile.saveLink); } catch (e) { console.error('[saves]', e.message); } }
     startProgram(target, splitArgs(tile.args || ''), tile.cwd || path.dirname(target), tile.name).then(resolve);
   });
+}
+
+// A program that keeps its saves in a fixed place outside MediaDeck (GameMaker games: %LOCALAPPDATA%\<game>):
+// tile.saveLink = { from: '%LOCALAPPDATA%\\AM2R', to: 'Apps\\AM2RLauncher\\saves' } makes "from" a link (junction)
+// to the folder in MediaDeck, so the saves travel with it. Checked at every start (a link only exists on the PC it was
+// made on; MediaDeck may have moved). Saves already in "from" are copied over first (and kept as <from>.before-mediadeck)
+// - only when the MediaDeck folder has none yet; nothing is deleted.
+function ensureSaveLink({ from, to }) {
+  const src = path.resolve(String(from || '').replace(/%([^%]+)%/g, (m, v) => process.env[v] || m));
+  const dest = path.resolve(P.resolve(to || ''));
+  if (!from || !to || /%/.test(src)) return;
+  fs.mkdirSync(dest, { recursive: true });
+  let st = null;
+  try { st = fs.lstatSync(src); } catch {}
+  if (st && st.isSymbolicLink()) {
+    let now = '';
+    try { now = path.resolve(fs.readlinkSync(src)); } catch {}
+    if (now.toLowerCase() === dest.toLowerCase()) return;
+    fs.unlinkSync(src);                                  // the link only (an old PC / an old MediaDeck folder)
+  } else if (st && st.isDirectory()) {
+    if (fs.readdirSync(dest).length) { console.warn(`[saves] ${src} and ${dest} both have saves - left as they are`); return; }
+    fs.cpSync(src, dest, { recursive: true, errorOnExist: false, force: false });
+    fs.renameSync(src, `${src}.before-mediadeck`);
+  } else if (st) return;                                 // a file of that name: not ours to change
+  fs.mkdirSync(path.dirname(src), { recursive: true });
+  fs.symlinkSync(dest, src, 'junction');
 }
 
 // ---------- What's running, and the controller combo to get back ----------
