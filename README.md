@@ -20,9 +20,18 @@ MediaDeck is **portable**: unzip it anywhere (another drive, a USB stick) and ru
 
 Get `MediaDeck-x.y.z-portable.zip` from [Releases](https://github.com/Farathim89/MediaDeck/releases), unzip it, and run `MediaDeck\MediaDeck.exe`.
 
+At the first start a **setup** walks you through it, step by step and with the controller: it finds your games folder, installs the emulators for the consoles in it, checks your BIOS files and your controller, and gets box art. Every step can be skipped, and Settings → About runs it again.
+
+## Guide
+
+The full **[MediaDeck guide](docs/README.md)** - the same help is inside MediaDeck (the **?** button on the Home screen):
+
+- [Getting started](docs/getting-started.md) · [Your games folder](docs/games-folder.md) · [Emulators](docs/emulators.md) · [BIOS files](docs/bios.md)
+- [Controllers](docs/controllers.md) · [Films, music and streams](docs/media.md) · [Saves and updates](docs/saves-and-updates.md) · [Problems?](docs/troubleshooting.md)
+
 It comes with mpv, FFmpeg and Streamlink, so videos and Twitch work straight away. PlexDeck, ABS-DA, DS4Windows and the emulators are downloaded only when you install them (Settings → Apps, Settings → Emulators).
 
-MediaDeck never downloads BIOS files or games. Put BIOS files you own in the `BIOS` folder and set your games folder in Settings → Emulators.
+MediaDeck never downloads BIOS files or games. Put BIOS files you own in the `BIOS` folder - Settings → Emulators → *BIOS check* shows which ones each console needs and where they go - and set your games folder in Settings → Emulators (the setup does it for you).
 
 ## The MediaDeck folder
 
