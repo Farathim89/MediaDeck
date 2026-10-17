@@ -62,6 +62,10 @@ The console folder names are recognised loosely: `SNES`, `Super Nintendo` and `N
   A `.cue` (or `.gdi`, `.m3u`) shows the whole game as **one** card - its tracks and discs aren't listed separately. `.chd`, `.iso`, `.rvz`, `.wbfs` are single files.
 - **A disc without a `.cue`** - a CloneCD rip (`.ccd` + `.img` + `.sub`) or loose `(Track N).bin` files - isn't seen by every emulator (DuckStation needs a `.cue`). [ROM Collection Checker](https://github.com/Farathim89/rom-collection-checker) writes the missing `.cue` when it sorts the game in.
 
+## PC games
+
+Windows games get a console of their own: **PC games** (`MediaDeck\Games\PC\PC games`). On its page, **Add a PC game…** picks the game's program (`.exe`) and gives it a card; a picture with the same name next to it (`Diablo.jpg` next to `Diablo.game`) is its cover. PC games start, show up in Recently played and close from the PS / Guide menu like any other game. Keep the game itself in `MediaDeck\Apps` and it moves with MediaDeck too.
+
 ## Extra tabs: `0 - Name` folders
 
 A folder whose name starts with `0 - ` inside a console folder becomes **its own tab** on that console's page - for games that aren't the official releases:
