@@ -8,11 +8,16 @@ const path = require('path');
 
 // ---------- ini files ----------
 function readIni(file) {
-  const out = { order: [], sections: new Map() };
+  // the file is written back as it was (line ends, BOM, last line ending) - only changed / new lines differ
+  const out = { order: [], sections: new Map(), eol: '\r\n', bom: '', endsWithEol: true };
   let text = '';
-  try { text = fs.readFileSync(file, 'utf8').replace(/^﻿/, ''); } catch { return out; }
+  try { text = fs.readFileSync(file, 'utf8'); } catch { return out; }
+  if (text.startsWith('﻿')) { out.bom = '﻿'; text = text.slice(1); }
+  out.eol = /\r\n/.test(text) ? '\r\n' : /\n/.test(text) ? '\n' : out.eol;
+  out.endsWithEol = /\n$/.test(text) || !text;
+  if (out.endsWithEol) text = text.replace(/\r?\n$/, '');
   let cur = null;
-  for (const line of text.split(/\r?\n/)) {
+  for (const line of text ? text.split(/\r?\n/) : []) {
     const h = /^\s*\[([^\]]+)\]\s*$/.exec(line);
     if (h) { cur = h[1]; if (!out.sections.has(cur)) { out.sections.set(cur, []); out.order.push(cur); } continue; }
     if (cur === null) { cur = ''; out.sections.set('', []); out.order.push(''); }
@@ -32,16 +37,21 @@ function iniSet(ini, sec, key, value, sep = ' = ') {
   if (i >= 0) lines[i] = line;
   else { let at = lines.length; while (at > 0 && !lines[at - 1].trim()) at--; lines.splice(at, 0, line); }
 }
+// The first change to an emulator's own file keeps its old copy as <file>.before-pads
+function backup(file) {
+  try { if (fs.existsSync(file) && !fs.existsSync(file + '.before-pads')) fs.copyFileSync(file, file + '.before-pads'); } catch {}
+}
 function writeIni(file, ini) {
+  backup(file);
   const parts = [];
   for (const sec of ini.order) {
-    const lines = ini.sections.get(sec);
+    // a section that follows lines of the one before gets a blank line in between (only matters for new sections)
+    if (sec !== '' && parts.length && parts[parts.length - 1].trim()) parts.push('');
     if (sec !== '') parts.push(`[${sec}]`);
-    parts.push(...lines);
-    if (lines.length && lines[lines.length - 1].trim()) parts.push('');
+    parts.push(...ini.sections.get(sec));
   }
   fs.mkdirSync(path.dirname(file), { recursive: true });
-  fs.writeFileSync(file, parts.join('\r\n'));
+  fs.writeFileSync(file, ini.bom + parts.join(ini.eol) + (ini.endsWithEol && parts.length ? ini.eol : ''));
 }
 // Binds a section's keys when none of them is bound to a controller yet (keyboard-only or empty). extra: other
 // settings, only where missing. fresh: the same, only in a file that isn't there yet (an emulator writes its own
@@ -223,10 +233,30 @@ const SETUP = {
     extra: { Controls: { profile: '0', 'profiles\\size': '1', 'profiles\\1\\name': 'Default' } },
     keep: { Controls: AZ_NOT_DEFAULT },
   }),
-  // RMG: a player 1 that is there at all (set up in RMG) is left as it is
-  rmg: (dir) => (exists(dir, 'portable.txt') || exists(dir, 'Config', 'mupen64plus.cfg')) && iniPad(path.join(dir, 'Config', 'mupen64plus.cfg'), {
-    section: "Rosalie's Mupen GUI - Input Plugin Profile 0", isPad: (v) => v !== '', binds: RMG_PAD,
-  }),
+  // RMG: a player 1 that is there at all (set up in RMG) keeps its buttons; one tied to one particular controller
+  // (by its device path - another PC or controller wouldn't be found) is switched to "Automatic" = the first one
+  rmg: (dir) => {
+    if (!exists(dir, 'portable.txt') && !exists(dir, 'Config', 'mupen64plus.cfg')) return false;
+    const file = path.join(dir, 'Config', 'mupen64plus.cfg'), sec = "Rosalie's Mupen GUI - Input Plugin Profile 0";
+    const made = iniPad(file, { section: sec, isPad: (v) => v !== '', binds: RMG_PAD });
+    const ini = readIni(file);
+    const lines = ini.sections.get(sec) || [];
+    const types = lines.map((l) => /^\s*(?!Hotkey_)\w+_InputType\s*=\s*"(\d*)"/.exec(l)).filter((m) => m && m[1] !== '').map((m) => m[1]);
+    const pad = types.length && types.every((t) => t === '0' || t === '1');      // controller buttons / sticks only
+    if (made || !pad || iniGet(ini, sec, 'DeviceType') === '2' || iniGet(ini, sec, 'PluggedIn') !== 'True') return made;
+    for (const [k, v] of Object.entries({ DeviceName: '"Automatic"', DeviceType: '2', DevicePath: '""', DeviceSerial: '""', DeviceGuid: '""' })) iniSet(ini, sec, k, v);
+    writeIni(file, ini);
+    return true;
+  },
+  // xemu binds the first controller by itself (auto_bind) - unless that was switched off for one particular controller
+  xemu: (dir) => {
+    const file = path.join(dir, 'xemu.toml');
+    const ini = readIni(file);
+    if (iniGet(ini, 'input', 'auto_bind') !== 'false') return false;
+    iniSet(ini, 'input', 'auto_bind', 'true');
+    writeIni(file, ini);
+    return true;
+  },
   cemu: (dir) => exists(dir, 'portable') && newFile(path.join(dir, 'portable', 'controllerProfiles', 'controller0.xml'), CEMU_XML),
   rpcs3: (dir) => newFile(path.join(dir, 'config', 'input_configs', 'global', 'Default.yml'), RPCS3_YML),
   // Supermodel: XInput instead of DirectInput, Start / Coin on Start / Back (its other controls are joystick ones already)

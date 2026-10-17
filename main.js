@@ -65,7 +65,18 @@ function loadConfig() {
   // A new MediaDeck keeps its games in its own folder: Games\<maker>\<console>, one folder per console, made now
   if (fresh) {
     try { emuInstaller.makeStarterFolders(P.GAMES); config.settings.gamesFolder = P.rel(P.GAMES); writeJson(CONFIG_FILE, config); } catch {}
+    try { setupScan.makeBiosFolders(P.BIOS); } catch {}
   }
+  // The MediaDeck folder moved (drive letter, USB stick): emulator settings pointing into the old folder follow it
+  const ROOT_FILE = path.join(DATA, 'root.json');
+  const was = (readJson(ROOT_FILE, {}) || {}).root;
+  if (was && path.resolve(was).toLowerCase() !== path.resolve(P.ROOT).toLowerCase()) {
+    try {
+      const moved = require('./relocate').relocate(was, P.ROOT, [P.EMU, P.APPS], P.EMU_BACKUPS);
+      console.log(`[moved] ${was} -> ${P.ROOT}: ${moved.length} settings files pointed at the new folder`);
+    } catch (e) { console.error('[moved]', e.message); }
+  }
+  if (was !== P.ROOT) writeJson(ROOT_FILE, { root: P.ROOT });
   config.tiles = config.tiles || [];
   config.favorites = config.favorites || [];
   if (!config.tiles.some((t) => t.builtin === 'youtube')) {
@@ -1653,7 +1664,7 @@ function registerIpc() {
   ipcMain.handle('setup-root', async () => gamesRoot(await emuModules.scan(emuDir())));
   // MediaDeck's own Games folder (portable): made with a folder per console when it isn't there
   ipcMain.handle('setup-starter', () => { const made = emuInstaller.makeStarterFolders(P.GAMES); return { path: P.GAMES, made }; });
-  ipcMain.handle('bios-status', async (e, systems) => setupScan.biosStatus(P.BIOS, await emuModules.scan(emuDir()), systems));
+  ipcMain.handle('bios-status', async (e, systems) => { setupScan.makeBiosFolders(P.BIOS); return setupScan.biosStatus(P.BIOS, await emuModules.scan(emuDir()), systems); });
   ipcMain.handle('bios-sync', async () => setupScan.biosSync(P.BIOS, await emuModules.scan(emuDir())));
   ipcMain.handle('bios-open', (e, sub) => { const d = path.join(P.BIOS, sub || ''); fs.mkdirSync(d, { recursive: true }); return shell.openPath(d); });
   ipcMain.handle('app-info', () => ({ dataDir: DATA, emuDir: emuDir(), appsDir: P.APPS, appDir: P.ROOT, gamesDir: P.GAMES, version: app.getVersion(), electron: process.versions.electron }));

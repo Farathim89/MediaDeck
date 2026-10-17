@@ -11,6 +11,8 @@ MediaDeck\BIOS\Sony - PlayStation\scph5501.bin
 MediaDeck\BIOS\Sega - Saturn\mpr-17933.bin
 ```
 
+These folders are **made for you** at the first start - one per console that needs a BIOS, each with a `What goes here.txt` that names the files. Just drop the files in.
+
 Settings → Emulators → **BIOS check** shows, for every console you have games for, which files it needs, which are there, and opens the folder they go in.
 
 ## Which consoles need one

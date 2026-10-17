@@ -200,4 +200,24 @@ function biosSync(biosDir, installedModules) {
   return copied;
 }
 
-module.exports = { findGamesFolders, scanGames, biosStatus, biosSync, consoleFolders, BIOS, INSTALLER };
+// BIOS\<console> for every console that needs one, each with a note of the files that go in it (made at the first
+// start and when the BIOS check opens; folders and notes that are there are left as they are). Returns how many were made.
+function makeBiosFolders(biosDir) {
+  let made = 0;
+  for (const b of BIOS) {
+    const dir = path.join(biosDir, b.folder);
+    try {
+      if (!fs.existsSync(dir)) { fs.mkdirSync(dir, { recursive: true }); made++; }
+      const note = path.join(dir, 'What goes here.txt');
+      if (!fs.existsSync(note)) {
+        const need = b.need === 'required' ? 'Needed' : b.need === 'cd' ? 'Needed for CD games only' : b.need === 'firmware' ? 'Installed from the emulator' : 'Optional';
+        fs.writeFileSync(note, [`${covers.consoleOf({}, path.join(b.system, 'x')).console} - BIOS / firmware`, '',
+          `${need}: ${b.files}`, '', 'Dump them from your own console. MediaDeck never downloads BIOS files.',
+          'After adding them: Settings > Emulators > BIOS check > Copy BIOS files to the emulators.', ''].join('\r\n'));
+      }
+    } catch {}
+  }
+  return made;
+}
+
+module.exports = { makeBiosFolders, findGamesFolders, scanGames, biosStatus, biosSync, consoleFolders, BIOS, INSTALLER };
