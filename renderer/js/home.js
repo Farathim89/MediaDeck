@@ -836,6 +836,17 @@ const Home = (() => {
     UI.toast(`${c.name} games now start in ${emuName(consoleById(c.id))}`, { icon: 'gamepad' });
   }
 
+  // The console list again (a setting changed): Home and the Consoles tab redrawn, focus kept where it can be
+  async function refreshConsoles() {
+    await loadConsoles();
+    if (activeTab !== 'home' && activeTab !== 'emus') return;
+    const focusId = Nav.current && (Nav.current.dataset.console || Nav.current.dataset.id);
+    renderTabs();
+    renderPage();
+    const back = focusId && (pageEl.querySelector(`[data-console="${focusId}"]`) || pageEl.querySelector(`[data-id="${focusId}"]`));
+    if (back && App.current === Home) Nav.focus(back);
+  }
+
   // New games added while MediaDeck runs (and new emulators): every game folder read again, the page redrawn.
   // quiet: in the background (MediaDeck back in front after a while) - only says something when games came or went
   let scanning = null;
@@ -875,8 +886,17 @@ const Home = (() => {
       ...(t ? [{ label: `Open ${t.name}`, icon: 'play', value: 'open' }] : []),
       { label: 'Game folders', icon: 'folder', value: 'folders' },
       { label: 'Scan for new games', icon: 'refresh', value: 'scan' },
+      { label: cfg().settings.showEmptyConsoles ? 'Hide consoles without games' : 'Show consoles without games', icon: 'eye', value: 'empty' },
     ] });
     if (choice === 'scan') return scanGames();
+    if (choice === 'empty') {
+      const s = cfg().settings;
+      s.showEmptyConsoles = !s.showEmptyConsoles;
+      await api.saveConfig(cfg());
+      await refreshConsoles();
+      UI.toast(s.showEmptyConsoles ? 'Consoles without games are shown' : 'Consoles without games are hidden', { icon: 'eye' });
+      return;
+    }
     if (choice === 'show') showConsole(c);
     if (choice === 'emu') { await chooseEmulator(c); }
     if (choice === 'open' && t) open(t);
@@ -1172,5 +1192,5 @@ const Home = (() => {
   }
 
   // showConsoleById: for the test switch (opens a console's games page)
-  return { el, init, enter, resume, handle, powerMenu, scanGames, refocus() { if (Nav.current) Nav.focus(Nav.current); }, showConsoleById: (id) => { const c = consoleById(id); if (c) showConsole(c); return !!c; } };
+  return { el, init, enter, resume, handle, powerMenu, scanGames, refreshConsoles, refocus() { if (Nav.current) Nav.focus(Nav.current); }, showConsoleById: (id) => { const c = consoleById(id); if (c) showConsole(c); return !!c; } };
 })();

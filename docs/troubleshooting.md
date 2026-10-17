@@ -7,7 +7,7 @@
 
 **A console doesn't show up**
 - It needs a folder named after it in your games folder, and an emulator installed for it (Settings → Emulators → *Install emulators*).
-- Settings → Emulators → *Show consoles without games* shows consoles before they have games.
+- Settings → Emulators → *Show consoles without games* (or Y on a console) shows consoles as soon as their emulator is installed, before they have games.
 
 **A game starts with a black screen or an error**
 - Usually a missing BIOS: Settings → Emulators → *BIOS check*. Added the BIOS after installing the emulator? *Copy BIOS files to the emulators* in the BIOS check.
