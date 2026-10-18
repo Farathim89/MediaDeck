@@ -1057,12 +1057,15 @@ const CONSOLE_ORDER = ['NES', 'SNES', 'N64', 'GameCube', 'Wii', 'Switch', 'Game 
 // Default emulator of a console: dedicated standalones first, then all-rounders (they never take
 // a console over just by being installed), then old ones, RetroArch last
 const emuRank = (m) => (games.isRetroArch(m) ? 0 : /^(zsnes|epsxe)$/i.test(m.name) ? 1 : /^(jgenesis|mednafen|bizhawk)$/i.test(m.name) ? 2 : 3);
+// A console's icon: RetroArch's Systematic theme when RetroArch is there, else MediaDeck's own copy of it
+// (renderer/img/consoles/<console>.png, CC BY 4.0) - a MediaDeck without RetroArch has its icons too
 const consoleIcon = (system, raDir) => {
-  if (!raDir) return null;
-  const dir = path.join(raDir, 'assets', 'xmb', 'systematic', 'png');
+  if (!system) return null;
   const name = { 'Nintendo - Switch': 'Nintendo - Switch', 'Microsoft - DOS': 'DOS' }[system] || system;   // RetroArch's file names
-  const file = name && path.join(dir, name + '.png');
-  return file && fs.existsSync(file) ? file : null;
+  const ra = raDir && path.join(raDir, 'assets', 'xmb', 'systematic', 'png', name + '.png');
+  if (ra && fs.existsSync(ra)) return ra;
+  const own = path.join(__dirname, 'renderer', 'img', 'consoles', system + '.png');
+  return fs.existsSync(own) ? own : null;
 };
 
 // Home's maker rows where a console's name doesn't say it

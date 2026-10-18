@@ -26,6 +26,9 @@ BIOS checksums (resources\app.asar: bios-db.json) - file names, sizes and MD5 ch
   from libretro-database dat/System.dat (CC BY-SA 4.0), https://github.com/libretro/libretro-database
   - picked for MediaDeck's consoles, two names changed for the emulators (build/make-bios-db.js)
 
+Console icons (resources\app.asar: renderer/img/consoles/*.png) - from RetroArch's "Systematic" XMB theme
+  (CC BY 4.0), https://github.com/libretro/retroarch-assets - copied unchanged, named after MediaDeck's consoles
+
 Loaded from the internet while running
 --------------------------------------
 SmartTwitchTV web interface (GPL-3.0) - https://github.com/fgl27/SmartTwitchTV
