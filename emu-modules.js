@@ -46,7 +46,9 @@ const KNOWN = [
   { name: 'Eden', system: 'Nintendo Switch', pattern: /^(eden|suyu|sudachi|citron|yuzu)\.exe$/i, gameArgs: '-f -g "{rom}"', romExtensions: ['nsp', 'xci', 'nca', 'nro'] },
   { name: 'ePSXe', system: 'PlayStation', exes: ['epsxe.exe'], gameArgs: '-nogui -loadbin "{rom}"', romExtensions: ['cue', 'bin', 'iso', 'img', 'mdf', 'pbp', 'ccd'] },
   { name: 'DuckStation', system: 'PlayStation', pattern: /^duckstation-qt.*\.exe$/i, gameArgs: '-batch -fullscreen "{rom}"', romExtensions: ['cue', 'bin', 'chd', 'iso', 'pbp', 'm3u', 'ecm', 'mds'], hotkeys: { options: 'Escape', saveState: 'F2', loadState: 'F1', pause: 'Space', screenshot: 'F10' } },
-  { name: 'MAME', system: 'Arcade', exes: ['mame64.exe', 'mame32.exe', 'mame.exe'], gameArgs: '"{romname}"', romExtensions: ['zip', '7z', 'chd'] },
+  // MAME32 (0.3x) stops before every game until "OK" is typed (its disclaimer, and its "doesn't work perfectly" note)
+  { name: 'MAME', system: 'Arcade', exes: ['mame32.exe'], gameArgs: '"{romname}"', romExtensions: ['zip', '7z', 'chd'], startKeys: ['O', 'K'] },
+  { name: 'MAME', system: 'Arcade', exes: ['mame64.exe', 'mame.exe'], gameArgs: '"{romname}"', romExtensions: ['zip', '7z', 'chd'] },
   { name: 'NeoRAGEx', system: 'Neo Geo', pattern: /^neoragex.*\.exe$/i, gameArgs: '"{romname}"', romExtensions: ['zip'] },
   { name: 'ZSNES', system: 'Super Nintendo', exes: ['zsnesw.exe', 'zsnes.exe'], gameArgs: '"{rom}"', romExtensions: ['sfc', 'smc', 'fig', 'swc', 'zip'] },
   { name: 'Snes9x', system: 'Super Nintendo', pattern: /^snes9x(-x64)?\.exe$/i, gameArgs: '-fullscreen "{rom}"', romExtensions: ['sfc', 'smc', 'zip'], hotkeys: { options: 'Alt+Return', saveState: 'Shift+F1', loadState: 'F1', pause: 'Pause', screenshot: 'F12' } },
@@ -153,6 +155,7 @@ async function detect(dir, folderName) {
     ...(k && k.attached ? { attached: true } : {}),
     ...(k && k.extArgs ? { extArgs: k.extArgs } : {}),
     ...(k && k.gameCwd ? { gameCwd: k.gameCwd } : {}),
+    ...(k && k.startKeys ? { startKeys: k.startKeys } : {}),
   };
 }
 
@@ -175,7 +178,9 @@ function normalise(mod, id, baseDir, moduleFile) {
     hotkeys: mod.hotkeys || {},
     control: mod.control || '',
     closeSteps: mod.closeSteps || 1,      // MAME32: the 1st close ends the game, the 2nd closes the program
-    holdToClose: mod.holdToClose || 0,    // seconds of holding PS that close it (no menu: MAME32 crashes under other windows)
+    holdToClose: mod.holdToClose || 0,
+    // keys typed into the game a few seconds after it starts (MAME32: "O", "K" past its disclaimer)
+    startKeys: Array.isArray(mod.startKeys) ? mod.startKeys : [],    // seconds of holding PS that close it (no menu: MAME32 crashes under other windows)
     attached: !!mod.attached,             // start with the console of MediaDeck (Ryujinx crashes "detached")
     // Optional names file for games with short file names (MAME: "pacman=Pac Man (Midway)")
     gameNames: mod.gameNames ? path.resolve(baseDir, mod.gameNames) : '',
@@ -305,7 +310,9 @@ function addKnownExtensions(mod) {
   const addControls = (k.hotkeys && !data.hotkeys) || (k.control && !data.control);
   const addExtArgs = k.extArgs && Object.keys(k.extArgs).some((e) => !(data.extArgs && data.extArgs[e]));
   const addCwd = k.gameCwd && !data.gameCwd;
-  if (!missing.length && !addControls && !addExtArgs && !addCwd) return;
+  const addKeys = k.startKeys && !data.startKeys;
+  if (!missing.length && !addControls && !addExtArgs && !addCwd && !addKeys) return;
+  if (addKeys) { data.startKeys = k.startKeys; mod.startKeys = k.startKeys; }
   if (addExtArgs) { data.extArgs = { ...k.extArgs, ...(data.extArgs || {}) }; mod.extArgs = data.extArgs; }
   if (addCwd) { data.gameCwd = k.gameCwd; mod.gameCwd = k.gameCwd; }
   data.romExtensions = [...(data.romExtensions || []), ...missing];

@@ -614,7 +614,8 @@ function homePressed() {
   const alive = running && isAlive(running.pid);
   if (alive && running.holdToClose) {
     // Nothing may come to the front while it runs: only a long hold closes it, then MediaDeck returns
-    if (!holdTimer) holdTimer = setTimeout(async () => { holdTimer = null; await closeRunning(false); bringToFront(); }, running.holdToClose * 1000);
+    const held = running.pid;
+    if (!holdTimer) holdTimer = setTimeout(async () => { holdTimer = null; await closeRunning(false); if (!otherRunning(held)) bringToFront(); }, running.holdToClose * 1000);
     return;
   }
   if (alive && config.settings.inGameOverlay) { overlay.show(overlayInfo()); return; }
@@ -828,6 +829,9 @@ function stopPadWatch(force = false) {
 function isAlive(pid) {
   try { process.kill(pid, 0); return true; } catch { return false; }
 }
+// Another program runs now (a game started while the last one was still closing): MediaDeck must not come over it
+// (MAME32 crashes when anything comes in front of it)
+const otherRunning = (pid) => !!(running && running.pid !== pid && isAlive(running.pid));
 
 // Close the running game/app the polite way (like clicking its X, so it can save)
 // Does the program (or a program it started) still show a window?
@@ -864,10 +868,14 @@ const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 // Polite first; if it's still running without any window (nothing the player could answer,
 // e.g. old full-screen emulators like ZSNES), close it for real. With a window it may be
 // asking something (save?), so then the player decides.
+// Programs MediaDeck asked to close that may still be on their way out (Dolphin takes ~15 s): the next game waits
+// for them, as a closing program can come to the front over it (MAME32 crashes then)
+const closing = new Map();   // pid -> name
 async function closeRunning(force) {
   holdOnTop(false);
   if (!running || !isAlive(running.pid)) { running = null; stopPadWatch(); return { closed: true }; }
   const pid = running.pid;
+  closing.set(pid, running.name);
   // Emulators that ignore Windows' close message in full screen (ares) quit with their own key
   const quitKey = running.hotkeys && running.hotkeys.quit;
   if (!force && quitKey && (await keysExe(['send', String(pid), quitKey]))) {
@@ -875,7 +883,7 @@ async function closeRunning(force) {
   }
   if (!isAlive(pid)) {
     if (running && running.pid === pid) { running = null; stopPadWatch(); }
-    focusSelf();   // the quit key gave the emulator the focus; when it's gone Windows would pick another window
+    if (!otherRunning(pid)) focusSelf();   // the quit key gave the emulator the focus; when it's gone Windows would pick another window
     return { closed: true, forced: false };
   }
   await killTree(pid, force);
@@ -914,13 +922,14 @@ async function closeRunning(force) {
   const alive = isAlive(pid);
   // Only forget this program: a new game may have been started while it was closing
   if (!alive && running && running.pid === pid) { running = null; stopPadWatch(); }
-  if (!alive) focusSelf();
+  if (!alive && !otherRunning(pid)) focusSelf();
   return { closed: !alive, forced };
 }
 
 // Back to the game: bring its window forward and step MediaDeck aside
 function resumeRunning() {
   holdOnTop(false);
+  if (running) closing.delete(running.pid);   // it didn't close and the player went back to it: no longer "closing"
   if (running && isAlive(running.pid)) {
     keysExe(['game', String(running.pid)]);
   }
@@ -957,7 +966,7 @@ async function overlayAction(action) {
   if (action === 'close') {
     overlay.hide();
     const res = await closeRunning(false);
-    bringToFront();
+    if (!otherRunning(r.pid)) bringToFront();
     // Still running with a window open (maybe asking to save): MediaDeck asks what to do
     if (!win || win.isDestroyed()) return res;
     if (!res.closed) win.webContents.send('running-menu', { name: r.name, alive: true });
@@ -979,7 +988,12 @@ async function overlayAction(action) {
 }
 
 // Starts a program, minimises MediaDeck, and brings it back when the program closes
-function startProgram(exe, args, cwd, name, meta = {}) {
+async function startProgram(exe, args, cwd, name, meta = {}) {
+  // a program still closing first (up to 30 s)
+  for (const pid of [...closing.keys()]) if (!isAlive(pid)) closing.delete(pid);
+  if (closing.size && win && !win.isDestroyed()) win.webContents.send('toast', `Waiting for ${[...closing.values()].join(', ')} to close…`);
+  for (let t = 0; t < 120 && [...closing.keys()].some(isAlive); t++) await wait(250);
+  closing.clear();
   return new Promise((resolve) => {
     const started = Date.now();
     let child;
@@ -998,6 +1012,12 @@ function startProgram(exe, args, cwd, name, meta = {}) {
       // Bring the game's window forward once it exists (Windows doesn't always let it come
       // to the front by itself); tried a few times during the first seconds only
       for (const ms of [1500, 3500, 7000]) setTimeout(() => { if (running && running.pid === child.pid && isAlive(child.pid)) keysExe(['game', String(child.pid)]); }, ms);
+      // keys the game needs typed once it shows (MAME32's "type OK"), twice: its disclaimer, then a game's own note
+      if (meta.startKeys && meta.startKeys.length) {
+        for (const ms of [3000, 6000]) setTimeout(async () => {
+          for (const k of meta.startKeys) { if (running && running.pid === child.pid && isAlive(child.pid)) await keysExe(['send', String(child.pid), k]); }
+        }, ms);
+      }
       if (config.settings.minimizeOnLaunch !== false) setTimeout(() => win && !win.isDestroyed() && win.minimize(), 400);
     });
     // Come back to the home screen when the program closes (ignore launchers that exit right away;
@@ -1022,9 +1042,11 @@ function startProgram(exe, args, cwd, name, meta = {}) {
         return;
       }
       // Only the program that is running now: an older one that exits late (after the next
-      // game started) must not switch off the PS button for the new one
+      // game started) must not switch off the PS button for the new one - nor come over it (MAME32 crashes when
+      // anything comes in front of it)
       if (running && running.pid === child.pid) running = null;
-      if (!running) stopPadWatch();
+      if (running && isAlive(running.pid)) return;
+      stopPadWatch();
       bringToFront();
     });
     child.unref();
@@ -1165,7 +1187,7 @@ async function launchGame(moduleId, rom) {
   // Mednafen keeps its settings in %HOME%\.mednafen when HOME is set (Git Bash, MSYS): always its own folder
   const env = emuInstaller.emuIdOf(mod) === 'mednafen' ? { MEDNAFEN_HOME: path.dirname(mod.exe) } : null;
   const r = await startProgram(mod.exe, args, mod.gameCwd === 'rom' ? path.dirname(rom) : path.dirname(mod.exe), game.title,
-    { emulator: mod.name, env, control: mod.control, hotkeys: mod.hotkeys || {}, closeSteps: mod.closeSteps || 1, holdToClose: mod.holdToClose || 0, attached: !!mod.attached });
+    { emulator: mod.name, env, control: mod.control, hotkeys: mod.hotkeys || {}, closeSteps: mod.closeSteps || 1, holdToClose: mod.holdToClose || 0, attached: !!mod.attached, startKeys: mod.startKeys || [] });
   if (r.ok) {
     loadRecent();
     recent = [{ moduleId, ...game, t: Date.now() }, ...recent.filter((x) => x.rom !== rom)].slice(0, 20);
