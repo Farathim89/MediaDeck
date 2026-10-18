@@ -81,7 +81,10 @@ function cleanName(file) {
   const vm = /\((rev\s?[0-9a-z]+|v\s?\d+\.\d+|beta[^)]*|proto[^)]*|sample|demo|kiosk[^)]*)\)/i.exec(n);
   const version = vm ? vm[1].replace(/^rev\s?/i, 'Rev ').replace(/^v\s?/i, 'v') : '';
   n = n.replace(/\[[^\]]*\]/g, '').replace(/\([^)]*\)/g, '').replace(/_/g, ' ').replace(/\s{2,}/g, ' ').trim();
-  n = n.replace(/^(.*), (The|A|An)$/i, '$2 $1');
+  // No-Intro files the article behind: "Chaos Engine, The" -> "The Chaos Engine", also before a subtitle:
+  // "Legend of Zelda, The - Ocarina of Time" -> "The Legend of Zelda - Ocarina of Time"; other languages' too
+  // ("Schtroumpfs Autour du Monde, Les" -> "Les Schtroumpfs Autour du Monde")
+  n = n.replace(/^(.*?), (The|A|An|Les|Le|La|Die|Der|Das|El|Los|Las|Il|Lo|De|Het)( - .*)?$/, (m, t, a, sub) => `${a} ${t}${sub || ''}`);
   return { title: (disc ? `${n} ${disc}` : n) || path.basename(file), region, version };
 }
 
