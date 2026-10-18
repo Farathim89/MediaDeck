@@ -65,7 +65,7 @@ function defaultConfig() {
       checkMediaDeckUpdates: true,   // at every start: a new MediaDeck version → a window asks whether to update
       autoCovers: true,
       portableData: true,        // private files readable on any PC (key in data\portable.key); false = this Windows account only
-      powerMenuPc: true,         // Exit menu: Sleep / Restart PC / Shut down PC (Settings → General); false = MediaDeck only
+      powerMenuPc: false,        // Exit menu: Sleep / Restart PC / Shut down PC (Settings → General); false = MediaDeck only
       setupDone: false,          // the first-start setup ran (or was skipped); Settings → About runs it again
       gameView: 'big',           // a console's games: 'big' covers, 'small' covers, or a 'list' without covers
       twitchQuality: 'best',
