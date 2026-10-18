@@ -1060,7 +1060,7 @@ const emuRank = (m) => (games.isRetroArch(m) ? 0 : /^(zsnes|epsxe)$/i.test(m.nam
 const consoleIcon = (system, raDir) => {
   if (!raDir) return null;
   const dir = path.join(raDir, 'assets', 'xmb', 'systematic', 'png');
-  const name = { 'Nintendo - Switch': 'Nintendo - Switch' }[system] || system;
+  const name = { 'Nintendo - Switch': 'Nintendo - Switch', 'Microsoft - DOS': 'DOS' }[system] || system;   // RetroArch's file names
   const file = name && path.join(dir, name + '.png');
   return file && fs.existsSync(file) ? file : null;
 };

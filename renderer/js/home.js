@@ -714,7 +714,11 @@ const Home = (() => {
   const emuTile = (moduleId) => tiles().find((x) => x.moduleId === moduleId);
   const emuName = (c) => ((c.emulators.find((e) => e.moduleId === c.emulator) || {}).name || '');
   const iconUrls = new Map();   // console icon file -> data URL
+  // consoles RetroArch's icon set has no picture for: MediaDeck's own (renderer/img/consoles)
+  const OWN_ICONS = { 'PC - Windows': 'PC games', 'PC games': 'PC games' };
   async function consoleIcon(c, holder) {
+    const own = !c.icon && (OWN_ICONS[c.system] || OWN_ICONS[c.id] || OWN_ICONS[c.name]);
+    if (own) { holder.innerHTML = `<img src="img/consoles/${encodeURIComponent(own)}.svg" alt="">`; return; }
     if (!c.icon) { holder.innerHTML = Icons.gamepad; return; }
     if (!iconUrls.has(c.icon)) iconUrls.set(c.icon, await api.imageData(c.icon));
     holder.innerHTML = `<img src="${iconUrls.get(c.icon)}" alt="">`;
@@ -722,7 +726,7 @@ const Home = (() => {
 
   // Maker logos (renderer/img/makers); dark ones are shown white on the dark cards.
   // Makers without a logo (Arcade) show their consoles' icons instead.
-  const MAKER_LOGOS = { Nintendo: 'Nintendo', Sony: 'Sony', Sega: 'Sega', Microsoft: 'Microsoft', Atari: 'Atari', NEC: 'NEC', SNK: 'SNK', Philips: 'Philips CD-i', Arcade: 'Arcade' };
+  const MAKER_LOGOS = { Nintendo: 'Nintendo', Sony: 'Sony', Sega: 'Sega', Microsoft: 'Microsoft', Atari: 'Atari', NEC: 'NEC', SNK: 'SNK', Philips: 'Philips CD-i', Arcade: 'Arcade', PC: 'PC' };
   const WHITE_LOGOS = new Set(['Sony', 'NEC']);
   const BIG_LOGOS = new Set(['Nintendo', 'Atari', 'Philips', 'Microsoft']);   // these read small at the normal size
 
