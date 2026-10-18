@@ -1,7 +1,7 @@
 {
   "name": "mediadeck",
   "productName": "MediaDeck",
-  "version": "1.0.27",
+  "version": "1.0.28",
   "description": "A TV-style home screen for Windows: media player, YouTube and Twitch without ads, Plex and Audiobookshelf, and your emulators, all with a controller",
   "main": "main.js",
   "author": "Farathim",
