@@ -78,8 +78,14 @@ function loadConfig() {
   }
   if (was !== P.ROOT) writeJson(ROOT_FILE, { root: P.ROOT });
   config.tiles = config.tiles || [];
-  // a tile's program and picture inside MediaDeck's folder are kept relative to it (the folder can move)
-  for (const t of config.tiles) { if (t.path) t.path = P.rel(t.path); if (t.image) t.image = P.rel(t.image); }
+  // a tile's program and picture inside MediaDeck's folder are kept relative to it (the folder can move); one
+  // still pointing into the folder's old place (another drive letter) is moved along first
+  const before = JSON.stringify(config.tiles);
+  const oldBase = was ? path.resolve(was).toLowerCase() + path.sep : '';
+  const follow = (p) => (oldBase && /^[a-z]:[\\/]/i.test(p) && path.resolve(p).toLowerCase().startsWith(oldBase)
+    ? path.join(P.ROOT, path.resolve(p).slice(oldBase.length)) : p);
+  for (const t of config.tiles) { if (t.path) t.path = P.rel(follow(t.path)); if (t.image) t.image = P.rel(follow(t.image)); }
+  if (JSON.stringify(config.tiles) !== before) writeJson(CONFIG_FILE, config);
   config.favorites = config.favorites || [];
   if (!config.tiles.some((t) => t.builtin === 'youtube')) {
     const at = config.tiles.findIndex((t) => t.builtin === 'media') + 1;
@@ -1555,13 +1561,14 @@ async function syncEmulators() {
     if (!m && !t.moduleId) m = visible.find((x) => !claimed.has(x.id) && x.name.toLowerCase() === (t.name || '').toLowerCase());
     if (!m || claimed.has(m.id)) continue;
     claimed.add(m.id);
-    next.push({ ...t, moduleId: m.id, path: m.exe, args: m.args, system: m.system });
+    // relative inside the MediaDeck folder, like every tile (it then works on any drive letter)
+    next.push({ ...t, moduleId: m.id, path: P.rel(m.exe), args: m.args, system: m.system });
   }
   for (const m of visible) {
     if (claimed.has(m.id) || m.pcGames) continue;      // PC games is a console, not a program to open
     next.push({
       id: 'm-' + m.id.replace(/[^a-z0-9]+/gi, '-').toLowerCase(), section: 'emulators', moduleId: m.id,
-      name: m.name, subtitle: m.system, path: m.exe, args: m.args, system: m.system, image: '', style: 'plain',
+      name: m.name, subtitle: m.system, path: P.rel(m.exe), args: m.args, system: m.system, image: '', style: 'plain',
     });
   }
   if (JSON.stringify(next) !== JSON.stringify(config.tiles)) {
