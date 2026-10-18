@@ -15,6 +15,7 @@ on:
 
 permissions:
   contents: write
+  actions: read
 
 jobs:
   build:
@@ -42,6 +43,13 @@ jobs:
       - name: Build the release folder
         run: node build/build.js --apps "$env:RUNNER_TEMP\apps" --no-zip
 
+      # the version every signed file carries (MediaDeck.exe's product version: 1.2.3 -> 1.2.3.0)
+      - name: Version
+        id: ver
+        run: |
+          $v = node -p "require('./package.json').version"
+          "file=$(($v -split '[^0-9.]')[0]).0" >> $env:GITHUB_OUTPUT
+
       # Only MediaDeck's own programs go to SignPath; they come back signed and replace the unsigned ones
       - name: Programs to sign
         if: env.SIGNPATH_API_TOKEN != ''
@@ -61,7 +69,7 @@ jobs:
 
       - name: Sign (SignPath)
         if: env.SIGNPATH_API_TOKEN != ''
-        uses: signpath/github-action-submit-signing-request@v1
+        uses: signpath/github-action-submit-signing-request@v3
         with:
           api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
           organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
@@ -71,6 +79,8 @@ jobs:
           github-artifact-id: ${{ steps.unsigned.outputs.artifact-id }}
           wait-for-completion: true
           output-artifact-directory: dist/signed
+          parameters: |
+            version: "${{ steps.ver.outputs.file }}"
 
       - name: Put the signed programs in and check them
         if: env.SIGNPATH_API_TOKEN != ''
@@ -98,5 +108,5 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           $v = node -p "require('./package.json').version"
-          $signed = if ($env:SIGNPATH_API_TOKEN) { 'MediaDeck''s programs are signed (SignPath).' } else { 'Not signed.' }
+          $signed = if ($env:SIGNPATH_API_TOKEN) { 'MediaDeck''s programs are signed. Free code signing provided by SignPath.io, certificate by SignPath Foundation - code signing policy: https://github.com/Farathim89/MediaDeck#code-signing-policy' } else { 'Not signed.' }
           gh release create "v$v" "dist\MediaDeck-$v-portable.zip" dist\SHA256SUMS.txt --draft --title "MediaDeck $v" --notes "Built on GitHub from $env:GITHUB_SHA. $signed Write the release notes, then publish."
