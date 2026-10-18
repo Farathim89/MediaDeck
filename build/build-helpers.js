@@ -24,7 +24,7 @@ const HELPERS = [
 const { version } = require('../package.json');
 const v4 = `${version.split(/[^0-9.]/)[0].split('.').concat(['0', '0', '0']).slice(0, 3).join('.')}.0`;
 const info = (title) => ['Product("MediaDeck")', `Title("${title}")`, `Description("${title}")`, 'Company("Farathim")', 'Copyright("Farathim, GPL-3.0-or-later")',
-  `Version("${v4}")`, `FileVersion("${v4}")`, `InformationalVersion("${version}")`].map((a) => `[assembly: System.Reflection.Assembly${a}]`).join('\n');
+  `Version("${v4}")`, `FileVersion("${v4}")`, `InformationalVersion("${v4}")`].map((a) => `[assembly: System.Reflection.Assembly${a}]`).join('\n');
 
 if (!fs.existsSync(CSC)) throw new Error(`The C# compiler was not found: ${CSC}`);
 fs.mkdirSync(OUT, { recursive: true });
