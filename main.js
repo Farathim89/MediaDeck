@@ -318,7 +318,9 @@ function launch(tile) {
       return;
     }
     if (tile.saveLink) { try { ensureSaveLink(tile.saveLink); } catch (e) { console.error('[saves]', e.message); } }
-    startProgram(target, splitArgs(tile.args || ''), tile.cwd || path.dirname(target), tile.name).then(resolve);
+    // An app from the catalog that hides to the tray when closed (PlexDeck) has its own way to quit for real
+    const known = Object.values(appInstaller.CATALOG).find((c) => c.quitArgs && c.exe && path.basename(target).toLowerCase() === c.exe.toLowerCase());
+    startProgram(target, splitArgs(tile.args || ''), tile.cwd || path.dirname(target), tile.name, known ? { quitArgs: known.quitArgs } : {}).then(resolve);
   });
 }
 
@@ -829,6 +831,18 @@ function hasWindow(pid) {
   return new Promise((resolve) => execFile('powershell.exe', ['-NoProfile', '-Command', ps], { windowsHide: true }, (err, out) => resolve(/True/i.test(out || ''))));
 }
 
+// The main process of a program that is running from this exe (the one not started by another of its own
+// processes: Electron apps run several), or null
+function mainProcessOf(exe) {
+  const q = (s) => `'${String(s).replace(/'/g, "''")}'`;
+  const ps = `$all = @(Get-CimInstance Win32_Process -Filter "Name=${q(path.basename(exe))}" | Where-Object { $_.ExecutablePath -eq ${q(exe)} });` +
+    `$ids = $all | ForEach-Object ProcessId; ($all | Where-Object { $ids -notcontains $_.ParentProcessId } | Sort-Object CreationDate | Select-Object -First 1).ProcessId`;
+  return new Promise((resolve) => execFile('powershell.exe', ['-NoProfile', '-Command', ps], { windowsHide: true }, (err, out) => {
+    const pid = parseInt(String(out || '').trim(), 10);
+    resolve(Number.isFinite(pid) && isAlive(pid) ? pid : null);
+  }));
+}
+
 function killTree(pid, force) {
   return new Promise((resolve) => execFile('taskkill', ['/PID', String(pid), '/T', ...(force ? ['/F'] : [])], { windowsHide: true }, (err, out, errOut) => {
     // A polite close of the whole tree is refused when a child (e.g. a console host) can only be
@@ -859,8 +873,17 @@ async function closeRunning(force) {
     return { closed: true, forced: false };
   }
   await killTree(pid, force);
+  // An app that only hides to the tray when closed (PlexDeck) quits for real with its own command - no
+  // "Are you sure?" to wait for
+  if (!force && running && running.quitArgs && running.exe) {
+    await wait(600);
+    if (isAlive(pid)) {
+      try { spawn(running.exe, running.quitArgs, { detached: true, stdio: 'ignore', windowsHide: true }).unref(); } catch {}
+      for (let t = 0; t < 24 && isAlive(pid); t++) await wait(250);
+    }
+  }
   if (force) await wait(800);
-  else {
+  else if (isAlive(pid)) {
     // closed, or asking "Are you sure?" (DuckStation, PCSX2): keys.exe answers it as soon as it shows (it keeps
     // looking up to 4 s, and stops when the program is gone) - the player chose Close
     await keysExe(['confirm', String(pid), (running && running.closeSteps || 1) > 1 ? '0' : '4']);   // (not MAME32's game list)
@@ -964,7 +987,7 @@ function startProgram(exe, args, cwd, name, meta = {}) {
     child.once('spawn', () => {
       resolve({ ok: true });
       holdOnTop(false);
-      running = { pid: child.pid, name: name || path.basename(exe, '.exe'), ...meta };
+      running = { pid: child.pid, name: name || path.basename(exe, '.exe'), exe, ...meta };
       startPadWatch();
       // Bring the game's window forward once it exists (Windows doesn't always let it come
       // to the front by itself); tried a few times during the first seconds only
@@ -974,13 +997,29 @@ function startProgram(exe, args, cwd, name, meta = {}) {
     // Come back to the home screen when the program closes (ignore launchers that exit right away;
     // the controller combo keeps working for whatever they started)
     child.once('exit', () => {
-      if (Date.now() - started > 5000) {
-        // Only the program that is running now: an older one that exits late (after the next
-        // game started) must not switch off the PS button for the new one
-        if (running && running.pid === child.pid) running = null;
-        if (!running) stopPadWatch();
-        bringToFront();
+      if (Date.now() - started <= 5000) {
+        // Gone at once: a program that runs only once (PlexDeck, Audiobookshelf) handed over to the copy
+        // already running - follow that one, so the PS button and Close still reach it
+        mainProcessOf(exe).then((pid) => {
+          if (!pid || !running || running.pid !== child.pid) return;
+          running.pid = pid;
+          // no 'exit' event for a process we didn't start: look now and then, and come back when it's gone
+          const watch = setInterval(() => {
+            if (!running || running.pid !== pid) return clearInterval(watch);
+            if (isAlive(pid)) return;
+            clearInterval(watch);
+            running = null;
+            stopPadWatch();
+            bringToFront();
+          }, 2000);
+        });
+        return;
       }
+      // Only the program that is running now: an older one that exits late (after the next
+      // game started) must not switch off the PS button for the new one
+      if (running && running.pid === child.pid) running = null;
+      if (!running) stopPadWatch();
+      bringToFront();
     });
     child.unref();
   });
