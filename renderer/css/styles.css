@@ -627,7 +627,13 @@ svg { display: block; }
 }
 [data-game-view="small"] .games-section .game-art-title { font-size: 0.85rem; left: 0.6rem; right: 0.6rem; bottom: 0.6rem; }
 [data-game-view="small"] .games-section .game-art .game-logo { width: 1.5rem; height: 1.5rem; top: 0.5rem; left: 0.5rem; }
-[data-game-view="small"] .games-section .game-card .card-name { font-size: 0.85rem; margin-top: 0.4rem; }
+[data-game-view="small"] .games-section .game-card .card-name { font-size: 0.85rem; margin-top: 0.4rem; display: block; white-space: nowrap; text-overflow: ellipsis; }
+/* a name too long for its line scrolls on the focused card (home.js sets --shift and --marquee-time) */
+.game-card .card-name .name-text { white-space: inherit; }
+.game-card .card-name.marquee { text-overflow: clip; }
+.game-card .card-name.marquee .name-text { display: inline-block; animation: nameScroll var(--marquee-time, 6s) ease-in-out 0.6s infinite alternate; }
+@keyframes nameScroll { 0%, 18% { transform: translateX(0); } 82%, 100% { transform: translateX(calc(-1 * var(--shift, 0px))); } }
+@media (prefers-reduced-motion: reduce) { .game-card .card-name.marquee .name-text { animation: none; } .game-card .card-name.marquee { text-overflow: ellipsis; } }
 [data-game-view="small"] .games-section .game-card .card-meta { font-size: 0.75rem; }
 [data-game-view="list"] .games-section .game-grid { display: flex; flex-direction: column; gap: 0.2rem; padding: 0.4rem 0.4rem 1.2rem; }
 [data-game-view="list"] .games-section .game-card {

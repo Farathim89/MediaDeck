@@ -373,7 +373,7 @@ const Home = (() => {
         <span class="thumb-icon game-logo"></span>
         <span class="game-art-title">${UI.esc(g.title)}</span>
       </div>
-      <div class="card-name">${UI.esc(g.title)}</div>
+      <div class="card-name"><span class="name-text">${UI.esc(g.title)}</span></div>
       <div class="card-meta">${UI.esc(meta || (g.versions ? [g.region, `${g.versions.length} versions`] : [g.region, g.version, g.type]).filter(Boolean).join(' · '))}</div>`;
     if (t) fillLogo(t, b.querySelector('.game-logo'));
     b.addEventListener('click', () => startGame(b._game, t));
@@ -454,6 +454,26 @@ const Home = (() => {
   const gameGroup = new Map();   // list key -> sub tab shown ('' = All games)
   // "...\Nintendo Snes\0 - Randomizer\Zelda.sfc" -> "Randomizer"
   const groupOf = (g) => { const m = /[\\/]0 - ([^\\/]+)[\\/]/.exec(g.rom || ''); return m ? m[1].trim() : ''; };
+
+  // Small cards / list: a name too long for its line scrolls on the focused card (to its end and back, a pause
+  // at each end); the other cards keep the "…"
+  let scrolling = null;
+  document.addEventListener('nav-focus', (e) => {
+    if (scrolling) { scrolling.classList.remove('marquee'); scrolling = null; }
+    const name = e.target.closest && e.target.closest('.game-card') && e.target.querySelector('.card-name');
+    if (!name || !/^(small|list)$/.test(document.documentElement.dataset.gameView || '')) return;
+    const text = name.querySelector('.name-text');
+    // measured after the card's grow-on-focus, so the line is its final width
+    requestAnimationFrame(() => {
+      if (!text || !e.target.classList.contains('focused')) return;
+      const shift = name.scrollWidth - name.clientWidth;      // the line's own overflow (the inline text has none)
+      if (shift < 4) return;
+      name.style.setProperty('--shift', `${shift + 6}px`);
+      name.style.setProperty('--marquee-time', `${(2.4 + shift / 35).toFixed(1)}s`);   // ~35 px a second + the pauses
+      name.classList.add('marquee');
+      scrolling = name;
+    });
+  });
 
   // Cards for the games matching the search; letters to jump with
   async function renderGameCards(t, sec, query) {
