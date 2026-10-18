@@ -231,7 +231,32 @@ async function biosSync(biosDir, installedModules) {
       }
     }
   }
+  copied.push(...aresFirmware(biosDir, installedModules));
   return copied;
+}
+
+// ares names its BIOS files by full path in its settings.bml (Firmware -> BIOS.World: <path>): a path to a file that
+// is gone (an older BIOS folder, another drive) points at the file of the same name in BIOS\<console> when it's there
+function aresFirmware(biosDir, installedModules) {
+  const fixed = [];
+  const ares = (installedModules || []).find((m) => m.ok && /^ares\.exe$/i.test(path.basename(m.exe || '')));
+  const file = ares && path.join(path.dirname(ares.exe), 'settings.bml');
+  if (!file || !fs.existsSync(file)) return fixed;
+  const have = new Map();
+  const walk = (d) => { let es = []; try { es = fs.readdirSync(d, { withFileTypes: true }); } catch {} for (const e of es) { const p = path.join(d, e.name); if (e.isDirectory()) walk(p); else if (!have.has(e.name.toLowerCase())) have.set(e.name.toLowerCase(), p); } };
+  walk(biosDir);
+  const text = fs.readFileSync(file, 'utf8');
+  const next = text.replace(/^(\s*BIOS\.[A-Za-z]+:[ \t]*)(\S[^\r\n]*)$/gm, (line, head, p) => {
+    if (fs.existsSync(p)) return line;
+    const mine = have.get(path.basename(p).toLowerCase());
+    if (!mine) return line;
+    fixed.push(`ares: ${path.basename(p)}`);
+    return head + mine.replace(/\\/g, '/');
+  });
+  if (next !== text) {
+    try { if (!fs.existsSync(file + '.before-bios-paths')) fs.copyFileSync(file, file + '.before-bios-paths'); fs.writeFileSync(file, next); } catch { return []; }
+  }
+  return fixed;
 }
 
 // BIOS\<console> for every console that needs one, each with a note of the files that go in it and the recommended
