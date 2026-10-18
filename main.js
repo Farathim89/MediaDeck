@@ -1065,6 +1065,9 @@ const consoleIcon = (system, raDir) => {
   return file && fs.existsSync(file) ? file : null;
 };
 
+// Home's maker rows where a console's name doesn't say it
+const MAKER_OF = { MAME: 'Arcade', 'Microsoft - DOS': 'PC' };
+
 async function consoleList(all) {
   const mods = (await emuModules.scan(emuDir())).filter((m) => !m.hidden && m.ok);
   // Console logos come from RetroArch's assets, wherever its folder is
@@ -1094,8 +1097,9 @@ async function consoleList(all) {
     const mod = mods.find((m) => m.id === pick.moduleId);
     const list = await gamesFor(mod);
     const count = c.system ? list.filter((g) => covers.systemFor(mod, g.rom) === c.system).length : list.length;
-    // The maker, for the rows on Home ("Nintendo - Wii" -> Nintendo; MAME -> Arcade)
-    const maker = !c.system ? 'Other' : c.system === 'MAME' ? 'Arcade' : c.system.split(' - ')[0];
+    // The maker, for the rows on Home ("Nintendo - Wii" -> Nintendo; MAME -> Arcade; DOS games are PC games,
+    // whatever libretro's "Microsoft - DOS" says)
+    const maker = !c.system ? 'Other' : MAKER_OF[c.system] || c.system.split(' - ')[0];
     out.push({ ...c, emulator: pick.moduleId, count, maker });
   }
   // Consoles without games stay out of sight unless the user wants to see them
