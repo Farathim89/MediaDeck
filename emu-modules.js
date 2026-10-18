@@ -22,6 +22,16 @@ const path = require('path');
 // can move (another drive letter, a USB stick); in memory they are full paths. (Without Electron: as they are.)
 const P = (() => { try { return require('./paths'); } catch { return null; } })();
 const mapFolder = (f, fn) => (!P ? f : typeof f === 'string' ? fn(f) : f && typeof f === 'object' ? { ...f, path: fn(f.path) } : f);
+// A games folder inside ANOTHER MediaDeck folder (this one was copied from it, e.g. E:\MediaDeck -> D:\MediaDeck):
+// the same folder in this MediaDeck when it has one - a copy uses its own games, not the other install's
+function ownCopy(p) {
+  if (!P || typeof p !== 'string' || !path.isAbsolute(p)) return p;
+  const m = /^(.*?)[\\/](Emu_modules|Games|Apps|BIOS)([\\/].*)?$/i.exec(p);
+  if (!m || path.resolve(m[1]).toLowerCase() === path.resolve(P.ROOT).toLowerCase()) return p;
+  if (!fs.existsSync(path.join(m[1], 'MediaDeck.exe')) && !fs.existsSync(path.join(m[1], 'data', 'root.json'))) return p;
+  const mine = path.join(P.ROOT, m[2], m[3] || '');
+  return fs.existsSync(mine) ? mine : p;
+}
 
 const MODULE_FILE = 'emu-module.json';
 const POINTER_SUFFIX = '.emu.json';
@@ -157,7 +167,7 @@ function normalise(mod, id, baseDir, moduleFile) {
     // per file type, other start arguments: { conf: '--conf "{rom}"' }
     extArgs: mod.extArgs && typeof mod.extArgs === 'object' ? mod.extArgs : null,
     romExtensions: mod.romExtensions || [],
-    romFolders: (mod.romFolders || []).map((f) => mapFolder(f, P ? P.resolve : null)),
+    romFolders: (mod.romFolders || []).map((f) => mapFolder(f, P ? (x) => ownCopy(P.resolve(x)) : null)),
     hidden: !!mod.hidden,
     hotkeys: mod.hotkeys || {},
     control: mod.control || '',
