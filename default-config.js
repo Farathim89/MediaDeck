@@ -60,7 +60,7 @@ function defaultConfig() {
       inGameOverlay: false,
       showEmptyConsoles: false,
       groupVersions: true,
-      checkEmuUpdates: true,
+      checkEmuUpdates: false,        // emulators: checked from Settings → Emulators when you want, not at every start
       checkAppUpdates: true,
       checkMediaDeckUpdates: true,   // at every start: a new MediaDeck version → a window asks whether to update
       autoCovers: true,
