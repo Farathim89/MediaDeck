@@ -190,7 +190,7 @@ const Settings = (() => {
         { label: 'Run the setup again', desc: 'Games folder, emulators, BIOS, controller and covers, step by step', type: 'action', run: () => App.open(Setup) },
         { label: 'Check for MediaDeck updates', desc: 'From MediaDeck\'s GitHub releases. Your settings, apps and emulators stay.', type: 'action',
           value: () => (selfLatest ? `${selfLatest} available - install` : ''), run: () => selfUpdateNow() },
-        { label: 'Check for MediaDeck updates at start', desc: 'At every start: when there is a new version, a window asks whether to update (never while a game runs)', type: 'toggle', key: 'checkMediaDeckUpdates' },
+        { label: 'Check for MediaDeck updates at start', desc: 'At start and every 6 hours while it runs: when there is a new version, a window asks whether to update (when MediaDeck is in front - never while a game runs)', type: 'toggle', key: 'checkMediaDeckUpdates' },
         { label: 'Portable: works on any PC', desc: 'On: history, favourites and covers are locked with a key in MediaDeck\'s data folder, so the MediaDeck folder works on another PC or a USB stick. '
           + 'Off: locked to this Windows account (more private; on another PC they are not readable).', type: 'toggle', key: 'portableData' },
         { label: 'App folder', type: 'info', value: () => (info ? info.appDir : '') },

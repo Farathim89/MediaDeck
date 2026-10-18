@@ -52,7 +52,28 @@ npm install
 npm start
 ```
 
-The release zip is built with `npm run dist`. It bundles mpv, FFmpeg and Streamlink from the `Apps` folder, so install those first from Settings → Apps. The helper programs in `tools` (controller watcher, key sender, pointer hider) are built from `launcher/*.cs` with the .NET Framework C# compiler.
+The release zip is built with `npm run dist`. It bundles mpv, FFmpeg and Streamlink from the `Apps` folder, so install those first from Settings → Apps. The helper programs in `tools` (controller watcher, key sender, pointer hider) are built from `launcher/*.cs` with the .NET Framework C# compiler (`node build/build-helpers.js`).
+
+Releases are built on GitHub by the [Release workflow](.github/workflows/release.yml): it compiles the helpers, downloads the media tools (`build/fetch-apps.js`), builds and zips MediaDeck from this source and attaches the zip to a draft release.
+
+## Code signing policy
+
+Free code signing provided by [SignPath.io](https://about.signpath.io), certificate by [SignPath Foundation](https://signpath.org).
+
+- **What is signed:** MediaDeck's own programs only - `MediaDeck.exe` and the helpers `keys.exe`, `padwatch.exe` and `cursorhide.exe`, all built from this repository by the [Release workflow](.github/workflows/release.yml). The third-party programs in the release (7-Zip, mpv, FFmpeg, Streamlink, Electron's libraries) are shipped as their makers publish them and are not signed by this project.
+- **Committers and reviewers:** [Farathim89](https://github.com/Farathim89)
+- **Approvers:** [Farathim89](https://github.com/Farathim89) - every signing request is approved by hand.
+
+## Privacy
+
+MediaDeck has no accounts, no telemetry and no analytics, and sends nothing about you or your PC to this project. It connects to other sites only for things you use:
+
+- **Updates:** GitHub (`api.github.com`, `github.com`) - is there a new MediaDeck, app or emulator version (at start and every few hours; switch it off in Settings), and the downloads themselves. Emulators you install come from their official pages (GitHub, dolphin-emu.org, ppsspp.org, mednafen.github.io, winuae.net, retrodev.com, retroarch.com).
+- **Box art:** a game's name, serial or title ID is sent to the cover libraries: [libretro thumbnails](https://thumbnails.libretro.com) (GitHub), [GameTDB](https://www.gametdb.com), [XboxUnity](https://xboxunity.net) and the [Arcade Database](https://adb.arcadeitalia.net). Switch it off with Settings → Emulators → *Download covers automatically*.
+- **YouTube and Twitch,** when you open them: their own TV websites with [TizenTube](https://github.com/reisxd/TizenTube) (loaded from cdn.jsdelivr.net) and [SmartTwitchTV](https://github.com/fgl27/SmartTwitchTV); streams are played through [Streamlink](https://streamlink.github.io). Their own privacy policies apply: [Google](https://policies.google.com/privacy), [Twitch](https://www.twitch.tv/p/legal/privacy-notice/).
+- **Apps you install from Settings → Apps** (PlexDeck, ABS-DA, DS4Windows …) are separate programs with their own policies.
+
+Your history, favourites and covers stay in MediaDeck's `data` folder, encrypted.
 
 ## Licence
 

@@ -10,7 +10,7 @@ To keep your saves safe, back up the `Emu_modules` folder (and `data` for MediaD
 
 ## MediaDeck updates
 
-MediaDeck looks for a new version **at every start**. When there is one, a window shows what's new with *Update now* / *Later* - never while a game or video runs. *Update now* downloads it, closes MediaDeck, updates it and starts it again; your settings, apps, emulators, games and BIOS files stay.
+MediaDeck looks for a new version **at every start, and every 6 hours while it runs**. When there is one, a window shows what's new with *Update now* / *Later* - as soon as MediaDeck is in front with nothing else open, never while a game or video runs. *Update now* downloads it, closes MediaDeck, updates it and starts it again; your settings, apps, emulators, games and BIOS files stay.
 
 - Turn the check off: Settings → About → *Check for MediaDeck updates at start*.
 - Check by hand: Settings → About → *Check for MediaDeck updates*.
