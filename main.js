@@ -1161,7 +1161,7 @@ async function launchGame(moduleId, rom) {
   try { args = games.launchArgs(mod, rom); } catch (e) { return { ok: false, error: e.message }; }
   // Mednafen keeps its settings in %HOME%\.mednafen when HOME is set (Git Bash, MSYS): always its own folder
   const env = emuInstaller.emuIdOf(mod) === 'mednafen' ? { MEDNAFEN_HOME: path.dirname(mod.exe) } : null;
-  const r = await startProgram(mod.exe, args, path.dirname(mod.exe), game.title,
+  const r = await startProgram(mod.exe, args, mod.gameCwd === 'rom' ? path.dirname(rom) : path.dirname(mod.exe), game.title,
     { emulator: mod.name, env, control: mod.control, hotkeys: mod.hotkeys || {}, closeSteps: mod.closeSteps || 1, holdToClose: mod.holdToClose || 0, attached: !!mod.attached });
   if (r.ok) {
     loadRecent();

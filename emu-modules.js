@@ -84,7 +84,7 @@ const KNOWN = [
   { name: 'openMSX', system: 'MSX', exes: ['openmsx.exe'], gameArgs: '-cart "{rom}" -command "set fullscreen on"', romExtensions: ['rom', 'mx1', 'mx2', 'col'], hotkeys: { options: 'F10', saveState: 'Alt+F8', loadState: 'Alt+F7', pause: 'Pause' } },
   // DOS games: best as a folder with the game installed in _C and a <Game>.conf that mounts C:, the CD and
   // starts it (the CD images themselves are not listed: they only work through such a .conf)
-  { name: 'DOSBox Staging', system: 'DOS', exes: ['dosbox.exe'], gameArgs: '--fullscreen "{rom}"', extArgs: { conf: '--fullscreen --conf "{rom}"' }, romExtensions: ['conf', 'exe', 'com', 'bat'], hotkeys: { pause: 'Alt+Pause', screenshot: 'Ctrl+F5' } },
+  { name: 'DOSBox Staging', system: 'DOS', exes: ['dosbox.exe'], gameArgs: '--fullscreen "{rom}"', extArgs: { conf: '--fullscreen --conf "{rom}"' }, gameCwd: 'rom', romExtensions: ['conf', 'exe', 'com', 'bat'], hotkeys: { pause: 'Alt+Pause', screenshot: 'Ctrl+F5' } },
   { name: 'x16emu', system: 'Commander X16', exes: ['x16emu.exe'], gameArgs: '-fullscreen -prg "{rom}" -run', romExtensions: ['prg'], hotkeys: { screenshot: 'Ctrl+P' } },
   { name: 'Ruffle', system: 'Flash', exes: ['ruffle.exe'], gameArgs: '--fullscreen "{rom}"', romExtensions: ['swf'], hotkeys: { pause: 'Ctrl+P' } },
   { name: 'BizHawk', system: 'Multi-system', exes: ['emuhawk.exe'], gameArgs: '"{rom}"', romExtensions: ['nes', 'sfc', 'gb', 'gba', 'n64', 'zip'] },
@@ -152,6 +152,7 @@ async function detect(dir, folderName) {
     ...(k && k.hotkeys ? { hotkeys: k.hotkeys } : {}),
     ...(k && k.attached ? { attached: true } : {}),
     ...(k && k.extArgs ? { extArgs: k.extArgs } : {}),
+    ...(k && k.gameCwd ? { gameCwd: k.gameCwd } : {}),
   };
 }
 
@@ -166,6 +167,8 @@ function normalise(mod, id, baseDir, moduleFile) {
     gameArgs: mod.gameArgs || '"{rom}"',
     // per file type, other start arguments: { conf: '--conf "{rom}"' }
     extArgs: mod.extArgs && typeof mod.extArgs === 'object' ? mod.extArgs : null,
+    // 'rom': the game starts in its own folder (DOSBox: a game's .conf mounts "_C" next to it)
+    gameCwd: mod.gameCwd || '',
     romExtensions: mod.romExtensions || [],
     romFolders: (mod.romFolders || []).map((f) => mapFolder(f, P ? (x) => ownCopy(P.resolve(x)) : null)),
     hidden: !!mod.hidden,
@@ -301,8 +304,10 @@ function addKnownExtensions(mod) {
   const missing = k.romExtensions.filter((e) => !have.has(e));
   const addControls = (k.hotkeys && !data.hotkeys) || (k.control && !data.control);
   const addExtArgs = k.extArgs && Object.keys(k.extArgs).some((e) => !(data.extArgs && data.extArgs[e]));
-  if (!missing.length && !addControls && !addExtArgs) return;
+  const addCwd = k.gameCwd && !data.gameCwd;
+  if (!missing.length && !addControls && !addExtArgs && !addCwd) return;
   if (addExtArgs) { data.extArgs = { ...k.extArgs, ...(data.extArgs || {}) }; mod.extArgs = data.extArgs; }
+  if (addCwd) { data.gameCwd = k.gameCwd; mod.gameCwd = k.gameCwd; }
   data.romExtensions = [...(data.romExtensions || []), ...missing];
   // In-game overlay: hotkeys the emulator listens to (change them here if you change them there)
   if (k.hotkeys && !data.hotkeys) data.hotkeys = k.hotkeys;
