@@ -62,6 +62,63 @@
   --text: #fff5ef; --muted: #c0a596; --dim: #8a7266;
   --accent: #f59e0b; --accent-ink: #2a1600; --focus-bg: rgba(255, 255, 255, 0.11); --focus-ink: #ffffff; --focus-ring: var(--accent); --glow-opacity: 0.9;
 }
+/* Console themes */
+:root[data-theme="playstation"] {
+  --bg: #030b20; --bg-rgb: 3, 11, 32;
+  --surface-1: #16305e; --surface-2: #0f2246; --surface-3: #0a1833; --surface-line: rgba(120, 170, 255, 0.1);
+  --sidebar: rgba(3, 11, 32, 0.85);
+  --panel: color-mix(in srgb, #0f2246 96%, transparent); --panel-solid: #0f2246; --line: rgba(120, 170, 255, 0.12);
+  --text: #eef4ff; --muted: #9db1d4; --dim: #64789a;
+  --accent: #3d7bff; --accent-ink: #000b24; --focus-bg: rgba(255, 255, 255, 0.11); --focus-ink: #ffffff; --focus-ring: var(--accent); --glow-opacity: 0.9;
+}
+:root[data-theme="xbox"] {
+  --bg: #031003; --bg-rgb: 3, 16, 3;
+  --surface-1: #1b3a1b; --surface-2: #132a13; --surface-3: #0c1d0c; --surface-line: rgba(140, 230, 140, 0.1);
+  --sidebar: rgba(3, 16, 3, 0.85);
+  --panel: color-mix(in srgb, #132a13 96%, transparent); --panel-solid: #132a13; --line: rgba(140, 230, 140, 0.12);
+  --text: #f1fbf1; --muted: #a3c2a3; --dim: #6b836b;
+  --accent: #4cc94c; --accent-ink: #021402; --focus-bg: rgba(255, 255, 255, 0.11); --focus-ink: #ffffff; --focus-ring: var(--accent); --glow-opacity: 0.8;
+}
+:root[data-theme="nintendo"] {
+  --bg: #140405; --bg-rgb: 20, 4, 5;
+  --surface-1: #3a1719; --surface-2: #2a1012; --surface-3: #1e0b0c; --surface-line: rgba(255, 150, 150, 0.1);
+  --sidebar: rgba(20, 4, 5, 0.85);
+  --panel: color-mix(in srgb, #2a1012 96%, transparent); --panel-solid: #2a1012; --line: rgba(255, 150, 150, 0.12);
+  --text: #fff3f3; --muted: #c9a2a3; --dim: #93706f;
+  --accent: #ff3b44; --accent-ink: #2a0003; --focus-bg: rgba(255, 255, 255, 0.11); --focus-ink: #ffffff; --focus-ring: var(--accent); --glow-opacity: 0.85;
+}
+:root[data-theme="gamecube"] {
+  --bg: #0b0720; --bg-rgb: 11, 7, 32;
+  --surface-1: #2b2360; --surface-2: #1f1948; --surface-3: #161134; --surface-line: rgba(170, 150, 255, 0.1);
+  --sidebar: rgba(11, 7, 32, 0.85);
+  --panel: color-mix(in srgb, #1f1948 96%, transparent); --panel-solid: #1f1948; --line: rgba(170, 150, 255, 0.12);
+  --text: #f4f1ff; --muted: #aea6d2; --dim: #77709b;
+  --accent: #8c7cff; --accent-ink: #0d0533; --focus-bg: rgba(255, 255, 255, 0.11); --focus-ink: #ffffff; --focus-ring: var(--accent); --glow-opacity: 0.9;
+}
+:root[data-theme="gameboy"] {
+  --bg: #0a1405; --bg-rgb: 10, 20, 5;
+  --surface-1: #2b3d18; --surface-2: #1f2d11; --surface-3: #16210b; --surface-line: rgba(190, 220, 110, 0.1);
+  --sidebar: rgba(10, 20, 5, 0.85);
+  --panel: color-mix(in srgb, #1f2d11 96%, transparent); --panel-solid: #1f2d11; --line: rgba(190, 220, 110, 0.12);
+  --text: #f2f8e6; --muted: #b1c196; --dim: #78845f;
+  --accent: #9bbc0f; --accent-ink: #0f1a00; --focus-bg: rgba(255, 255, 255, 0.11); --focus-ink: #ffffff; --focus-ring: var(--accent); --glow-opacity: 0.8;
+}
+:root[data-theme="dreamcast"] {
+  --bg: #140904; --bg-rgb: 20, 9, 4;
+  --surface-1: #3b2615; --surface-2: #2b1b0e; --surface-3: #1f1309; --surface-line: rgba(255, 180, 120, 0.1);
+  --sidebar: rgba(20, 9, 4, 0.85);
+  --panel: color-mix(in srgb, #2b1b0e 96%, transparent); --panel-solid: #2b1b0e; --line: rgba(255, 180, 120, 0.12);
+  --text: #fff6ee; --muted: #c9ad96; --dim: #917864;
+  --accent: #ff7a1a; --accent-ink: #2b1100; --focus-bg: rgba(255, 255, 255, 0.11); --focus-ink: #ffffff; --focus-ring: var(--accent); --glow-opacity: 0.85;
+}
+:root[data-theme="megadrive"] {
+  --bg: #000000; --bg-rgb: 0, 0, 0;
+  --surface-1: #26181a; --surface-2: #1a1112; --surface-3: #100a0b; --surface-line: rgba(255, 140, 140, 0.1);
+  --sidebar: rgba(0, 0, 0, 0.85);
+  --panel: color-mix(in srgb, #1a1112 96%, transparent); --panel-solid: #1a1112; --line: rgba(255, 140, 140, 0.12);
+  --text: #f6f6f6; --muted: #ababab; --dim: #707070;
+  --accent: #e8202a; --accent-ink: #2a0002; --focus-bg: rgba(255, 255, 255, 0.11); --focus-ink: #ffffff; --focus-ring: var(--accent); --glow-opacity: 0.7;
+}
 :root {
   --danger: #ef4444;
   --radius: 0.75rem;
@@ -645,9 +702,20 @@ svg { display: block; }
 [data-game-view="list"] .games-section .game-card.focused { transform: none; background: var(--focus-bg); box-shadow: 0 0 0 0.14rem var(--focus-ring); }
 [data-game-view="list"] .games-section .game-card.focused .card-name { color: var(--focus-ink); }
 [data-game-view="list"] .games-section .game-card.is-fav .card-name::after { content: " ★"; color: #fcd34d; }
+/* List with small covers: the list's rows with a small cover on the left */
+[data-game-view="rows"] .games-section .game-grid { display: flex; flex-direction: column; gap: 0.3rem; padding: 0.4rem 0.4rem 1.2rem; }
+[data-game-view="rows"] .games-section .game-card { flex-direction: row; align-items: center; gap: 1rem; padding: 0.35rem 1rem 0.35rem 0.35rem; border-radius: 0.7rem; background: var(--surface-1); }
+[data-game-view="rows"] .games-section .game-card .game-art { flex: none; width: 2.8rem; border-radius: 0.35rem; box-shadow: none; }
+[data-game-view="rows"] .games-section .game-art-title, [data-game-view="rows"] .games-section .game-art .game-logo { display: none; }
+[data-game-view="rows"] .games-section .game-card .card-name { display: block; margin: 0; flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+[data-game-view="rows"] .games-section .game-card .card-meta { margin: 0; flex: none; color: var(--muted); }
+[data-game-view="rows"] .games-section .game-card.focused { transform: none; background: var(--focus-bg); box-shadow: 0 0 0 0.14rem var(--focus-ring); }
+[data-game-view="rows"] .games-section .game-card.focused .game-art { box-shadow: none; }
+[data-game-view="rows"] .games-section .game-card.focused .card-name { color: var(--focus-ink); }
+[data-game-view="rows"] .games-section .game-card.is-fav .card-name::after { content: " ★"; color: #fcd34d; }
 
 /* ---------- First-start setup / BIOS check ---------- */
-#setup.screen.active { flex-direction: column; align-items: center; overflow: hidden; }
+#setup.screen.active, #padsetup.screen.active { flex-direction: column; align-items: center; overflow: hidden; }
 .setup-page { width: min(64rem, 100%); flex: 1; min-height: 0; overflow-y: auto; padding: 4.5rem 3rem 7rem; scrollbar-width: none; }
 .setup-page::-webkit-scrollbar { display: none; }
 .setup-steps { display: flex; gap: 0.4rem; flex-wrap: wrap; margin-bottom: 2.2rem; }
@@ -675,3 +743,19 @@ svg { display: block; }
 .help-block { cursor: default; }
 .help-text { font-size: 1.02rem; line-height: 1.55; margin-top: 0.4rem; color: var(--muted); }
 .help-text .key { display: inline-block; padding: 0.05rem 0.45rem; margin: 0 0.1rem; border-radius: 0.4rem; background: rgba(255, 255, 255, 0.1); color: var(--text); font-weight: 600; font-size: 0.92rem; }
+
+/* Controller setup: where the control is on N64 / GameCube pads, and "that button is already …" */
+#padsetup .padsetup-hint { margin: 10px 0 4px; color: var(--accent, #e5a00d); font-weight: 600; }
+#padsetup .padsetup-note { margin: 8px 0 4px; color: #ff8a80; font-weight: 600; }
+
+/* A console page's Recently played: one line of cards that scrolls sideways (the focused card is scrolled into view) */
+.console-recent .game-grid { display: flex; flex-wrap: nowrap; overflow-x: auto; overflow-y: hidden; scrollbar-width: none; scroll-padding: 0 2rem; padding: 1rem 1rem 1.4rem; }
+.console-recent .game-grid::-webkit-scrollbar { display: none; }
+.console-recent .game-card { flex: 0 0 calc(4rem + 9.5rem * var(--art-ratio, 0.75)); }
+
+/* Menu items with colour dots (the theme list): background, card, accent */
+.menu-item .menu-swatch { margin-left: auto; display: flex; gap: 0.3rem; }
+.menu-item .menu-swatch i { width: 1rem; height: 1rem; border-radius: 50%; box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.25); }
+
+/* MediaDeck as a window (F11): it has no title bar, a thin strip along the top moves it (double-click: maximize) */
+html.windowed body::before { content: ""; position: fixed; top: 0; left: 0; right: 0; height: 0.7rem; z-index: 10000; -webkit-app-region: drag; background: rgba(255, 255, 255, 0.04); }

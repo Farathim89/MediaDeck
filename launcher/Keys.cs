@@ -5,6 +5,10 @@
 //                                  (secs: keep looking that long, until it shows or the program is gone)
 //   keys.exe send <pid> <combo>    bring the game's window (pid or its child) to the front and
 //                                  press a key combo, e.g. "F1", "Shift+F1", "Ctrl+P"
+//   keys.exe unmark <hwnd>          take the taskbar's "full screen" mark off a window (Chromium sets it; Windows 11's
+//                                  Alt+Tab then lists MediaDeck twice after quick switches)
+//   keys.exe freeze <pid> / thaw <pid>  stop / continue the program (all its threads) - an emulator stands still
+//                                  while MediaDeck's menu is open, so the controller doesn't play the game too
 // Keys are sent as hardware scan codes, which emulators (DirectInput / raw input) understand.
 using System;
 using System.Collections.Generic;
@@ -12,8 +16,20 @@ using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Threading;
 
+[ComImport, Guid("602D4995-B13A-429b-A66E-1935E44F4317"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+interface ITaskbarList2
+{
+    void HrInit(); void AddTab(IntPtr h); void DeleteTab(IntPtr h); void ActivateTab(IntPtr h); void SetActiveAlt(IntPtr h);
+    void MarkFullscreenWindow(IntPtr h, [MarshalAs(UnmanagedType.Bool)] bool full);
+}
+[ComImport, Guid("56FDF344-FD6D-11d0-958A-006097C9A090")] class TaskbarList { }
+
 static class Keys
 {
+    [DllImport("ntdll.dll")] static extern int NtSuspendProcess(IntPtr p);
+    [DllImport("ntdll.dll")] static extern int NtResumeProcess(IntPtr p);
+    [DllImport("kernel32.dll")] static extern IntPtr OpenProcess(uint access, bool inherit, int pid);
+    [DllImport("kernel32.dll")] static extern bool CloseHandle(IntPtr h);
     [DllImport("user32.dll")] static extern bool SetForegroundWindow(IntPtr h);
     [DllImport("user32.dll")] static extern bool ShowWindow(IntPtr h, int cmd);
     [DllImport("user32.dll")] static extern bool IsIconic(IntPtr h);
@@ -140,6 +156,21 @@ static class Keys
     {
         try
         {
+            if (a.Length >= 2 && a[0] == "unmark")
+            {
+                var tb = (ITaskbarList2)new TaskbarList();
+                tb.HrInit();
+                tb.MarkFullscreenWindow(new IntPtr(long.Parse(a[1])), false);
+                return 0;
+            }
+            if (a.Length >= 2 && (a[0] == "freeze" || a[0] == "thaw"))
+            {
+                var p = OpenProcess(0x0800, false, int.Parse(a[1]));   // PROCESS_SUSPEND_RESUME
+                if (p == IntPtr.Zero) return 2;
+                int r = a[0] == "freeze" ? NtSuspendProcess(p) : NtResumeProcess(p);
+                CloseHandle(p);
+                return r == 0 ? 0 : 3;
+            }
             if (a.Length >= 2 && a[0] == "focus") { Focus(new IntPtr(long.Parse(a[1]))); return 0; }
             if (a.Length >= 2 && a[0] == "game") { var h = WindowOf(int.Parse(a[1])); if (h == IntPtr.Zero) return 2; Focus(h); return 0; }
             if (a.Length >= 2 && a[0] == "confirm")
@@ -165,7 +196,7 @@ static class Keys
             }
         }
         catch (Exception e) { Console.Error.WriteLine(e.Message); return 1; }
-        Console.Error.WriteLine("usage: keys focus <hwnd> | keys game <pid> | keys confirm <pid> [secs] | keys send <pid> <combo>");
+        Console.Error.WriteLine("usage: keys focus <hwnd> | keys game <pid> | keys confirm <pid> [secs] | keys send <pid> <combo> | keys freeze|thaw <pid> | keys unmark <hwnd>");
         return 1;
     }
 }

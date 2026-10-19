@@ -37,19 +37,22 @@ const UI = (() => {
   function itemButton(item, done) {
     const b = document.createElement('button');
     b.className = 'menu-item focusable' + (item.danger ? ' danger' : '') + (item.cls ? ' ' + item.cls : '');
-    b.innerHTML = `${item.icon && Icons[item.icon] ? Icons[item.icon] : ''}<span>${esc(item.label)}</span>`;
+    b._value = item.value;
+    const dots = item.swatch ? `<span class="menu-swatch">${item.swatch.map((c) => `<i style="background:${esc(c)}"></i>`).join('')}</span>` : '';
+    b.innerHTML = `${item.icon && Icons[item.icon] ? Icons[item.icon] : ''}<span>${esc(item.label)}</span>${dots}`;
     b.addEventListener('click', () => done(item.value !== undefined ? item.value : item.label));
     return b;
   }
 
   // focus: the value of the item to start on (e.g. what's playing now)
-  function menu({ title, message, items, focus }) {
+  // onFocus(value): called for the item under the focus (a live preview, e.g. the theme)
+  function menu({ title, message, items, focus, onFocus }) {
     return show((box, done) => {
       box.innerHTML = `${title ? `<h2>${esc(title)}</h2>` : ''}${message ? `<p>${esc(message)}</p>` : ''}<div class="menu-list"></div>`;
       const list = box.querySelector('.menu-list');
       const buttons = items.map((it) => itemButton(it, done));
       buttons.forEach((b) => list.appendChild(b));
-      box.addEventListener('nav-focus', (e) => e.target.scrollIntoView({ block: 'nearest' }));
+      box.addEventListener('nav-focus', (e) => { e.target.scrollIntoView({ block: 'nearest' }); if (onFocus && e.target._value !== undefined) onFocus(e.target._value); });
       const i = focus !== undefined ? items.findIndex((it) => it.value === focus) : -1;
       return buttons[i >= 0 ? i : 0];
     });

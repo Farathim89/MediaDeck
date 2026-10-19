@@ -89,7 +89,8 @@ function open(parent) {
   ses.setUserAgent(UA);
   const area = parent && !parent.isDestroyed() ? screen.getDisplayMatching(parent.getBounds()).bounds : screen.getPrimaryDisplay().bounds;
   win = new BrowserWindow({
-    ...area, fullscreen: true, frame: false, show: false, backgroundColor: '#000000', title: 'YouTube',
+    ...area, frame: false, fullscreenable: false,   // covers the screen without Chromium full screen (see main.js setFull)
+    show: false, backgroundColor: '#000000', title: 'YouTube',
     webPreferences: { session: ses, preload: path.join(__dirname, 'youtube-preload.js'), contextIsolation: true, sandbox: true },
   });
   win.setMenu(null);

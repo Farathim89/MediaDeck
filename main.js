@@ -14,6 +14,7 @@ const covers = require('./covers');
 const youtube = require('./youtube');
 const twitch = require('./twitch');
 const appInstaller = require('./app-installer');
+const pads = require('./pads');
 const selfUpdate = require('./self-update');
 const setupScan = require('./setup-scan');
 const overlay = require('./overlay');
@@ -233,10 +234,15 @@ function createWindow() {
     const visible = saved.x < area.x + area.width - 100 && saved.x + bounds.width > area.x + 100 && saved.y >= area.y - 20 && saved.y < area.y + area.height - 100;
     if (visible) { bounds.x = saved.x; bounds.y = saved.y; }
   }
+  windowedBounds = { ...bounds };
+  const startFull = !!config.settings.fullscreen;
   win = new BrowserWindow({
-    ...bounds,
+    ...(startFull ? screen.getDisplayMatching({ x: bounds.x || 0, y: bounds.y || 0, width: bounds.width, height: bounds.height }).bounds : bounds),
     minWidth: 960, minHeight: 540,
-    fullscreen: !!config.settings.fullscreen,
+    // always borderless: "full screen" is the window covering the screen (setFull), never Chromium's full-screen
+    // mode - with disable-direct-composition (for mpv) that leaves duplicate / ghost MediaDeck entries in Windows
+    // 11's Alt+Tab. fullscreenable: false keeps pages from switching it on.
+    frame: false, fullscreenable: false, resizable: !startFull,
     backgroundColor: '#000000',
     autoHideMenuBar: true,
     title: 'MediaDeck',
@@ -247,32 +253,74 @@ function createWindow() {
       backgroundThrottling: false,
     },
   });
-  if (saved.maximized && !config.settings.fullscreen) win.maximize();
+  full = startFull;
+  if (startFull) { coverScreenAgain(); win.once('ready-to-show', coverScreenAgain); win.webContents.once('did-finish-load', coverScreenAgain); }
+  if (saved.maximized && !startFull) win.maximize();
+  win.webContents.on('did-finish-load', () => win.webContents.send('win-full', full));
   win.setMenu(null);
   win.loadFile(path.join(__dirname, 'renderer', 'index.html'));
   win.webContents.on('before-input-event', (e, input) => onShortcut(e, input));
   win.on('closed', () => { win = null; app.quit(); });
+  for (const ev of ['display-metrics-changed', 'display-added', 'display-removed']) screen.on(ev, coverScreenAgain);
   // Leaving the PS menu any other way (back to the game, save state, Alt+Tab): stop being on top
-  win.on('blur', () => { if (menuOnTop) holdOnTop(false); win.webContents.send('win-active', false); });
+  win.on('blur', () => {
+    if (menuOnTop) holdOnTop(false);
+    win.webContents.send('win-active', false);
+    // back to a running game (after MediaDeck's menu): let go of the pads again and get out of the way
+    if (running && isAlive(running.pid)) {
+      thawGame();
+      padsToGame(true);
+      if (config.settings.minimizeOnLaunch !== false) setTimeout(() => {
+        if (win && !win.isDestroyed() && !win.isFocused() && !win.isMinimized() && running && isAlive(running.pid)) win.minimize();
+      }, 400);
+    }
+  });
   // The controller only works in MediaDeck while its window really is the active one (Chromium can
   // keep thinking it has focus after a game or another program came to the front)
-  win.on('focus', () => win.webContents.send('win-active', true));
+  win.on('focus', () => { padsToGame(false); win.webContents.send('win-active', true); });
   for (const ev of ['resize', 'move', 'maximize', 'unmaximize', 'enter-full-screen', 'leave-full-screen']) win.on(ev, rememberWindow);
 }
 
 function onShortcut(e, input) {
   if (input.type !== 'keyDown') return;
-  if (input.key === 'F11') { win.setFullScreen(!win.isFullScreen()); e.preventDefault(); }
+  if (input.key === 'F11') { setFull(!full); e.preventDefault(); }
   if (input.key === 'F12') { e.sender.toggleDevTools(); e.preventDefault(); }
 }
 
 let windowTimer = null;
+// Full screen = the window exactly covering its screen (Windows hides the taskbar for it); off = its old place.
+// A screen change (resolution, another monitor) while full: it covers the screen again.
+let full = false;
+let windowedBounds = null;
+function setFull(on) {
+  if (!win || win.isDestroyed() || on === full) return;
+  if (on) {
+    if (win.isMaximized()) win.unmaximize();
+    windowedBounds = win.getBounds();
+    full = true;
+    win.setResizable(false);   // no resize edge: the window is exactly the screen
+    win.setBounds(screen.getDisplayMatching(windowedBounds).bounds);
+  } else {
+    full = false;
+    win.setResizable(true);
+    const area = screen.getDisplayMatching(win.getBounds()).workArea;
+    const b = windowedBounds && windowedBounds.width < area.width ? windowedBounds
+      : { width: 1280, height: 720, x: area.x + Math.round((area.width - 1280) / 2), y: area.y + Math.round((area.height - 720) / 2) };
+    win.setBounds(b);
+  }
+  win.webContents.send('win-full', full);
+  rememberWindow();
+}
+function coverScreenAgain() {
+  if (full && win && !win.isDestroyed()) win.setBounds(screen.getDisplayMatching(win.getBounds()).bounds);
+}
+
 function rememberWindow() {
   clearTimeout(windowTimer);
   windowTimer = setTimeout(() => {
     if (!win || win.isDestroyed() || win.isMinimized()) return;
     const s = config.settings;
-    s.fullscreen = win.isFullScreen();
+    s.fullscreen = full;
     const prev = s.window || {};
     s.window = { ...prev, maximized: win.isMaximized() };
     if (!s.fullscreen && !win.isMaximized()) Object.assign(s.window, win.getBounds());
@@ -286,6 +334,13 @@ let menuOnTop = false;
 function holdOnTop(on) {
   menuOnTop = on;
   if (win && !win.isDestroyed()) win.setAlwaysOnTop(on, 'screen-saver');
+}
+
+// While a game runs, MediaDeck's pages count as hidden, so Chromium lets go of the controllers: while it reads a
+// USB pad that isn't Xbox / PlayStation (for MediaDeck's menus), DirectInput gives the game nothing from it (Dolphin
+// got no button). backgroundThrottling: false otherwise keeps a minimized / hidden page "visible". On focus, back.
+function padsToGame(on) {
+  try { if (win && !win.isDestroyed()) win.webContents.setBackgroundThrottling(on); } catch {}   // the PS menu: overlay.js
 }
 
 function bringToFront() {
@@ -419,7 +474,7 @@ let twitchWasFull = null;  // MediaDeck's own full-screen state while a Twitch s
 function stopTwitchStream() {
   if (twitchPlay && twitchPlay.proc) { try { twitchPlay.proc.kill(); } catch {} }
   twitchPlay = null;
-  if (twitchWasFull === false && win && !win.isDestroyed()) win.setFullScreen(false);
+  if (twitchWasFull === false && win && !win.isDestroyed()) setFull(false);
   twitchWasFull = null;
 }
 // "1h2m3s" → seconds
@@ -471,7 +526,7 @@ async function playTwitch(req) {
   const pick = q === 'audio_only' ? ['audio_only,worst'] : /^\d{3,4}p\d{0,3}$/.test(q) ? ['--stream-sorting-excludes', `>${q}`, 'best,worst-unfiltered'] : ['best'];
   twitch.hide();
   // full screen like Twitch itself, put back as it was afterwards (twitchRestore)
-  if (twitchWasFull === null) { twitchWasFull = win.isFullScreen(); if (!twitchWasFull) win.setFullScreen(true); }
+  if (twitchWasFull === null) { twitchWasFull = full; if (!twitchWasFull) setFull(true); }
   focusSelf();
   if (req.video) {
     // a video: its playlist straight into the player, so seeking works
@@ -584,7 +639,7 @@ function startPadWatch() {
   if (padwatch) return;
   const exe = P.tool('padwatch.exe');
   if (!fs.existsSync(exe)) return;
-  padwatch = spawn(exe, [], { windowsHide: true });
+  padwatch = spawn(exe, pads.padwatchArgs(config.controllers), { windowsHide: true });
   padwatch.stdout.on('data', (d) => {
     for (const line of String(d).split(/\r?\n/)) {
       if (line.trim() === 'home') homePressed();
@@ -618,7 +673,7 @@ function homePressed() {
     if (!holdTimer) holdTimer = setTimeout(async () => { holdTimer = null; await closeRunning(false); if (!otherRunning(held)) bringToFront(); }, running.holdToClose * 1000);
     return;
   }
-  if (alive && config.settings.inGameOverlay) { overlay.show(overlayInfo()); return; }
+  if (alive && config.settings.inGameOverlay) { freezeGame(); overlay.show(overlayInfo()); return; }
   // At home, MediaDeck in front: the Exit menu (pressed again: it closes)
   if (!alive && !mpv.isOpen() && win.isVisible() && !win.isMinimized() && win.isFocused()) {
     win.webContents.send('power-menu');
@@ -626,7 +681,7 @@ function homePressed() {
   }
   // nothing of ours running and MediaDeck in the background: another program has the controller - leave it
   if (!alive && !mpv.isOpen()) return;
-  if (alive) holdOnTop(true);
+  if (alive) { holdOnTop(true); freezeGame(); }
   bringToFront();
   // Some full-screen games (Mednafen/SDL) minimise themselves and Windows hands the focus to
   // another program: the menu shows but the controller wouldn't reach it → take it with keys.exe
@@ -706,7 +761,7 @@ function startTestSwitch() {
       if (u.pathname === '/scan-games') return send(await win.webContents.executeJavaScript('Home.scanGames().then((r) => ({ added: r.added, removed: r.removed, total: r.total }))'));
       if (u.pathname === '/launch-tile') { const t = config.tiles.find((x) => x.id === u.searchParams.get('id')); return send(t ? await launch(t) : { ok: false, error: 'no such tile' }); }
       if (u.pathname === '/launch') return send(await launchGame(u.searchParams.get('module'), u.searchParams.get('rom')));
-      if (u.pathname === '/state') return send({ running: running && isAlive(running.pid) ? { pid: running.pid, name: running.name, emulator: running.emulator } : null, focused: !!(win && !win.isDestroyed() && win.isFocused()), minimized: !!(win && !win.isDestroyed() && win.isMinimized()) });
+      if (u.pathname === '/state') return send({ running: running && isAlive(running.pid) ? { pid: running.pid, name: running.name, emulator: running.emulator } : null, focused: !!(win && !win.isDestroyed() && win.isFocused()), minimized: !!(win && !win.isDestroyed() && win.isMinimized()), page: win && !win.isDestroyed() ? await win.webContents.executeJavaScript('document.visibilityState') : null });
       // Clicks the menu item whose text contains "label" (the open dialog in MediaDeck)
       if (u.pathname === '/menu') {
         const label = u.searchParams.get('label') || '';
@@ -872,6 +927,7 @@ const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 // for them, as a closing program can come to the front over it (MAME32 crashes then)
 const closing = new Map();   // pid -> name
 async function closeRunning(force) {
+  await thawGame();
   holdOnTop(false);
   if (!running || !isAlive(running.pid)) { running = null; stopPadWatch(); return { closed: true }; }
   const pid = running.pid;
@@ -927,7 +983,25 @@ async function closeRunning(force) {
 }
 
 // Back to the game: bring its window forward and step MediaDeck aside
+// While MediaDeck's menu is over an emulator, the emulator stands still (keys.exe freeze: all its threads stop),
+// so the controller presses in the menu don't play the game too - emulators built on Qt (simple64, RMG) read the
+// pad even without the focus. Thawed on any way back: Back to game, a menu action, Close, Alt+Tab, MediaDeck quitting.
+// Only emulators: PC games and apps may have anti-cheat that doesn't like it.
+let frozen = null;
+async function freezeGame() {
+  if (frozen || !running || !isAlive(running.pid) || !running.emulator || running.emulator === 'PC games') return;
+  frozen = running.pid;
+  await keysExe(['freeze', String(frozen)]);
+}
+async function thawGame() {
+  if (!frozen) return;
+  const pid = frozen;
+  frozen = null;
+  await keysExe(['thaw', String(pid)]);
+}
+
 function resumeRunning() {
+  thawGame();
   holdOnTop(false);
   if (running) closing.delete(running.pid);   // it didn't close and the player went back to it: no longer "closing"
   if (running && isAlive(running.pid)) {
@@ -959,6 +1033,7 @@ function retroarchCommand(cmd) {
 }
 
 async function overlayAction(action) {
+  await thawGame();
   const r = running;
   if (!r || !isAlive(r.pid)) { overlay.hide(); bringToFront(); return { closed: true }; }
   if (action === 'resume') { overlay.hide(); await keysExe(['game', String(r.pid)]); return { ok: true }; }
@@ -999,7 +1074,12 @@ async function startProgram(exe, args, cwd, name, meta = {}) {
     let child;
     try {
       // Some programs (Ryujinx) crash when started without any console: they start attached
-      child = spawn(exe, args, { cwd, detached: !(meta && meta.attached), stdio: 'ignore', ...(meta && meta.env ? { env: { ...process.env, ...meta.env } } : {}) });
+      // pads set up in Settings → Controllers: SDL-based emulators see them as Xbox controllers
+      const sdl = pads.sdlConfig(config.controllers);
+      // SDL programs read the controller only while their window is in front: with MediaDeck's PS menu over the
+      // game, the presses stay in the menu (SDL lets this variable win over the program's own setting)
+      const env = { ...process.env, SDL_JOYSTICK_ALLOW_BACKGROUND_EVENTS: '0', ...(sdl ? { SDL_GAMECONTROLLERCONFIG: sdl } : {}), ...((meta && meta.env) || {}) };
+      child = spawn(exe, args, { cwd, detached: !(meta && meta.attached), stdio: 'ignore', env });
     } catch (e) {
       return resolve({ ok: false, error: e.message });
     }
@@ -1018,11 +1098,13 @@ async function startProgram(exe, args, cwd, name, meta = {}) {
           for (const k of meta.startKeys) { if (running && running.pid === child.pid && isAlive(child.pid)) await keysExe(['send', String(child.pid), k]); }
         }, ms);
       }
+      padsToGame(true);
       if (config.settings.minimizeOnLaunch !== false) setTimeout(() => win && !win.isDestroyed() && win.minimize(), 400);
     });
     // Come back to the home screen when the program closes (ignore launchers that exit right away;
     // the controller combo keeps working for whatever they started)
     child.once('exit', () => {
+      if (frozen === child.pid) frozen = null;
       if (Date.now() - started <= 5000) {
         // Gone at once: a program that runs only once (PlexDeck, Audiobookshelf) handed over to the copy
         // already running - follow that one, so the PS button and Close still reach it
@@ -1177,7 +1259,7 @@ async function launchGame(moduleId, rom) {
     const r = await startProgram(exe, splitArgs(g.args || ''), g.cwd ? P.resolve(g.cwd) : path.dirname(exe), game.title, { emulator: 'PC games' });
     if (r.ok) {
       loadRecent();
-      recent = [{ moduleId, ...game, t: Date.now() }, ...recent.filter((x) => x.rom !== rom)].slice(0, 20);
+      recent = [{ moduleId, ...game, t: Date.now() }, ...recent.filter((x) => x.rom !== rom)].slice(0, 100);
       writeGames(RECENT_FILE, recent);
     }
     return r;
@@ -1190,7 +1272,7 @@ async function launchGame(moduleId, rom) {
     { emulator: mod.name, env, control: mod.control, hotkeys: mod.hotkeys || {}, closeSteps: mod.closeSteps || 1, holdToClose: mod.holdToClose || 0, attached: !!mod.attached, startKeys: mod.startKeys || [] });
   if (r.ok) {
     loadRecent();
-    recent = [{ moduleId, ...game, t: Date.now() }, ...recent.filter((x) => x.rom !== rom)].slice(0, 20);
+    recent = [{ moduleId, ...game, t: Date.now() }, ...recent.filter((x) => x.rom !== rom)].slice(0, 100);
     writeGames(RECENT_FILE, recent);
   }
   return r;
@@ -1705,11 +1787,12 @@ function registerIpc() {
   // Save / load state, pause, screenshot from the menu: back to the game, then tell the emulator
   ipcMain.handle('running-action', (e, action) => (['saveState', 'loadState', 'pause', 'screenshot', 'options'].includes(action) ? overlayAction(action) : null));
   ipcMain.handle('running-info', () => (running && isAlive(running.pid) ? { name: running.name } : null));
-  ipcMain.handle('recent-games', async () => {
+  // all: the whole history (100), for a console page's own row; else the last 5 for Home
+  ipcMain.handle('recent-games', async (e, all) => {
     const mods = await emuModules.scan(emuDir());
     return loadRecent()
       .filter((g) => mods.some((m) => m.id === g.moduleId && !m.hidden))
-      .slice(0, 5)
+      .slice(0, all ? 100 : 5)
       .map((g) => ({ ...g, emulator: mods.find((m) => m.id === g.moduleId).name }));
   });
   // Favourite games (encrypted like the history)
@@ -1874,6 +1957,58 @@ function registerIpc() {
   ipcMain.handle('pcgame-folder', () => { fs.mkdirSync(PC_GAMES_DIR, { recursive: true }); return shell.openPath(PC_GAMES_DIR); });
   ipcMain.handle('bios-open', (e, sub) => { const d = path.join(P.BIOS, sub || ''); fs.mkdirSync(d, { recursive: true }); return shell.openPath(d); });
   ipcMain.handle('app-info', () => ({ dataDir: DATA, emuDir: emuDir(), appsDir: P.APPS, appDir: P.ROOT, gamesDir: P.GAMES, version: app.getVersion(), electron: process.versions.electron }));
+  // Settings → Controllers → Set up a controller: a pad that isn't Xbox / PlayStation, by its USB vendor:product
+  // (RetroArch gets a file for it too, Dolphin's GameCube port 1 listens to it; the SDL emulators get it when they start, see startProgram)
+  const padsToEmulators = async () => {
+    try {
+      const mods = (await emuModules.scan(emuDir())).filter((m) => m.ok);
+      const done = [];
+      const ra = mods.find((m) => games.isRetroArch(m));
+      try { if (ra && pads.writeRetroArch(path.dirname(ra.exe), config.controllers)) done.push('RetroArch'); } catch (err) { console.log('[controllers] RetroArch:', err.message); }
+      for (const d of mods.filter((m) => /^dolphin/i.test(path.basename(m.exe || '')))) {
+        try { if (pads.writeDolphin(path.dirname(d.exe), config.controllers)) done.push('Dolphin'); } catch (err) { console.log('[controllers] Dolphin:', err.message); }
+      }
+      return [...new Set(done)].join(' and ');
+    } catch (err) { console.log('[controllers]', err.message); return ''; }
+  };
+  ipcMain.handle('pad-save', async (e, key, pad) => {
+    config.controllers = { ...(config.controllers || {}), [String(key)]: { name: pad.name, type: pad.type || 'other', map: pad.map, saved: new Date().toISOString() } };
+    writeJson(CONFIG_FILE, config);
+    if (padwatch) { stopPadWatch(true); startPadWatch(); }      // its Start + Back
+    return { controllers: config.controllers, emulators: await padsToEmulators() };
+  });
+  ipcMain.handle('pad-forget', async (e, key) => {
+    const next = { ...(config.controllers || {}) };
+    delete next[String(key)];
+    config.controllers = next;
+    writeJson(CONFIG_FILE, config);
+    if (padwatch) { stopPadWatch(true); startPadWatch(); }
+    await padsToEmulators();
+    return { controllers: config.controllers };
+  });
+  // GameCube controller adapter (Nintendo's, or Mayflash's in Wii U mode: USB 057E:0337): Dolphin reads it itself
+  // (all four ports, analog L / R, C-stick, rumble) once Windows has the WinUSB driver for it (Zadig, the user's
+  // step). Status: plugged in? driver? does Dolphin use it (SIDevice0-3 = 12)?
+  const dolphinDir = async () => {
+    const d = (await emuModules.scan(emuDir())).find((m) => m.ok && /^dolphin/i.test(path.basename(m.exe || '')));
+    return d && path.dirname(d.exe);
+  };
+  ipcMain.handle('gc-adapter', async (e, use) => {
+    const ps = "Get-CimInstance Win32_PnPEntity | Where-Object { $_.PNPDeviceID -match '^USB.VID_057E&PID_0337' } | ForEach-Object { 'found:' + $_.Service }";
+    // null = not plugged in, '' = no driver yet, 'WinUSB' = ready for Dolphin, 'HidUsb' = Windows' own driver
+    const service = await new Promise((resolve) => execFile('powershell.exe', ['-NoProfile', '-Command', ps], { windowsHide: true, timeout: 15000 },
+      (err, out) => { const f = /found:(\S*)/.exec(String(out || '')); resolve(f ? f[1] : null); }));
+    const dir = await dolphinDir();
+    const { readIni, iniGet, iniSet, writeIni } = require('./pad-defaults');
+    const file = dir && path.join(dir, 'User', 'Config', 'Dolphin.ini');
+    if (file && typeof use === 'boolean') {
+      const ini = readIni(file);
+      for (let i = 0; i < 4; i++) iniSet(ini, 'Core', `SIDevice${i}`, use ? '12' : i === 0 ? '6' : '0');   // 12 = the adapter, 6 = a standard controller
+      writeIni(file, ini);
+    }
+    const inDolphin = !!file && iniGet(readIni(file), 'Core', 'SIDevice0') === '12';
+    return { plugged: service !== null, winusb: /winusb/i.test(service || ''), dolphin: !!dir, inDolphin };
+  });
   ipcMain.handle('save-config', (e, next) => {
     // The window's size and full-screen state belong to this process; keep them.
     const { fullscreen, window } = config.settings;
@@ -1919,7 +2054,7 @@ function registerIpc() {
     server.clearCache();
     return true;
   });
-  ipcMain.handle('toggle-fullscreen', () => { win.setFullScreen(!win.isFullScreen()); return win.isFullScreen(); });
+  ipcMain.handle('toggle-fullscreen', () => { setFull(!full); return full; });
   ipcMain.handle('quit', () => app.quit());
   // Restart MediaDeck (the Exit menu): a new copy starts as this one closes
   ipcMain.handle('restart-app', () => { app.relaunch({ args: process.argv.slice(1).filter((a) => a !== '--test') }); app.quit(); });
@@ -2004,6 +2139,8 @@ if (!app.requestSingleInstanceLock()) {
   });
   app.on('will-quit', () => {
     quitting = true;
+    // never leave an emulator frozen behind (see freezeGame)
+    if (frozen) { try { require('child_process').execFileSync(KEYS_EXE, ['thaw', String(frozen)], { windowsHide: true, timeout: 5000 }); } catch {} frozen = null; }
     globalShortcut.unregisterAll();
     mpv.stop();
     stopPadWatch(true);

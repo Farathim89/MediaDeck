@@ -5,6 +5,9 @@ const invoke = (ch) => (...args) => ipcRenderer.invoke(ch, ...args);
 contextBridge.exposeInMainWorld('api', {
   getState: invoke('get-state'),
   saveConfig: invoke('save-config'),
+  padSave: invoke('pad-save'),
+  padForget: invoke('pad-forget'),
+  gcAdapter: invoke('gc-adapter'),
   launch: invoke('launch'),
   listDir: invoke('list-dir'),
   drives: invoke('drives'),
@@ -87,4 +90,5 @@ contextBridge.exposeInMainWorld('api', {
   onToast: (fn) => ipcRenderer.on('toast', (e, text) => fn(text)),
   onAppFocus: (fn) => ipcRenderer.on('app-focus', () => fn()),
   onWinActive: (fn) => ipcRenderer.on('win-active', (e, on) => fn(on)),
+  onWinFull: (fn) => ipcRenderer.on('win-full', (e, on) => fn(on)),
 });

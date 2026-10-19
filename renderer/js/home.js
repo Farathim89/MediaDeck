@@ -262,34 +262,8 @@ const Home = (() => {
         grid.appendChild(addCardEl(s));
       }
     }
-    if (withRecent) {
-      inner.appendChild(favSection());
-      const recent = recentSection();
-      if (cfg().settings.recentPosition === 'above') inner.prepend(recent); else inner.appendChild(recent);
-    }
-  }
-
-  // The last 5 games played (kept encrypted on disk)
-  function recentSection() {
-    const sec = document.createElement('section');
-    sec.className = 'row recent';
-    sec.innerHTML = `<h2 class="row-title">Recently played<small></small></h2><div class="game-grid"></div>`;
-    api.recentGames().then((list) => {
-      if (!sec.isConnected) return;
-      sec.querySelector('small').textContent = list.length || '';
-      if (!list.length) {
-        sec.querySelector('.game-grid').remove();
-        sec.insertAdjacentHTML('beforeend', `<div class="empty-box">${Icons.gamepad}<div><b>No games played yet</b><span>The last 5 games you play will show up here.</span></div></div>`);
-        return;
-      }
-      const grid = sec.querySelector('.game-grid');
-      for (const g of list) {
-        const tile = tiles().find((x) => x.moduleId === g.moduleId);
-        grid.appendChild(gameCard(g, tile, g.emulator));
-      }
-      grid.querySelectorAll('.thumb').forEach((h) => Media.loadThumb(h));
-    });
-    return sec;
+    // Recently played is on each console's page now (consoleRecent)
+    if (withRecent) inner.appendChild(favSection());
   }
 
   // Favourite games (kept encrypted on disk); the row only shows when there are some
@@ -391,7 +365,7 @@ const Home = (() => {
   }
 
   async function gameOptions(g, t) {
-    const inRecent = activeTab === 'emus' && !emuDetail && Nav.current && Nav.current.closest('.recent:not(.favs)');
+    const inRecent = Nav.current && Nav.current.closest('.console-recent');
     const isFav = (await api.favGames()).some((x) => x.rom === g.rom);
     const c = await UI.menu({ title: g.title, message: [g.versions ? `${g.versions.length} versions` : g.region, g.versions ? '' : g.type, t && t.name].filter(Boolean).join('  ·  '), items: [
       { label: g.versions ? 'Choose version…' : 'Start', icon: 'play', value: 'start' },
@@ -415,9 +389,13 @@ const Home = (() => {
     }
     if (c === 'forget') {
       await api.removeRecent(g.rom);
-      const focus = Nav.current;
-      renderPage();
-      Nav.focus(pageEl.querySelector('.game-card') || pageEl.querySelector('.tile') || focus);
+      // the console page's row: that card goes, the focus moves to its neighbour (or the games)
+      const card = Nav.current;
+      const row = card.closest('.console-recent');
+      const next = card.nextElementSibling || card.previousElementSibling;
+      card.remove();
+      if (!row.querySelector('.game-card')) row.remove();
+      Nav.focus(next && next.isConnected ? next : pageEl.querySelector('.games-section .game-card'));
     }
   }
 
@@ -443,6 +421,25 @@ const Home = (() => {
     box.hidden = true;
     gameLists.set(listKey(t), list);
     renderGameCards(t, sec, '');
+    if (t.console) consoleRecent(t, list, sec);
+  }
+
+  // A console's page: its own "Recently played" row above the games (the last 10 of this console's games, whichever
+  // emulator played them; a card starts the game in the console's emulator now) - one line that scrolls sideways
+  async function consoleRecent(t, list, sec) {
+    const byRom = new Map(list.map((g) => [g.rom, g]));
+    const played = (await api.recentGames(true)).filter((g) => byRom.has(g.rom)).slice(0, 10);
+    if (!sec.isConnected) return;
+    const old = sec.parentElement.querySelector('.console-recent');
+    if (old) old.remove();
+    if (!played.length) return;
+    const row = document.createElement('section');
+    row.className = 'app-section console-recent recent';
+    row.innerHTML = `<h2>Recently played <small>${played.length}</small></h2><div class="game-grid"></div>`;
+    const grid = row.querySelector('.game-grid');
+    for (const g of played) grid.appendChild(gameCard({ ...byRom.get(g.rom), moduleId: t.moduleId }, t));
+    sec.before(row);
+    grid.querySelectorAll('.thumb').forEach((h) => Media.loadThumb(h));
   }
 
   const coverListeners = new Set();
@@ -461,7 +458,7 @@ const Home = (() => {
   document.addEventListener('nav-focus', (e) => {
     if (scrolling) { scrolling.classList.remove('marquee'); scrolling = null; }
     const name = e.target.closest && e.target.closest('.game-card') && e.target.querySelector('.card-name');
-    if (!name || !/^(small|list)$/.test(document.documentElement.dataset.gameView || '')) return;
+    if (!name || !/^(small|rows|list)$/.test(document.documentElement.dataset.gameView || '')) return;
     const text = name.querySelector('.name-text');
     // measured after the card's grow-on-focus, so the line is its final width
     requestAnimationFrame(() => {

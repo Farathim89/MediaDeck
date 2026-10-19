@@ -30,7 +30,7 @@ const Settings = (() => {
     {
       id: 'appearance', title: 'Appearance', icon: 'palette', desc: 'Theme and colours',
       items: [
-        { label: 'Theme', type: 'choice', key: 'theme', options: () => App.THEMES.map((t) => ({ value: t.id, label: t.name })),
+        { label: 'Theme', type: 'choice', key: 'theme', options: () => App.THEMES.map((t) => ({ value: t.id, label: t.name, swatch: t.swatch })), preview: (v) => App.applyTheme(v),
           after: (v) => App.applyTheme(v) },
       ],
     },
@@ -121,10 +121,8 @@ const Settings = (() => {
           value: () => fullPath(s().gamesFolder) },
         { label: 'Emu_modules folder', desc: 'Put an emulator\'s folder here and it shows up in the app', type: 'folder', key: 'emuModulesPath',
           value: () => s().emuModulesPath || (info && info.emuDir) || '', after: () => rescan(true) },
-        { label: 'Recently played', desc: 'Where the last 5 games show on the Consoles tab', type: 'choice', key: 'recentPosition', options: () => [
-          { value: 'below', label: 'Below the consoles' }, { value: 'above', label: 'Above the consoles' }] },
-        { label: 'Game cards', desc: 'How a console\'s games are shown: big covers, small covers (more on the screen), or a list of names without covers', type: 'choice', key: 'gameView',
-          options: () => [{ value: 'big', label: 'Big covers' }, { value: 'small', label: 'Small covers' }, { value: 'list', label: 'List (no covers)' }],
+        { label: 'Game cards', desc: 'How a console\'s games are shown: big covers, small covers (more on the screen), a list with a small cover on the left, or a list of names without covers', type: 'choice', key: 'gameView',
+          options: () => [{ value: 'big', label: 'Big covers' }, { value: 'small', label: 'Small covers' }, { value: 'rows', label: 'List with small covers' }, { value: 'list', label: 'List (no covers)' }],
           after: (v) => App.applyGameView(v) },
         { label: 'Check for updates at start', desc: 'Once a day, a while after MediaDeck opens. Only asks the emulators\' download pages.', type: 'toggle', key: 'checkEmuUpdates' },
         { label: 'Group versions of a game', desc: 'Rev 1, Sample, other regions, .smc / .sfc: one card, and starting it asks which version', type: 'toggle', key: 'groupVersions' },
@@ -142,6 +140,17 @@ const Settings = (() => {
     {
       id: 'controllers', title: 'Controllers', icon: 'gamepad', desc: 'PlayStation controllers work everywhere through DS4Windows',
       items: () => [
+        { label: 'Set up a controller…', desc: 'A pad that isn\'t Xbox or PlayStation (USB N64, SNES, GameCube …): press each button when asked. It then works in MediaDeck, Start + Back held opens MediaDeck\'s menu in games, and emulators see it as an Xbox controller.', type: 'action',
+          run: () => pickPadType() },
+        ...Object.entries(App.state.config.controllers || {}).map(([key, p]) => ({
+          label: p.name, desc: `${(PadSetup.TYPES.find((x) => x.id === p.type) || {}).name || 'Set up'} pad (${key}) - choose to set it up again or forget it`, type: 'action', value: () => 'Set up',
+          run: async () => {
+            const c = await UI.menu({ title: p.name, items: [{ label: 'Set it up again', value: 'again', icon: 'gamepad' }, { label: 'Forget it', value: 'forget', icon: 'trash', danger: true }, { label: 'Cancel', value: '', icon: 'back' }] });
+            if (c === 'again') pickPadType(p.type);
+            if (c === 'forget') { const r = await api.padForget(key); App.state.config.controllers = r.controllers; Input.setMaps(r.controllers); renderList(); }
+          } })),
+        { label: 'GameCube controller adapter', desc: 'Nintendo\'s adapter, or Mayflash\'s in Wii U mode: real GameCube pads in Dolphin with every button, analog L / R and rumble. Choose to see if it is ready.', type: 'action',
+          run: () => gcAdapter() },
         { label: 'Set up the controller in the emulators', desc: 'Player 1 = your first controller in every emulator that has none set yet (buttons by position). Controls you set yourself stay.', type: 'action',
           run: async () => {
             const r = await api.padsSetup();
@@ -202,6 +211,36 @@ const Settings = (() => {
   const section = () => SECTIONS.find((x) => x.id === active);
 
   // ---------- Drawing ----------
+  // Settings → Controllers → Set up a controller: which kind of pad first, so the setup asks for its own buttons
+  async function pickPadType(current) {
+    const t = await UI.menu({ title: 'What kind of controller?', message: 'MediaDeck then asks for its buttons by their own names.', focus: current,
+      items: [...PadSetup.TYPES.map((x) => ({ label: x.name, value: x.id, icon: 'gamepad' })), { label: 'Cancel', value: '', icon: 'back' }] });
+    if (t) App.open(PadSetup, { type: t });
+  }
+
+  // Settings → Controllers → GameCube controller adapter: is it plugged in, has it got the WinUSB driver Dolphin
+  // needs (installed by the player with Zadig), and does Dolphin use it
+  async function gcAdapter() {
+    UI.toast('Looking for the adapter…', { icon: 'gamepad', duration: 2000 });
+    const s = await api.gcAdapter();
+    const title = 'GameCube controller adapter';
+    if (!s.dolphin) return UI.menu({ title, message: 'Dolphin isn\'t installed. Install it in Settings → Emulators first.', items: [{ label: 'OK', value: '', icon: 'check' }] });
+    if (!s.plugged && !s.inDolphin) return UI.menu({ title, message: 'No adapter is plugged in. Plug it in (Mayflash: switch it to Wii U mode; both USB plugs for rumble), then choose this again.', items: [{ label: 'OK', value: '', icon: 'check' }] });
+    if (s.plugged && !s.winusb) {
+      return UI.menu({ title, message: 'The adapter is plugged in, but Windows hasn\'t got the WinUSB driver for it yet - Dolphin needs it. Once: download Zadig (zadig.akeo.ie), choose Options → List All Devices, pick "WUP-028", choose WinUSB and click Replace Driver. Then choose this again.',
+        items: [{ label: 'OK', value: '', icon: 'check' }] });
+    }
+    const message = s.inDolphin
+      ? `Dolphin uses the adapter for its four GameCube ports${s.plugged ? '' : ' (it isn\'t plugged in right now)'}. The Xbox controller and set-up pads don't work in GameCube games while it does.`
+      : 'The adapter is ready. Dolphin can use it for its four GameCube ports - each pad in the adapter is one player, with every button, analog L / R and rumble.';
+    const v = await UI.menu({ title, message, items: [
+      s.inDolphin ? { label: 'Stop using it in Dolphin', value: 'off', icon: 'close' } : { label: 'Use it in Dolphin', value: 'on', icon: 'check' },
+      { label: 'Cancel', value: '', icon: 'back' }] });
+    if (!v) return;
+    await api.gcAdapter(v === 'on');
+    UI.toast(v === 'on' ? 'Dolphin uses the GameCube adapter now' : 'Dolphin uses the controllers again', { icon: 'check', duration: 4000 });
+  }
+
   function renderNav() {
     navEl.innerHTML = '';
     for (const sec of SECTIONS) {
@@ -423,9 +462,9 @@ const Settings = (() => {
       set[item.key] = !set[item.key];
     } else if (item.type === 'choice') {
       const opts = item.options();
-      const v = await UI.menu({ title: item.label, focus: set[item.key],
-        items: opts.map((o) => ({ label: o.label, value: o.value, icon: o.value === set[item.key] ? 'check' : '' })) });
-      if (v === null || v === undefined) return;
+      const v = await UI.menu({ title: item.label, focus: set[item.key], onFocus: item.preview,
+        items: opts.map((o) => ({ label: o.label, value: o.value, icon: o.value === set[item.key] ? 'check' : '', swatch: o.swatch })) });
+      if (v === null || v === undefined) { if (item.preview) item.preview(set[item.key]); return; }   // back to what it was
       set[item.key] = v;
     } else if (item.type === 'text') {
       const v = await UI.prompt({ title: item.label, message: item.desc, value: set[item.key] || '' });

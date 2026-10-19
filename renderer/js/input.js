@@ -64,8 +64,31 @@ const Input = (() => {
   const held = new Map(); // action -> { since, last, ignored }
   let ignoreUntil = 0;
 
+  // Pads set up in Settings → Controllers (not Xbox / PlayStation): their own buttons, read as the Xbox ones
+  let maps = {};
+  const keyOf = (p) => {
+    const m = /Vendor:\s*([0-9a-f]{4})\s+Product:\s*([0-9a-f]{4})/i.exec(p.id) || /([0-9a-f]{4})-([0-9a-f]{4})/i.exec(p.id);
+    return m ? `${m[1]}:${m[2]}`.toLowerCase() : p.id;
+  };
+  const HAT = ['up', 'upright', 'right', 'downright', 'down', 'downleft', 'left', 'upleft'];
+  function isOn(pad, s) {
+    if (!s) return false;
+    if (s.t === 'b') { const b = pad.buttons[s.i]; return !!(b && (b.pressed || b.value > 0.6)); }
+    const v = pad.axes[s.i];
+    if (v === undefined) return false;
+    if (s.t === 'h') { if (v < -1.01 || v > 1.01) return false; const d = HAT[Math.round((v + 1) * 3.5) % 8]; return d === s.d || d.includes(s.d); }
+    return s.d > 0 ? v > 0.55 : v < -0.55;
+  }
+  const MAPPED = { a: 'ok', b: 'back', x: 'x', y: 'menu', lb: 'lb', rb: 'rb', lt: 'lt', rt: 'rt', back: 'select', start: 'start',
+    dpup: 'up', dpdown: 'down', dpleft: 'left', dpright: 'right', lup: 'up', ldown: 'down', lleft: 'left', lright: 'right' };
+
   function pressedActions(pad) {
     const set = new Set();
+    const own = pad.mapping !== 'standard' && maps[keyOf(pad)];
+    if (own) {
+      for (const [k, action] of Object.entries(MAPPED)) if (isOn(pad, own.map[k])) set.add(action);
+      return set;
+    }
     pad.buttons.forEach((b, i) => {
       const action = BUTTONS[i];
       if (action && (b.pressed || b.value > 0.6)) set.add(action);
@@ -120,6 +143,7 @@ const Input = (() => {
 
   return {
     ignoreHeld,
+    setMaps(m) { maps = m || {}; },
     setHandler(fn) { handler = fn; },
     get source() { return lastSource; },
   };

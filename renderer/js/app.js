@@ -10,8 +10,11 @@ const App = {
     this.state = await api.getState();
     this.applyTheme(this.state.config.settings.theme);
     this.applyGameView(this.state.config.settings.gameView);
-    for (const s of [Home, MediaHome, Browser, Photos, Settings, Setup, Help]) s.init();
+    for (const s of [Home, MediaHome, Browser, Photos, Settings, Setup, PadSetup, Help]) s.init();
+    Input.setMaps(this.state.config.controllers);
     Input.setHandler((action) => this.dispatch(action));
+    // MediaDeck as a window (F11): no title bar, so a strip along the top to move it by
+    api.onWinFull((on) => document.documentElement.classList.toggle('windowed', !on));
     api.onAppFocus(() => { if (this.current && this.current.refocus) this.current.refocus(); });
     api.onDrivesChanged((data) => { MediaHome.drivesChanged(data); Browser.drivesChanged(data); });
     api.onPlayerClosed((progress) => {
@@ -31,31 +34,39 @@ const App = {
   },
 
   THEMES: [
-    { id: 'oled', name: 'OLED Black' },
-    { id: 'midnight', name: 'Midnight' },
-    { id: 'graphite', name: 'Graphite' },
-    { id: 'ocean', name: 'Ocean' },
-    { id: 'amethyst', name: 'Amethyst' },
-    { id: 'ember', name: 'Ember' },
+    { id: 'oled', name: 'OLED Black', swatch: ['#000000', '#171717', '#6ea8fe'] },
+    { id: 'midnight', name: 'Midnight', swatch: ['#07090d', '#252b37', '#8b9cff'] },
+    { id: 'graphite', name: 'Graphite', swatch: ['#121212', '#2c2c2c', '#4fc3f7'] },
+    { id: 'ocean', name: 'Ocean', swatch: ['#030a14', '#16283d', '#38bdf8'] },
+    { id: 'amethyst', name: 'Amethyst', swatch: ['#07050c', '#251d35', '#a78bfa'] },
+    { id: 'ember', name: 'Ember', swatch: ['#0b0605', '#2b1e18', '#f59e0b'] },
+    // console themes: dark like the rest, the console's colour as the accent
+    { id: 'playstation', name: 'PlayStation', swatch: ['#030b20', '#16305e', '#3d7bff'] },
+    { id: 'xbox', name: 'Xbox', swatch: ['#031003', '#1b3a1b', '#4cc94c'] },
+    { id: 'nintendo', name: 'Nintendo', swatch: ['#140405', '#3a1719', '#ff3b44'] },
+    { id: 'gamecube', name: 'GameCube', swatch: ['#0b0720', '#2b2360', '#8c7cff'] },
+    { id: 'gameboy', name: 'Game Boy', swatch: ['#0a1405', '#2b3d18', '#9bbc0f'] },
+    { id: 'dreamcast', name: 'Dreamcast', swatch: ['#140904', '#3b2615', '#ff7a1a'] },
+    { id: 'megadrive', name: 'Mega Drive', swatch: ['#000000', '#26181a', '#e8202a'] },
   ],
 
   applyTheme(id) {
     document.documentElement.dataset.theme = this.THEMES.some((t) => t.id === id) ? id : 'oled';
   },
 
-  // A console's games: big covers, small covers or a list (no covers loaded)
+  // A console's games: big covers, small covers, a list with small covers, or a list (no covers loaded)
   applyGameView(v) {
-    document.documentElement.dataset.gameView = ['small', 'list'].includes(v) ? v : 'big';
+    document.documentElement.dataset.gameView = ['small', 'rows', 'list'].includes(v) ? v : 'big';
   },
 
   async chooseTheme() {
     const s = this.state.config.settings;
     const current = s.theme || 'oled';
     const c = await UI.menu({
-      title: 'Theme', focus: current,
-      items: this.THEMES.map((t) => ({ label: t.name, value: t.id, icon: t.id === current ? 'check' : 'palette' })),
+      title: 'Theme', focus: current, onFocus: (id) => this.applyTheme(id),   // live preview while moving
+      items: this.THEMES.map((t) => ({ label: t.name, value: t.id, icon: t.id === current ? 'check' : 'palette', swatch: t.swatch })),
     });
-    if (!c) return;
+    if (!c) { this.applyTheme(current); return; }
     s.theme = c;
     this.applyTheme(c);
     await api.saveConfig(this.state.config);

@@ -148,18 +148,76 @@ static class PadWatch
         return 0;
     }
 
+    // ---------- Other pads (set up in MediaDeck's Settings → Controllers), read with Windows' joystick API ----------
+    [StructLayout(LayoutKind.Sequential)] struct JoyInfoEx { public int Size, Flags, X, Y, Z, R, U, V; public uint Buttons; public int ButtonNumber, Pov, Res1, Res2; }
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)] struct JoyCaps
+    {
+        public ushort Mid, Pid;
+        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 32)] public string Name;
+        public uint Xmin, Xmax, Ymin, Ymax, Zmin, Zmax, NumButtons, PeriodMin, PeriodMax, Rmin, Rmax, Umin, Umax, Vmin, Vmax, Caps, MaxAxes, NumAxes, MaxButtons;
+        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 32)] public string RegKey;
+        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 260)] public string OemVxD;
+    }
+    [DllImport("winmm.dll", EntryPoint = "joyGetDevCapsW", CharSet = CharSet.Unicode)] static extern int JoyGetCaps(IntPtr id, ref JoyCaps c, int size);
+    [DllImport("winmm.dll", EntryPoint = "joyGetPosEx")] static extern int JoyGetPos(int id, ref JoyInfoEx i);
+
+    // "--pad 0810:e501=9+8": that pad's Start and Back buttons (from 0)
+    static readonly Dictionary<string, int[]> padCombos = new Dictionary<string, int[]>();
+    static readonly List<KeyValuePair<int, int[]>> joys = new List<KeyValuePair<int, int[]>>();   // joystick id → { start, back }
+
+    // looking at ids nobody uses is slow in winmm, so the list is made every few seconds and only these are read
+    static void FindOtherPads()
+    {
+        if (padCombos.Count == 0) return;
+        var found = new List<KeyValuePair<int, int[]>>();
+        for (int id = 0; id < 16; id++)
+        {
+            var c = new JoyCaps();
+            if (JoyGetCaps((IntPtr)id, ref c, Marshal.SizeOf(typeof(JoyCaps))) != 0) continue;
+            var info = new JoyInfoEx { Size = Marshal.SizeOf(typeof(JoyInfoEx)), Flags = 0x80 };
+            if (JoyGetPos(id, ref info) != 0) continue;                // not plugged in
+            int[] sb;
+            if (padCombos.TryGetValue(c.Mid.ToString("x4") + ":" + c.Pid.ToString("x4"), out sb)) found.Add(new KeyValuePair<int, int[]>(id, sb));
+        }
+        lock (joys) { joys.Clear(); joys.AddRange(found); }
+        if (Debug) Console.WriteLine("other pads: " + found.Count);
+    }
+
+    static bool OtherCombo()
+    {
+        lock (joys)
+            foreach (var j in joys)
+            {
+                var info = new JoyInfoEx { Size = Marshal.SizeOf(typeof(JoyInfoEx)), Flags = 0x80 };   // JOY_RETURNBUTTONS
+                if (JoyGetPos(j.Key, ref info) != 0) continue;
+                if ((info.Buttons & (1u << j.Value[0])) != 0 && (info.Buttons & (1u << j.Value[1])) != 0) return true;
+            }
+        return false;
+    }
+
     static void Main(string[] args)
     {
-        bool debug = args.Length > 0 && args[0] == "--debug";
+        bool debug = Array.IndexOf(args, "--debug") >= 0;
         Debug = debug;
+        for (int a = 0; a + 1 < args.Length; a++)
+        {
+            if (args[a] != "--pad") continue;
+            var kv = args[a + 1].Split('=');
+            var sb = kv.Length == 2 ? kv[1].Split('+') : new string[0];
+            int s, b;
+            if (sb.Length == 2 && int.TryParse(sb[0], out s) && int.TryParse(sb[1], out b) && s >= 0 && s < 32 && b >= 0 && b < 32)
+                padCombos[kv[0].ToLowerInvariant()] = new[] { s, b };
+        }
         DateTime comboSince = DateTime.MaxValue, lastScan = DateTime.MinValue;
         bool fired = false;
         while (true)
         {
-            if ((DateTime.Now - lastScan).TotalSeconds > 3) { lastScan = DateTime.Now; try { FindSonyPads(); } catch { } }
+            if ((DateTime.Now - lastScan).TotalSeconds > 3) { lastScan = DateTime.Now; try { FindSonyPads(); } catch { } try { FindOtherPads(); } catch { } }
             ushort x = 0;
             for (int i = 0; i < 4; i++) x |= ReadXbox(i);
-            bool combo = ((x & 0x0020) != 0 && (x & 0x0010) != 0) || psCombo;   // Back+Start / Share+Options
+            bool other = false;
+            try { other = OtherCombo(); } catch { }
+            bool combo = ((x & 0x0020) != 0 && (x & 0x0010) != 0) || psCombo || other;   // Back+Start / Share+Options / a set-up pad's Start+Back
             bool home = (x & 0x0400) != 0 || psHome;                           // Guide / PS
             if (combo && comboSince == DateTime.MaxValue) comboSince = DateTime.Now;
             if (!combo) comboSince = DateTime.MaxValue;

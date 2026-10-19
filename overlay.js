@@ -30,6 +30,7 @@ async function show(data) {
   // A side panel on the left of the screen the player is looking at; the game stays visible next to it
   const b = screen.getDisplayNearestPoint(screen.getCursorScreenPoint()).bounds;
   ov.setBounds({ x: b.x, y: b.y, width: Math.round(b.width * 0.26), height: b.height });
+  ov.webContents.setBackgroundThrottling(false);   // see main.js padsToGame
   ov.webContents.send('overlay:open', info);
   ov.showInactive();
   // Take the keyboard/controller from the game (Windows only allows this with a little trick)
@@ -39,7 +40,7 @@ async function show(data) {
 }
 
 function hide() {
-  if (ov && !ov.isDestroyed() && ov.isVisible()) ov.hide();
+  if (ov && !ov.isDestroyed() && ov.isVisible()) { ov.hide(); ov.webContents.setBackgroundThrottling(true); }   // hidden: lets go of the pads
 }
 
 const isOpen = () => !!(ov && !ov.isDestroyed() && ov.isVisible());
