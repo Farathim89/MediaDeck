@@ -56,13 +56,13 @@ The release zip is built with `npm run dist`. It bundles mpv, FFmpeg and Streaml
 
 Releases are built on GitHub by the [Release workflow](.github/workflows/release.yml): it compiles the helpers, downloads the media tools (`build/fetch-apps.js`), builds and zips MediaDeck from this source and attaches the zip to a draft release.
 
-## Code signing policy
+## Code signing
 
-Free code signing provided by [SignPath.io](https://about.signpath.io), certificate by [SignPath Foundation](https://signpath.org).
+MediaDeck's releases are **not code-signed yet**. Windows SmartScreen may say "Windows protected your PC" (unknown publisher): click **More info → Run anyway**. Some antivirus programs scan or flag unsigned programs they haven't seen before.
 
-- **What is signed:** MediaDeck's own programs only - `MediaDeck.exe` and the helpers `keys.exe`, `padwatch.exe` and `cursorhide.exe`, all built from this repository by the [Release workflow](.github/workflows/release.yml). The third-party programs in the release (7-Zip, mpv, FFmpeg, Streamlink, Electron's libraries) are shipped as their makers publish them and are not signed by this project.
-- **Committers and reviewers:** [Farathim89](https://github.com/Farathim89)
-- **Approvers:** [Farathim89](https://github.com/Farathim89) - every signing request is approved by hand.
+To check that a download is the real one: every release is built on GitHub from this repository by the [Release workflow](.github/workflows/release.yml) (the release page links the build), and its `SHA256SUMS.txt` lists the checksum of the zip (`certutil -hashfile MediaDeck-<version>-portable.zip SHA256`).
+
+When signing is set up, only MediaDeck's own programs will be signed - `MediaDeck.exe` and the helpers `keys.exe`, `padwatch.exe` and `cursorhide.exe`, all built by that workflow; the third-party programs in the release (7-Zip, mpv, FFmpeg, Streamlink, Electron's libraries) stay as their makers publish them. Committer, reviewer and approver: [Farathim89](https://github.com/Farathim89).
 
 ## Privacy
 

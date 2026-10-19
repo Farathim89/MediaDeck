@@ -108,5 +108,5 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           $v = node -p "require('./package.json').version"
-          $signed = if ($env:SIGNPATH_API_TOKEN) { 'MediaDeck''s programs are signed. Free code signing provided by SignPath.io, certificate by SignPath Foundation - code signing policy: https://github.com/Farathim89/MediaDeck#code-signing-policy' } else { 'Not signed.' }
+          $signed = if ($env:SIGNPATH_API_TOKEN) { 'MediaDeck''s programs are signed. Free code signing provided by SignPath.io, certificate by SignPath Foundation - code signing policy: https://github.com/Farathim89/MediaDeck#code-signing' } else { 'Not signed.' }
           gh release create "v$v" "dist\MediaDeck-$v-portable.zip" dist\SHA256SUMS.txt --draft --title "MediaDeck $v" --notes "Built on GitHub from $env:GITHUB_SHA. $signed Write the release notes, then publish."
