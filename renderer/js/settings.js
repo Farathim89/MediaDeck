@@ -18,8 +18,15 @@ const Settings = (() => {
     {
       id: 'general', title: 'General', icon: 'settings', desc: 'How MediaDeck starts and behaves',
       items: [
-        { label: 'Full screen', desc: 'F11 does the same. MediaDeck remembers it for next time.', type: 'action', value: () => (s().fullscreen ? 'On' : 'Off'),
-          run: async () => { s().fullscreen = await api.toggleFullscreen(); } },
+        { label: 'Display mode', desc: 'Borderless window (full screen) covers the whole screen, as games do today; Window is a normal window you can move and resize. F11 switches between them, and MediaDeck remembers it.',
+          type: 'action', value: () => (s().fullscreen ? 'Borderless window (full screen)' : 'Window'),
+          run: async () => {
+            const full = !!s().fullscreen;
+            const v = await UI.menu({ title: 'Display mode', focus: full ? 'full' : 'window', items: [
+              { label: 'Borderless window (full screen)', value: 'full', icon: full ? 'check' : '' },
+              { label: 'Window', value: 'window', icon: full ? '' : 'check' }] });
+            if (v && (v === 'full') !== full) s().fullscreen = await api.toggleFullscreen();
+          } },
         { label: '24-hour clock', type: 'toggle', key: 'clock24h' },
         { label: 'Minimise when an app starts', desc: 'MediaDeck comes back when the app closes', type: 'toggle', key: 'minimizeOnLaunch' },
         { label: 'Sleep, restart and shut down PC in the Exit menu', desc: 'Off: the Exit menu (Power button, PS / Guide at home) only has Restart MediaDeck and Exit MediaDeck', type: 'toggle', key: 'powerMenuPc' },
