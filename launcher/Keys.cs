@@ -12,6 +12,8 @@
 //                                  Alt+Tab then lists MediaDeck twice after quick switches)
 //   keys.exe freeze <pid> / thaw <pid>  stop / continue the program (all its threads) - an emulator stands still
 //                                  while MediaDeck's menu is open, so the controller doesn't play the game too
+//   keys.exe border <hwnd> none|default  Windows 11's thin window border (a coloured line along the top of a
+//                                  borderless window that covers the screen) off / back
 // Keys are sent as hardware scan codes, which emulators (DirectInput / raw input) understand.
 using System;
 using System.Collections.Generic;
@@ -29,6 +31,7 @@ interface ITaskbarList2
 
 static class Keys
 {
+    [DllImport("dwmapi.dll")] static extern int DwmSetWindowAttribute(IntPtr h, int attr, ref int value, int size);
     [DllImport("ntdll.dll")] static extern int NtSuspendProcess(IntPtr p);
     [DllImport("ntdll.dll")] static extern int NtResumeProcess(IntPtr p);
     [DllImport("kernel32.dll")] static extern IntPtr OpenProcess(uint access, bool inherit, int pid);
@@ -196,6 +199,11 @@ static class Keys
                 tb.MarkFullscreenWindow(new IntPtr(long.Parse(a[1])), false);
                 return 0;
             }
+            if (a.Length >= 3 && a[0] == "border")
+            {
+                int c = a[2] == "none" ? unchecked((int)0xFFFFFFFE) : unchecked((int)0xFFFFFFFF);   // DWMWA_COLOR_NONE / _DEFAULT
+                return DwmSetWindowAttribute(new IntPtr(long.Parse(a[1])), 34, ref c, 4) == 0 ? 0 : 3;   // DWMWA_BORDER_COLOR (Windows 11)
+            }
             if (a.Length >= 2 && (a[0] == "freeze" || a[0] == "thaw"))
             {
                 var p = OpenProcess(0x0800, false, int.Parse(a[1]));   // PROCESS_SUSPEND_RESUME
@@ -236,7 +244,7 @@ static class Keys
             }
         }
         catch (Exception e) { Console.Error.WriteLine(e.Message); return 1; }
-        Console.Error.WriteLine("usage: keys focus <hwnd> | keys game <pid> | keys confirm <pid> [secs] | keys send <pid> <combo> | keys freeze|thaw <pid> | keys unmark <hwnd>");
+        Console.Error.WriteLine("usage: keys focus <hwnd> | keys game <pid> | keys confirm <pid> [secs] | keys send <pid> <combo> | keys freeze|thaw <pid> | keys unmark <hwnd> | keys border <hwnd> none|default");
         return 1;
     }
 }

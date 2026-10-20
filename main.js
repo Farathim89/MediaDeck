@@ -358,9 +358,7 @@ function bringToFront() {
 function focusSelf() {
   if (!win || win.isDestroyed()) return;
   bringToFront();
-  const hwnd = win.getNativeWindowHandle();
-  const id = process.arch === 'x64' ? hwnd.readBigUInt64LE(0).toString() : String(hwnd.readUInt32LE(0));
-  keysExe(['focus', id]).then(() => setTimeout(bringToFront, 150));
+  keysExe(['focus', hwndOf(win)]).then(() => setTimeout(bringToFront, 150));
 }
 
 // ---------- Launching apps ----------
@@ -1015,6 +1013,27 @@ const KEYS_EXE = P.tool('keys.exe');
 const RA_COMMANDS = { saveState: 'SAVE_STATE', loadState: 'LOAD_STATE', pause: 'PAUSE_TOGGLE', screenshot: 'SCREENSHOT' };
 
 const keysExe = (args) => new Promise((resolve) => execFile(KEYS_EXE, args, { windowsHide: true }, (err) => resolve(!err)));
+
+const hwndOf = (bw) => { const h = bw.getNativeWindowHandle(); return process.arch === 'x64' ? h.readBigUInt64LE(0).toString() : String(h.readUInt32LE(0)); };
+// A borderless window that covers the screen (MediaDeck's full screen, the PS menu, YouTube, Twitch) still gets
+// Windows 11's thin window border - a coloured line along the top of the screen. Off while it covers the screen,
+// back as a normal window. (Asked again after every resize: changing the window's style can bring it back.)
+function edgeless(bw) {
+  if (process.platform !== 'win32') return;
+  let timer = null;
+  const check = () => {
+    clearTimeout(timer);
+    timer = setTimeout(() => {
+      if (bw.isDestroyed()) return;
+      const b = bw.getBounds(), d = screen.getDisplayMatching(b).bounds;
+      const covers = b.x <= d.x && b.y <= d.y && b.x + b.width >= d.x + d.width && b.y + b.height >= d.y + d.height;
+      keysExe(['border', hwndOf(bw), covers ? 'none' : 'default']);
+    }, 150);
+  };
+  for (const ev of ['ready-to-show', 'show', 'resize', 'move']) bw.on(ev, check);
+  check();
+}
+app.on('browser-window-created', (e, bw) => edgeless(bw));
 
 function overlayInfo() {
   const r = running || {};
