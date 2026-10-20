@@ -1264,8 +1264,61 @@ async function launchGame(moduleId, rom) {
     }
     return r;
   }
+  // A PS3 PSN download (.pkg): RPCS3 installs it once - its licence (.rap / .rif / .edat next to it) into
+  // dev_hdd0\home\00000001\exdata, the package with --installpkg (RPCS3 asks to confirm, then stays open);
+  // after that the installed game's EBOOT.BIN starts like any PS3 game
+  let startRom = rom;
+  const psn = games.isRpcs3(mod) && games.psnPackage(rom);
+  if (psn) {
+    const rp = path.dirname(mod.exe);
+    const inst = path.join(rp, 'dev_hdd0', 'game', psn.tid);
+    const eboot = path.join(inst, 'USRDIR', 'EBOOT.BIN');
+    if (fs.existsSync(eboot)) startRom = eboot;
+    // a PSone Classic has no EBOOT.BIN (its PS1 disc is USRDIR\ISO.BIN.EDAT): RPCS3 boots its game folder
+    else if (psn.ps1 && fs.existsSync(path.join(inst, 'PARAM.SFO'))) startRom = inst;
+    else {
+      const exdata = path.join(rp, 'dev_hdd0', 'home', '00000001', 'exdata');
+      let licences = 0;
+      try {
+        fs.mkdirSync(exdata, { recursive: true });
+        for (const f of fs.readdirSync(path.dirname(rom))) {
+          if (!/\.(rap|rif|edat)$/i.test(f) || !(f.includes(psn.cid) || f.includes(psn.tid))) continue;
+          licences++;
+          const to = path.join(exdata, f);
+          if (!fs.existsSync(to)) fs.copyFileSync(path.join(path.dirname(rom), f), to);
+        }
+      } catch (e) { return { ok: false, error: `The licence could not be copied into RPCS3:\n${e.message}` }; }
+      const r = await startProgram(mod.exe, ['--installpkg', rom], rp, `${game.title} (installing)`, { emulator: mod.name, hotkeys: {} });
+      if (r.ok) {
+        // When RPCS3 says "Successfully installed" (a message box that keeps it from closing): its OK is pressed,
+        // RPCS3 closes and the game starts - the installer staying open made a second RPCS3 crash
+        const pid = running && running.pid;
+        (async () => {
+          let asked = false;
+          for (let i = 0; i < 1200 && running && running.pid === pid && isAlive(pid); i++) {   // up to an hour
+            // RPCS3 loads its game list at the same time and both wait for each other: that one is cancelled
+            // (only the list), then its "Do you want to install this package?" answered - no mouse needed
+            await keysExe(['click', String(pid), '^Loading games', 'Cancel']);
+            if (!asked && await keysExe(['click', String(pid), '^PKG Installation', 'Install'])) asked = true;
+            if (await keysExe(['ok', String(pid), 'success|installed', '0'])) {
+              await wait(800);
+              await closeRunning(false);
+              for (let j = 0; j < 20 && isAlive(pid); j++) await wait(500);
+              if (isAlive(pid)) return;                  // still open: the player closes it, then starts again
+              const again = await launchGame(moduleId, rom);
+              if (!again.ok && win && !win.isDestroyed()) win.webContents.send('toast', `${game.title}: ${again.error}`);
+              return;
+            }
+            await wait(3000);
+          }
+        })();
+      }
+      return r.ok ? { ...r, notice: `${game.title} is installed into RPCS3 once (a few minutes) - MediaDeck answers RPCS3's questions and starts the game when it is installed.`
+        + (licences ? '' : `\n\nNo licence (.rap) was found next to the package - the game may not start without it.`) } : r;
+    }
+  }
   let args;
-  try { args = games.launchArgs(mod, rom); } catch (e) { return { ok: false, error: e.message }; }
+  try { args = games.launchArgs(mod, startRom); } catch (e) { return { ok: false, error: e.message }; }
   // Mednafen keeps its settings in %HOME%\.mednafen when HOME is set (Git Bash, MSYS): always its own folder
   const env = emuInstaller.emuIdOf(mod) === 'mednafen' ? { MEDNAFEN_HOME: path.dirname(mod.exe) } : null;
   const r = await startProgram(mod.exe, args, mod.gameCwd === 'rom' ? path.dirname(rom) : path.dirname(mod.exe), game.title,

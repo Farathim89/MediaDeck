@@ -88,6 +88,23 @@ function cleanName(file) {
   return { title: (disc ? `${n} ${disc}` : n) || path.basename(file), region, version };
 }
 
+// A PS3 store download: a .pkg with the PKG header and a PS3 title ID - a PS3 game (NPEA / NPUB / NPJA …) or a
+// PSone Classic (NPxJ: a PS1 game sold on the PS3 store; RPCS3 plays it with the PS3's own PS1 player from the
+// firmware) -> { cid, tid, ps1 }, else null (PSP / Vita packages)
+function psnPackage(file) {
+  if (path.extname(file).toLowerCase() !== '.pkg') return null;
+  try {
+    const fd = fs.openSync(file, 'r');
+    const h = Buffer.alloc(0x60);
+    fs.readSync(fd, h, 0, 0x60, 0);
+    fs.closeSync(fd);
+    if (h.readUInt32BE(0) !== 0x7f504b47) return null;   // "\x7fPKG"
+    const cid = h.toString('latin1', 0x30, 0x54).replace(/\0.*$/, '');
+    const m = /^[A-Z]{2}\d{4}-(NP[EUJHK]([ABJ])\d{5})_\d{2}-[A-Z0-9]{16}$/.exec(cid);
+    return m ? { cid, tid: m[1], ps1: m[2] === 'J' } : null;
+  } catch { return null; }
+}
+
 // TITLE and TITLE_ID of a PS3 PARAM.SFO (a small key/value table)
 function sfoInfo(file) {
   const out = {};
@@ -192,6 +209,18 @@ async function scanGames(mod) {
           }
         }
         for (const n of files) if (path.extname(n).toLowerCase() === '.iso') found.push({ rom: path.join(dir, n), folder });
+        // PSN downloads (.pkg + its .rap licence): named after their folder ("God of War II HD (Europe)"), once
+        // installed into RPCS3 its icon and title ID from there (main.js launchGame installs it at the first start)
+        for (const n of files) {
+          const psn = psnPackage(path.join(dir, n));
+          if (!psn) continue;
+          const inst = path.join(path.dirname(mod.exe), 'dev_hdd0', 'game', psn.tid);
+          const icon = path.join(inst, 'ICON0.PNG');
+          const own = dir !== root && !/^(USA|Europe|Japan|World|Asia|Korea|Australia)$/i.test(path.basename(dir));
+          const name = own ? path.basename(dir) : (sfoInfo(path.join(inst, 'PARAM.SFO')).TITLE || psn.tid);
+          found.push({ rom: path.join(dir, n), ...cleanName(name + '.x'), serial: psn.tid, folder,
+            ...(fs.existsSync(icon) ? { cover: icon, coverIsIcon: true } : {}) });
+        }
         return;
       }
 
@@ -317,4 +346,4 @@ function launchArgs(mod, rom) {
     .replace('{system}', (folder && typeof folder === 'object' && folder.system) || ''));
 }
 
-module.exports = { scanGames, launchArgs, pickCore, availableCores, folderPath, isRetroArch };
+module.exports = { scanGames, launchArgs, pickCore, availableCores, folderPath, isRetroArch, isRpcs3, psnPackage };

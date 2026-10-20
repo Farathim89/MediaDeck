@@ -362,6 +362,7 @@ const Home = (() => {
     const r = await api.launchGame(g.moduleId, g.rom);
     setTimeout(busy.remove, r.ok ? 1500 : 0);
     if (!r.ok) UI.menu({ title: `Couldn't start ${g.title}`, message: r.error, items: [{ label: 'OK', icon: 'check' }] });
+    else if (r.notice) UI.menu({ title: g.title, message: r.notice, items: [{ label: 'OK', icon: 'check' }] });   // e.g. a PSN game installing first
   }
 
   async function gameOptions(g, t) {

@@ -3,6 +3,9 @@
 //                                  for programs in the background)
 //   keys.exe confirm <pid> [secs]  press Yes/OK in that program's own "confirm shutdown/exit" dialog
 //                                  (secs: keep looking that long, until it shows or the program is gone)
+//   keys.exe ok <pid> <pattern> [secs]  the same for a dialog whose title or text matches the pattern (RPCS3's
+//                                  "Successfully installed" message after a PSN package)
+//   keys.exe click <pid> <title> <button>  press that button in a window of the program whose title matches
 //   keys.exe send <pid> <combo>    bring the game's window (pid or its child) to the front and
 //                                  press a key combo, e.g. "F1", "Shift+F1", "Ctrl+P"
 //   keys.exe unmark <hwnd>          take the taskbar's "full screen" mark off a window (Chromium sets it; Windows 11's
@@ -79,11 +82,40 @@ static class Keys
         return found;
     }
 
+    // keys.exe click <pid> <title> <button>: press the button of that name in a window of the program whose title
+    // matches (RPCS3 installing a package: "Loading games" -> Cancel, "PKG Installation" -> Install)
+    static bool Click(int pid, System.Text.RegularExpressions.Regex title, string button)
+    {
+        var root = System.Windows.Automation.AutomationElement.RootElement;
+        var mine = new System.Windows.Automation.PropertyCondition(System.Windows.Automation.AutomationElement.ProcessIdProperty, pid);
+        var isWindow = new System.Windows.Automation.PropertyCondition(System.Windows.Automation.AutomationElement.ControlTypeProperty, System.Windows.Automation.ControlType.Window);
+        var isButton = new System.Windows.Automation.PropertyCondition(System.Windows.Automation.AutomationElement.ControlTypeProperty, System.Windows.Automation.ControlType.Button);
+        var windows = new List<System.Windows.Automation.AutomationElement>();
+        foreach (System.Windows.Automation.AutomationElement top in root.FindAll(System.Windows.Automation.TreeScope.Children, mine))
+        {
+            windows.Add(top);
+            foreach (System.Windows.Automation.AutomationElement inner in top.FindAll(System.Windows.Automation.TreeScope.Descendants, isWindow)) windows.Add(inner);
+        }
+        foreach (var w in windows)
+        {
+            if (!title.IsMatch(w.Current.Name ?? "")) continue;
+            foreach (System.Windows.Automation.AutomationElement b in w.FindAll(System.Windows.Automation.TreeScope.Descendants, isButton))
+            {
+                if (!(b.Current.Name ?? "").Replace("&", "").Trim().Equals(button, StringComparison.OrdinalIgnoreCase)) continue;
+                object pat;
+                if (b.Current.IsEnabled && b.TryGetCurrentPattern(System.Windows.Automation.InvokePattern.Pattern, out pat))
+                { ((System.Windows.Automation.InvokePattern)pat).Invoke(); return true; }
+            }
+        }
+        return false;
+    }
+
     // Emulators like PCSX2 ask "Are you sure you want to shut down?" on close. Press Yes/OK,
     // but only in a dialog of that program whose title is about closing.
-    static bool Confirm(int pid)
+    // only: a dialog's title or text to look for instead of the "about closing" ones (keys.exe ok <pid> <pattern>)
+    static bool Confirm(int pid, System.Text.RegularExpressions.Regex only = null)
     {
-        var titles = new System.Text.RegularExpressions.Regex("confirm|shut ?down|exit|quit|close|stop", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        var titles = only ?? new System.Text.RegularExpressions.Regex("confirm|shut ?down|exit|quit|close|stop", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
         var root = System.Windows.Automation.AutomationElement.RootElement;
         var mine = new System.Windows.Automation.PropertyCondition(System.Windows.Automation.AutomationElement.ProcessIdProperty, pid);
         // only that program's own windows (searching the whole desktop takes seconds): its top-level windows and
@@ -102,7 +134,8 @@ static class Keys
             bool aboutClosing = titles.IsMatch(w.Current.Name ?? "");
             if (!aboutClosing)
                 foreach (System.Windows.Automation.AutomationElement x in w.FindAll(System.Windows.Automation.TreeScope.Descendants, new System.Windows.Automation.PropertyCondition(System.Windows.Automation.AutomationElement.ControlTypeProperty, System.Windows.Automation.ControlType.Text)))
-                    if (System.Text.RegularExpressions.Regex.IsMatch(x.Current.Name ?? "", "(?i)\\b(exit|quit|shut ?down|close|stop)\\b.*\\?|\\bsure\\b.*\\b(exit|quit|shut ?down|close|stop)\\b")) { aboutClosing = true; break; }
+                    if (only != null ? only.IsMatch(x.Current.Name ?? "") :
+                        System.Text.RegularExpressions.Regex.IsMatch(x.Current.Name ?? "", "(?i)\\b(exit|quit|shut ?down|close|stop)\\b.*\\?|\\bsure\\b.*\\b(exit|quit|shut ?down|close|stop)\\b")) { aboutClosing = true; break; }
             if (!aboutClosing) continue;
             foreach (System.Windows.Automation.AutomationElement b in w.FindAll(System.Windows.Automation.TreeScope.Descendants, System.Windows.Automation.Condition.TrueCondition))
             {
@@ -173,13 +206,20 @@ static class Keys
             }
             if (a.Length >= 2 && a[0] == "focus") { Focus(new IntPtr(long.Parse(a[1]))); return 0; }
             if (a.Length >= 2 && a[0] == "game") { var h = WindowOf(int.Parse(a[1])); if (h == IntPtr.Zero) return 2; Focus(h); return 0; }
-            if (a.Length >= 2 && a[0] == "confirm")
+            if (a.Length >= 4 && a[0] == "click")
+            {
+                var t = new System.Text.RegularExpressions.Regex(a[2], System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+                return Click(int.Parse(a[1]), t, a[3]) ? 0 : 3;
+            }
+            if ((a.Length >= 2 && a[0] == "confirm") || (a.Length >= 3 && a[0] == "ok"))
             {
                 int pid = int.Parse(a[1]);
-                var until = DateTime.Now.AddSeconds(a.Length >= 3 ? double.Parse(a[2], System.Globalization.CultureInfo.InvariantCulture) : 0);
+                var only = a[0] == "ok" ? new System.Text.RegularExpressions.Regex(a[2], System.Text.RegularExpressions.RegexOptions.IgnoreCase) : null;
+                int si = a[0] == "ok" ? 3 : 2;
+                var until = DateTime.Now.AddSeconds(a.Length > si ? double.Parse(a[si], System.Globalization.CultureInfo.InvariantCulture) : 0);
                 do
                 {
-                    if (Confirm(pid)) return 0;
+                    if (Confirm(pid, only)) return 0;
                     try { if (Process.GetProcessById(pid).HasExited) return 4; } catch (ArgumentException) { return 4; }   // gone
                     Thread.Sleep(150);
                 } while (DateTime.Now < until);
