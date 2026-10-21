@@ -24,7 +24,7 @@ const net = { fetch: (url, opts = {}) => fetch(url, { ...opts, headers: { ...(op
 
 (async () => {
   for (const t of TOOLS) {
-    const rel = await emu.githubLatest(t.gh, net);
+    const rel = await emu.githubWith(t.gh, net, t.asset);
     const asset = rel.assets.find((x) => t.asset.test(x.name));
     if (!asset) throw new Error(`${t.id}: no Windows download in ${t.gh} ${rel.tag}`);
     const version = /^latest$/i.test(rel.tag) ? (asset.date || '').slice(0, 10) || rel.tag : rel.tag.replace(/^v/i, '');

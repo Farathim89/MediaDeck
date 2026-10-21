@@ -215,6 +215,21 @@ async function githubLatest(gh, net) {
   return { tag, assets };
 }
 
+// The newest release that has this download: a project's newest release can still be uploading its files (BtbN's
+// FFmpeg builds: the release is there minutes before its zips - a build broke on that), then the one before it
+async function githubWith(gh, net, assetRe) {
+  const rel = await githubLatest(gh, net);
+  if (rel.assets.some((x) => assetRe.test(x.name))) return rel;
+  const r = await net.fetch(`https://api.github.com/repos/${gh}/releases?per_page=30`, { headers: { Accept: 'application/vnd.github+json' } });
+  if (!r.ok) return rel;
+  for (const j of await r.json()) {
+    if (j.draft) continue;
+    const assets = (j.assets || []).map((a) => ({ name: a.name, url: a.browser_download_url, size: a.size, date: a.updated_at || '', digest: a.digest || '' }));
+    if (assets.some((x) => assetRe.test(x.name))) return { tag: j.tag_name, body: j.body || '', assets };
+  }
+  return rel;
+}
+
 // Two stamps of the same download (tag|file|date): the date only counts when both have one
 function sameStamp(a, b) {
   const x = String(a || '').split('|'), y = String(b || '').split('|');
@@ -224,7 +239,7 @@ function sameStamp(a, b) {
 
 async function resolveUrl(src, net) {
   if (src.gh) {
-    const j = await githubLatest(src.gh, net);
+    const j = await githubWith(src.gh, net, src.asset);
     const a = j.assets.find((x) => src.asset.test(x.name));
     if (!a) throw new Error('No Windows download in the latest release');
     // stamp: changes with every new build, also for "latest" / "continuous" tags
@@ -436,4 +451,4 @@ async function update(mod, opts) {
   }
 }
 
-module.exports = { CONSOLES, EMULATORS, STARTER, makeStarterFolders, catalog, install, targetDir, resolveUrl, checkUpdates, update, emuIdOf, githubLatest, download, unpack, findExeDir };
+module.exports = { CONSOLES, EMULATORS, STARTER, makeStarterFolders, catalog, install, targetDir, resolveUrl, checkUpdates, update, emuIdOf, githubLatest, githubWith, download, unpack, findExeDir };

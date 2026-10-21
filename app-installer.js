@@ -129,7 +129,7 @@ async function install(id, opts) {
   const say = opts.progress || (() => {});
   if (!a.setup && exePath(id) && await running(path.basename(a.exe))) throw new Error(`Close ${a.name} first, then update it`);
   say(`${a.name}: finding the latest version…`, 0);
-  const rel = await emu.githubLatest(a.gh, opts.net);
+  const rel = await emu.githubWith(a.gh, opts.net, a.asset);
   const asset = rel.assets.find((x) => a.asset.test(x.name));
   if (!asset) throw new Error(`${a.name}: no Windows download in the latest release`);
   const version = /^latest$/i.test(rel.tag) ? (asset.date || '').slice(0, 10) || rel.tag : rel.tag.replace(/^v/i, '');
