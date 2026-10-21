@@ -281,6 +281,24 @@ function createWindow() {
   for (const ev of ['resize', 'move', 'maximize', 'unmaximize', 'enter-full-screen', 'leave-full-screen']) win.on(ev, rememberWindow);
 }
 
+// MediaDeck's own work folders in Temp (an update, an app / emulator install, a BIOS import, the Switch list) that an
+// update stopped halfway or a crash left behind - 1.1 GB of old updates was found. Only these names, each with the time
+// it was made in it, and only when that is more than 6 hours ago (never one in use).
+const TEMP_LEFTOVER = /^(?:mediadeck-update|mediadeck-app-.+|emu-install-.+|emu-update-.+|bios-import|switchtdb)-(\d{13})(?:-\d+)?$/;
+async function cleanTempLeftovers() {
+  const tmp = app.getPath('temp');
+  let names = [];
+  try { names = await fs.promises.readdir(tmp); } catch { return 0; }
+  let n = 0;
+  for (const name of names) {
+    const m = TEMP_LEFTOVER.exec(name);
+    if (!m || Date.now() - Number(m[1]) < 6 * 3600e3) continue;
+    try { await fs.promises.rm(path.join(tmp, name), { recursive: true, force: true }); n++; } catch {}
+  }
+  if (n) console.log(`[temp] removed ${n} old work folder(s)`);
+  return n;
+}
+
 function onShortcut(e, input) {
   if (input.type !== 'keyDown') return;
   if (input.key === 'F11') { setFull(!full); e.preventDefault(); }
@@ -818,6 +836,7 @@ function startTestSwitch() {
         return send(out);
       }
       if (u.pathname === '/player-audio') return send({ ok: await mpv.setAudio(u.searchParams.get('key'), u.searchParams.get('value')) });
+      if (u.pathname === '/clean-temp') return send({ removed: await cleanTempLeftovers() });
       if (u.pathname === '/player-set') return send({ ok: await mpv.set(u.searchParams.get('p'), u.searchParams.get('v')) });
       if (u.pathname === '/page-text') return send({ text: await win.webContents.executeJavaScript('document.body.innerText') });
       if (u.pathname === '/open-settings') { await win.webContents.executeJavaScript(`App.open(Settings, ${JSON.stringify({ section: u.searchParams.get('section') || 'general' })})`); return send({ ok: true }); }
@@ -2221,6 +2240,7 @@ if (!app.requestSingleInstanceLock()) {
     setInterval(() => { if (!process.argv.includes('--test')) selfUpdateAtStart().catch(() => {}); }, 6 * 3600e3);
     setTimeout(() => { if (!process.argv.includes('--test')) { checkUpdatesAtStart(); appUpdatesAtStart().catch((e) => console.error('[apps] updates:', e.message)); } }, 15000);
     setTimeout(() => { if (!process.argv.includes('--test')) autoCovers().catch((e) => console.error('[covers]', e.message)); }, 60000);
+    setTimeout(() => cleanTempLeftovers().catch(() => {}), 45000);
     // Bring the home screen back from anywhere
     globalShortcut.register('Control+Alt+Home', bringToFront);
   });
