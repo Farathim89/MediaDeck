@@ -15,21 +15,14 @@ const MediaHome = (() => {
   const KIND_ORDER = { usb: 0, hdd: 1, network: 2, disc: 3 };
   const KIND_NAME = { usb: 'USB drive', hdd: 'Drive', network: 'Network drive', disc: 'Disc' };
 
-  function continueList() {
-    return Object.entries(App.state.progress)
-      .filter(([, p]) => !p.watched && p.pos > 30 && (!p.dur || p.pos < p.dur - 20))
-      .sort((a, b) => (b[1].t || 0) - (a[1].t || 0))
-      .slice(0, 20)
-      .map(([path, p]) => ({ path, ...p }));
-  }
-
   // ---------- Rows ----------
   function render(focusKey) {
     items.clear();
     rowsEl.innerHTML = '<div class="rows-inner"></div>';
     inner = rowsEl.firstChild;
 
-    const cont = continueList();
+    // Continue watching lives in the folders now; here only when Settings → Media Player → Browsing says so
+    const cont = App.state.config.settings.continueOnHome ? Media.continueList() : [];
     if (cont.length) addRow('continue', 'Continue watching', cont.map(continueTile));
 
     const sorted = visibleDrives().sort((a, b) => KIND_ORDER[a.kind] - KIND_ORDER[b.kind] || a.letter.localeCompare(b.letter));
@@ -71,7 +64,7 @@ const MediaHome = (() => {
       <div class="tile-progress"><i style="width:${pct}%"></i></div>`;
     Media.loadThumb(b.querySelector('.thumb'));
     items.set(key, { kicker: 'Continue watching', title: name, sub: `${Media.formatTime(p.pos)} of ${Media.formatTime(p.dur)}  ·  ${Media.baseName(Media.dirOf(p.path))}`, image: Media.url('thumb', { p: p.path, w: 480 }) });
-    b.addEventListener('click', () => playContinue(p));
+    b.addEventListener('click', () => Media.playContinue(p));
     b.addEventListener('contextmenu', (e) => { e.preventDefault(); continueOptions(p); });
     b.dataset.menu = 'continue';
     b._data = p;
@@ -85,8 +78,7 @@ const MediaHome = (() => {
     b.className = `tile tile-drive focusable ${d.kind}${used > 92 ? ' full' : ''}${d.isNew ? ' is-new' : ''}`;
     b.dataset.key = key;
     b.innerHTML = `
-      <div class="drive-top"><span class="drive-icon">${Icons[d.kind] || Icons.hdd}</span><span class="drive-letter">${d.letter}:</span></div>
-      ${d.kind === 'usb' ? '<span class="badge">USB</span>' : ''}
+      <div class="drive-top"><span class="drive-icon">${Icons[d.kind] || Icons.hdd}</span><span class="drive-tags">${d.kind === 'usb' ? '<span class="badge">USB</span>' : ''}<span class="drive-letter">${d.letter}:</span></span></div>
       <div class="drive-name">${UI.esc(d.label)}</div>
       <div class="drive-meta">${Media.formatSize(d.free)} free of ${Media.formatSize(d.size)}</div>
       <div class="drive-bar"><i style="width:${used.toFixed(1)}%"></i></div>`;
@@ -139,17 +131,6 @@ const MediaHome = (() => {
   });
 
   // ---------- Actions ----------
-  async function playContinue(p) {
-    try {
-      const dir = await api.listDir(Media.dirOf(p.path));
-      const videos = Media.sortEntries(dir.entries, 'name').filter((e) => e.kind === 'video').map((e) => e.path);
-      const idx = videos.indexOf(p.path);
-      Player.play(idx >= 0 ? videos : [p.path], Math.max(0, idx));
-    } catch {
-      UI.toast('That drive is not connected', { icon: 'alert', error: true });
-    }
-  }
-
   async function continueOptions(p) {
     const c = await UI.menu({ title: Media.stripExt(Media.baseName(p.path)), items: [
       { label: 'Resume', icon: 'play', value: 'play' },
@@ -157,12 +138,12 @@ const MediaHome = (() => {
       { label: 'Open folder', icon: 'folder', value: 'folder' },
       { label: 'Remove from Continue watching', icon: 'close', value: 'remove' },
     ] });
-    if (c === 'play') playContinue(p);
-    if (c === 'start') { await api.setProgress(p.path, null); delete App.state.progress[p.path]; playContinue(p); }
+    if (c === 'play') Media.playContinue(p);
+    if (c === 'start') { await api.setProgress(p.path, null); delete App.state.progress[p.path]; Media.playContinue(p); }
     if (c === 'folder') Browser.openRoot(Media.dirOf(p.path), Media.baseName(Media.dirOf(p.path)), p.path);
-    if (c === 'remove') {
-      App.state.progress[p.path] = { ...App.state.progress[p.path], watched: true };
-      await api.setProgress(p.path, App.state.progress[p.path]);
+    if (c === 'remove') {   // forgets where it stopped (it is not marked as watched: that would tick its folder)
+      delete App.state.progress[p.path];
+      await api.setProgress(p.path, null);
       render();
     }
   }

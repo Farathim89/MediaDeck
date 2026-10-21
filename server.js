@@ -50,6 +50,35 @@ function runBuffer(cmd, args, opts = {}) {
   });
 }
 
+// Same, but also gives back the program's log (stderr) when it worked
+function runWithLog(cmd, args, opts = {}) {
+  return new Promise((resolve, reject) => {
+    execFile(cmd, args, { windowsHide: true, encoding: 'buffer', maxBuffer: 64 * 1024 * 1024, timeout: opts.timeout || 60000 }, (err, stdout, stderr) => {
+      if (err) { err.stderr = String(stderr || ''); reject(err); } else resolve({ out: stdout, log: String(stderr || '') });
+    });
+  });
+}
+
+// Cuts black bars off a video's thumbnail, from cropdetect's last "crop=w:h:x:y". Bars are on both sides, so only
+// what is black on both sides goes (the smaller one: never any of the picture), when that is at least 3 %, at most
+// 45 % of the picture, and only top + bottom or only the sides (black all round is a dark scene: left alone)
+function cutBars(jpg, log) {
+  const all = [...log.matchAll(/crop=(\d+):(\d+):(\d+):(\d+)/g)];
+  if (!all.length) return jpg;
+  const [w, h, x, y] = all[all.length - 1].slice(1).map(Number);
+  try {
+    const img = require('electron').nativeImage.createFromBuffer(jpg);
+    const { width: W, height: H } = img.getSize();
+    if (!W || !H || x + w > W || y + h > H) return jpg;
+    const side = Math.min(x, W - w - x), top = Math.min(y, H - h - y);
+    const dx = side >= W * 0.03 ? side : 0, dy = top >= H * 0.03 ? top : 0;
+    if ((!dx && !dy) || (dx && dy) || W - 2 * dx < W * 0.55 || H - 2 * dy < H * 0.55) return jpg;
+    return img.crop({ x: dx, y: dy, width: W - 2 * dx, height: H - 2 * dy }).toJPEG(88);
+  } catch {
+    return jpg;
+  }
+}
+
 // Encrypted cache files: [12-byte IV][16-byte tag][data], AES-256-GCM.
 // File names are HMACs, so a name can't be matched to a guessed file path.
 class Vault {
@@ -235,7 +264,8 @@ class MediaServer {
   async thumbFile(p, w, isCancelled) {
     if (!this.ffmpeg) throw new Error('ffmpeg not found');
     const st = await fsp.stat(p);
-    const key = this.vault.name(`${p}|${st.size}|${st.mtimeMs}|${w}`);
+    // videos: "|bars" since their black bars are cut off (the thumbnails from before are made again)
+    const key = this.vault.name(`${p}|${st.size}|${st.mtimeMs}|${w}${kindOf(p) === 'video' ? '|bars' : ''}`);
     const out = path.join(this.thumbDir, key + '.enc');
     if (fs.existsSync(out)) return this.vault.read(out);
     if (this.failed.has(key)) throw new Error('no thumbnail');
@@ -244,13 +274,17 @@ class MediaServer {
     const job = this.thumbs.run(async () => {
       const kind = kindOf(p);
       const scale = `scale='min(${w},iw)':-2`;
-      let args;
+      let args, bars = false;
       if (kind === 'video') {
         let ss = 10, vf = scale;
         const info = await this.info(p).catch(() => null);
         if (info && info.duration) ss = Math.min(info.duration * 0.15, 600);
         if (info && info.video && info.video.hdr) vf = `${TONEMAP},${scale}`;
-        args = ['-ss', ss.toFixed(2), '-i', p, '-map', '0:v:0', '-frames:v', '1', '-vf', vf, '-q:v', '4'];
+        // cropdetect looks at the same picture, so black bars (a wide film in a 16:9 picture, a 4:3 one with bars
+        // at the sides) can be cut off after
+        args = ['-ss', ss.toFixed(2), '-i', p, '-filter_complex', `[0:v:0]${vf},split[t][d];[d]cropdetect=limit=0.1:round=2:skip=0:reset=0,nullsink`,
+          '-map', '[t]', '-frames:v', '1', '-q:v', '4'];
+        bars = true;
       } else if (kind === 'audio') {
         args = ['-i', p, '-an', '-map', '0:v:0', '-frames:v', '1', '-vf', scale, '-q:v', '3'];
       } else {
@@ -258,8 +292,9 @@ class MediaServer {
       }
       try {
         // The picture comes back in memory and is only written encrypted
-        const jpg = await runBuffer(this.ffmpeg, ['-hide_banner', '-loglevel', 'error', ...args, '-f', 'mjpeg', 'pipe:1'], { timeout: 45000 });
-        if (!jpg.length) throw new Error('no output');
+        const made = await runWithLog(this.ffmpeg, ['-hide_banner', '-loglevel', bars ? 'info' : 'error', ...args, '-f', 'mjpeg', 'pipe:1'], { timeout: 45000 });
+        if (!made.out.length) throw new Error('no output');
+        const jpg = bars ? cutBars(made.out, made.log) : made.out;
         await this.vault.write(out, jpg);
         return jpg;
       } catch (e) {

@@ -50,6 +50,43 @@ const Media = (() => {
     return null;
   }
 
+  // Continue watching: videos stopped part way, last watched first (only those inside the folder "under", any depth)
+  function continueList(under) {
+    const pre = under ? under.toLowerCase().replace(/[\\/]*$/, '\\') : '';
+    return Object.entries(App.state.progress)
+      .filter(([path, p]) => !p.watched && p.pos > 30 && (!p.dur || p.pos < p.dur - 20) && (!pre || path.toLowerCase().startsWith(pre)))
+      .sort((a, b) => (b[1].t || 0) - (a[1].t || 0))
+      .slice(0, 20)
+      .map(([path, p]) => ({ path, ...p }));
+  }
+
+  // Plays one of them where it stopped, with the other videos of its folder after it
+  async function playContinue(p, opts = {}) {
+    try {
+      const dir = await api.listDir(dirOf(p.path));
+      const videos = sortEntries(dir.entries, 'name').filter((e) => e.kind === 'video').map((e) => e.path);
+      const idx = videos.indexOf(p.path);
+      Player.play(idx >= 0 ? videos : [p.path], Math.max(0, idx), opts);
+    } catch {
+      UI.toast('That drive is not connected', { icon: 'alert', error: true });
+    }
+  }
+
+  // A folder's, from the videos it counts: { watched: true } when all are, else { pct, watched: n, of }
+  // (how far through them all), else null
+  function folderWatchState(files) {
+    let done = 0, n = 0, seen = 0;
+    for (const f of files || []) {
+      const w = watchState(f);
+      if (!w) continue;
+      seen++;
+      if (w.watched) { n++; done++; } else done += w.pct / 100;
+    }
+    if (!seen) return null;
+    if (n === files.length) return { watched: true };
+    return { pct: (done / files.length) * 100, count: n, of: files.length };
+  }
+
   // Where a thumbnail comes from, in the order to try
   function thumbSources(item) {
     const set = App.state.config.settings;
@@ -101,5 +138,5 @@ const Media = (() => {
     return { folder: Icons.folder, video: Icons.film, audio: Icons.music, image: Icons.image }[kind] || Icons.file;
   }
 
-  return { url, dirOf, baseName, stripExt, extOf, formatSize, formatTime, formatDate, sortEntries, watchState, thumbSources, lazy, loadThumb, kindIcon, collator };
+  return { url, dirOf, baseName, stripExt, extOf, formatSize, formatTime, formatDate, sortEntries, watchState, folderWatchState, continueList, playContinue, thumbSources, lazy, loadThumb, kindIcon, collator };
 })();

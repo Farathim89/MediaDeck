@@ -258,6 +258,7 @@ const Home = (() => {
       } else {
         const list = inSection(s.id);
         const grid = row(s.title, list.length);
+        if (s.id === 'apps') grid.classList.add('icon-grid');
         list.forEach((t) => grid.appendChild(cardEl(t, s)));
         grid.appendChild(addCardEl(s));
       }
@@ -622,7 +623,10 @@ const Home = (() => {
     const sys = section.id === 'emulators' ? (t.system || t.subtitle || '') : '';
     b.innerHTML = `<div class="tile-logo"></div><div class="tile-name">${UI.esc(t.name)}${sys ? `<small class="tile-system">${UI.esc(sys)}</small>` : ''}</div>`;
     if (sys) b.classList.add('has-system');
+    // App cards are just the logo (the hero above shows the name); one without a logo keeps its name
+    if (section.id === 'apps') b.classList.add('tile-icon');
     fillLogo(t, b.querySelector('.tile-logo')).then(() => {
+      b.classList.toggle('no-logo', !t.builtin && !b.querySelector('.tile-logo img'));
       applyStyle(t, b);
       if (Nav.current === b) updateHero(b);
     });

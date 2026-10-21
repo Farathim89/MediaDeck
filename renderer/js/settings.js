@@ -182,6 +182,8 @@ const Settings = (() => {
           value: () => { const n = (s().hiddenDrives || []).length; return n ? `${n} hidden` : 'None'; }, run: () => manageHiddenDrives() },
         { label: 'Sort folders by', type: 'choice', key: 'sortBy', options: () => [
           { value: 'name', label: 'Name' }, { value: 'date', label: 'Newest first' }, { value: 'size', label: 'Size' }] },
+        { label: 'Continue watching in folders', desc: 'A row at the top of a folder with its videos you stopped part way (also Y in a folder)', type: 'toggle', key: 'continueInFolders' },
+        { label: 'Continue watching on the start screen', desc: 'The same row, for all your drives, on the Media Player start screen', type: 'toggle', key: 'continueOnHome' },
         { label: 'Thumbnails', desc: 'Pictures of videos, music and photos. Turn off for very slow drives.', type: 'toggle', key: 'thumbnails' },
         { label: 'Folder pictures', desc: 'poster.jpg / folder.jpg, or a frame from the film inside', type: 'toggle', key: 'folderArt' },
         { label: 'Keep thumbnails after closing', desc: 'Off: thumbnails are deleted when MediaDeck closes. They are always stored encrypted.', type: 'toggle', key: 'keepThumbnails' },

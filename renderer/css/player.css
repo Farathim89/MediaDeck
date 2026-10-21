@@ -29,8 +29,8 @@ body.is-live #time-pos { color: #ff4d5e; font-weight: 700; letter-spacing: 0.08e
 
 /* ---------- Seek bar ---------- */
 #seek { position: relative; padding: 0.9rem 0; border-radius: 1rem; }
-.seek-track { position: relative; height: 0.35rem; border-radius: 1rem; background: rgba(255, 255, 255, 0.22); transition: height 0.15s; }
-.seek-fill { position: absolute; left: 0; top: 0; bottom: 0; width: 0; border-radius: 1rem; background: var(--accent); }
+.seek-track { position: relative; height: 0.35rem; border-radius: 1rem; background: rgba(255, 255, 255, 0.28); transition: height 0.15s; }
+.seek-fill { position: absolute; left: 0; top: 0; bottom: 0; width: 0; border-radius: 1rem; background: var(--progress); }   /* Player settings → Progress bar colour */
 .seek-knob {
   position: absolute; top: 50%; left: 0; width: 1.1rem; height: 1.1rem; margin: -0.55rem 0 0 -0.55rem;
   border-radius: 50%; background: #fff; transform: scale(0); transition: transform 0.15s var(--ease);

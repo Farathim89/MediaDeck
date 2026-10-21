@@ -40,13 +40,16 @@
   background: linear-gradient(180deg, transparent 40%, rgba(0, 0, 0, 0.82) 100%);
 }
 .tile-media .tile-label { z-index: 1; bottom: 1.05rem; }
+/* the icon (until the picture comes) sits in the space above the name, whatever the Text size */
+.tile-media .thumb { padding-bottom: calc(1.2rem + 2.4rem * var(--text-scale)); }
 .tile-progress {
   position: absolute; z-index: 1; left: 1rem; right: 1rem; bottom: 0.55rem;
-  height: 0.25rem; border-radius: 1rem; background: rgba(255, 255, 255, 0.22); overflow: hidden;
+  height: 0.3rem; border-radius: 1rem; background: rgba(0, 0, 0, 0.55); box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.12); overflow: hidden;
 }
-.tile-progress > i { display: block; height: 100%; background: var(--accent); }
+.tile-progress > i { display: block; height: 100%; background: var(--progress); }
 .tile-folder .thumb { color: #fbbf24; }
-.tile-drive .badge { top: 1.05rem; right: 4.3rem; }
+.tile-drive .drive-tags { display: flex; align-items: center; gap: 0.5rem; }
+.tile-drive .drive-tags .badge { position: static; }
 
 /* ---------- Folder browser ---------- */
 #browser .topbar { padding-bottom: 1.2rem; }
@@ -71,11 +74,15 @@
 }
 .grid-scroll::-webkit-scrollbar { width: 0.5rem; }
 .grid-scroll::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.15); border-radius: 1rem; }
-.grid {
+.grid, .continue-row {
   display: grid;
-  grid-template-columns: repeat(6, minmax(0, 1fr));
+  /* 6 across at Screen size Normal, fewer and bigger when it is bigger (8 at 80%, 5 at 125%, 4 at 150%) */
+  grid-template-columns: repeat(auto-fill, minmax(15.75rem, 1fr));
   gap: 2rem 1.5rem;
 }
+/* Continue watching at the top of a folder (one row), then the folder itself */
+.grid-title { margin: 0.2rem 0 1rem; font-size: calc(1.25rem * var(--text-scale)); font-weight: 600; color: var(--text); }
+.continue-row + .grid-title { margin-top: 2.2rem; }
 .empty-note { position: absolute; top: 45%; left: 0; right: 0; text-align: center; color: var(--dim); font-size: calc(1.3rem * var(--text-scale)); pointer-events: none; }
 
 .card {
@@ -103,13 +110,14 @@
 .card.focused .thumb { box-shadow: 0 0 0 0.2rem var(--focus-ring), 0 1.2rem 2.4rem rgba(0, 0, 0, 0.6); }
 .card.focused .card-name { color: #fff; }
 .thumb-progress {
-  position: absolute; z-index: 1; left: 0; right: 0; bottom: 0; height: 0.3rem; background: rgba(0, 0, 0, 0.5);
+  position: absolute; z-index: 1; left: 0; right: 0; bottom: 0; height: 0.35rem; background: rgba(0, 0, 0, 0.65);
 }
-.thumb-progress > i { display: block; height: 100%; background: var(--accent); }
+.thumb-progress > i { display: block; height: 100%; background: var(--progress); }
 .thumb-watched {
   position: absolute; z-index: 1; top: 0.5rem; right: 0.5rem;
   width: 1.6rem; height: 1.6rem; border-radius: 50%;
   display: grid; place-items: center; background: var(--accent); color: var(--accent-ink);
+  box-shadow: 0 0.15rem 0.5rem rgba(0, 0, 0, 0.55);
 }
 .thumb-watched svg { width: 1rem; height: 1rem; stroke-width: 3; }
 

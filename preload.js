@@ -10,6 +10,7 @@ contextBridge.exposeInMainWorld('api', {
   gcAdapter: invoke('gc-adapter'),
   launch: invoke('launch'),
   listDir: invoke('list-dir'),
+  folderVideos: invoke('folder-videos'),
   drives: invoke('drives'),
   watchDrives: invoke('watch-drives'),
   setProgress: invoke('set-progress'),

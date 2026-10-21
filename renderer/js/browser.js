@@ -3,6 +3,8 @@ const Browser = (() => {
   const el = document.getElementById('browser');
   const scroller = el.querySelector('.grid-scroll');
   const grid = el.querySelector('.grid');
+  const contEl = el.querySelector('.continue-strip');
+  const contRow = el.querySelector('.continue-row');
   const crumbsEl = el.querySelector('.crumbs');
   const infoEl = el.querySelector('.browser-info');
   const emptyEl = el.querySelector('.empty-note');
@@ -12,6 +14,7 @@ const Browser = (() => {
   let current = null;   // { path, entries }
   let history = [];     // [{ path, focus }] folders we came through
   let loadId = 0;
+  let renderId = 0;
 
   const SORTS = { name: 'Name', date: 'Newest', size: 'Size' };
   const settings = () => App.state.config.settings;
@@ -24,6 +27,8 @@ const Browser = (() => {
   async function load(path, focusPath) {
     const id = ++loadId;
     grid.innerHTML = '';
+    contRow.innerHTML = '';
+    contEl.hidden = true;
     emptyEl.textContent = '';
     infoEl.textContent = 'Loading…';
     renderCrumbs(path);
@@ -40,8 +45,10 @@ const Browser = (() => {
     render(focusPath);
   }
 
-  function render(focusPath) {
+  // focusCont: focusPath is a Continue watching card
+  function render(focusPath, focusCont) {
     const entries = current.entries;
+    const rid = ++renderId;
     grid.innerHTML = '';
     const observer = Media.lazy(scroller);
     const frag = document.createDocumentFragment();
@@ -51,15 +58,101 @@ const Browser = (() => {
       observer.observe(card.querySelector('.thumb'));
     }
     grid.appendChild(frag);
+    renderContinue(observer);
     const folders = entries.filter((e) => e.kind === 'folder').length;
     const files = entries.length - folders;
     infoEl.innerHTML = `${[folders && `${folders} folder${folders > 1 ? 's' : ''}`, files && `${files} file${files > 1 ? 's' : ''}`].filter(Boolean).join(' · ')}
       <span class="sort-chip">${Icons.sort}${SORTS[settings().sortBy] || 'Name'}</span>`;
     emptyEl.textContent = entries.length ? '' : 'Nothing to play in this folder';
-    const target = (focusPath && grid.querySelector(`[data-path="${CSS.escape(focusPath)}"]`)) || grid.querySelector('.card');
+    const first = scroller.querySelector('.card');
+    const sel = focusPath && `[data-path="${CSS.escape(focusPath)}"]`;
+    const target = (sel && ((focusCont && contRow.querySelector(sel)) || grid.querySelector(sel))) || first;
     if (target) Nav.focus(target);
     else Nav.focus(el.querySelector('.back-btn'));
-    if (!target || target === grid.querySelector('.card')) scroller.scrollTop = 0;
+    if (!target || target === first) scroller.scrollTop = 0;
+    markFolders(rid);
+  }
+
+  // Continue watching: the videos in here (or further down) stopped part way, last watched first - one row of them
+  function renderContinue(observer) {
+    contRow.innerHTML = '';
+    const list = settings().continueInFolders === false ? [] : Media.continueList(current.path);
+    contEl.hidden = !list.length;
+    if (!list.length) return;
+    list.forEach((p) => contRow.appendChild(continueCard(p)));
+    const cols = (getComputedStyle(contRow).gridTemplateColumns.match(/px/g) || []).length || 6;
+    [...contRow.children].slice(cols).forEach((c) => c.remove());
+    contRow.querySelectorAll('.thumb').forEach((t) => observer.observe(t));
+  }
+
+  function continueCard(p) {
+    const item = { kind: 'video', path: p.path, name: Media.baseName(p.path), size: 0, cont: p };
+    const b = document.createElement('button');
+    b.className = 'card focusable kind-video is-continue';
+    b.dataset.path = p.path;
+    b._item = item;
+    const dir = Media.dirOf(p.path);
+    // where it is, unless that is this folder or just the film's own folder (same name)
+    const folder = Media.baseName(dir).toLowerCase();
+    const where = dir.toLowerCase() !== current.path.toLowerCase() && folder !== Media.stripExt(item.name).toLowerCase();
+    const meta = [p.dur ? `${Media.formatTime(p.dur - p.pos)} left` : '', where ? Media.baseName(dir) : ''];
+    b.innerHTML = `
+      <div class="thumb" data-src='${UI.esc(JSON.stringify(Media.thumbSources(item)))}'>
+        <span class="thumb-icon">${Media.kindIcon('video')}</span>
+        ${marksHtml(Media.watchState(p.path))}
+      </div>
+      <div class="card-name">${UI.esc(Media.stripExt(item.name))}</div>
+      <div class="card-meta">${UI.esc(meta.filter(Boolean).join(' · '))}</div>`;
+    b.addEventListener('click', () => Media.playContinue(p));
+    b.addEventListener('contextmenu', (e) => { e.preventDefault(); Nav.focus(b, { scroll: false }); options(item); });
+    return b;
+  }
+
+  async function continueOptions(p) {
+    const dir = Media.dirOf(p.path);
+    const items = [{ label: 'Resume', icon: 'play', value: 'play' }, { label: 'Play from the beginning', icon: 'restart', value: 'start' }];
+    if (dir.toLowerCase() !== current.path.toLowerCase()) items.push({ label: 'Open its folder', icon: 'folder', value: 'folder' });
+    items.push({ label: 'Remove from Continue watching', icon: 'close', value: 'remove' }, { label: 'Hide Continue watching', icon: 'eye', value: 'hide' });
+    const c = await UI.menu({ title: Media.stripExt(Media.baseName(p.path)), items });
+    if (c === 'play') Media.playContinue(p);
+    if (c === 'start') { await api.setProgress(p.path, null); delete App.state.progress[p.path]; Media.playContinue(p); }
+    if (c === 'folder') { history.push({ path: current.path, focus: null, scroll: scroller.scrollTop }); load(dir, p.path); }
+    // forgets where it stopped (it is not marked as watched)
+    if (c === 'remove') { delete App.state.progress[p.path]; await api.setProgress(p.path, null); refresh(); }
+    if (c === 'hide') toggleContinue();
+  }
+
+  async function toggleContinue() {
+    const s = settings();
+    s.continueInFolders = s.continueInFolders === false;
+    await api.saveConfig(App.state.config);
+    refresh();
+    Nav.focus(Nav.current);   // the row above came or went: the focused card back in the middle
+    UI.toast(s.continueInFolders ? 'Continue watching shows in folders again' : 'Continue watching hidden - Y in a folder shows it again', { icon: 'eye' });
+  }
+
+  // Watched marks: a tick in the corner when it is watched, else a bar for how far
+  const marksHtml = (w) => (w && w.pct ? `<div class="thumb-progress"><i style="width:${w.pct}%"></i></div>` : '') +
+    (w && w.watched ? `<span class="thumb-watched">${Icons.check}</span>` : '');
+
+  // Folders get the tick from the videos in them, looked at only when something in there has been played
+  async function markFolders(rid) {
+    const played = Object.keys(App.state.progress).map((p) => p.toLowerCase());
+    if (!played.length) return;
+    const cards = [...grid.querySelectorAll('.card.kind-folder')].filter((c) => {
+      const pre = c._item.path.toLowerCase().replace(/[\\/]*$/, '\\');
+      return played.some((p) => p.startsWith(pre));
+    });
+    if (!cards.length) return;
+    let lists;
+    try { lists = await api.folderVideos(cards.map((c) => c._item.path)); } catch { return; }
+    if (rid !== renderId) return;
+    cards.forEach((card, i) => {
+      const w = Media.folderWatchState(lists[i]);
+      if (!w) return;
+      if (w.watched) card.querySelector('.thumb').insertAdjacentHTML('beforeend', marksHtml(w));   // folders: no bar
+      card.querySelector('.card-meta').textContent = w.watched ? 'Folder · Watched' : w.count ? `Folder · ${w.count} of ${w.of} watched` : 'Folder';
+    });
   }
 
   function cardEl(item) {
@@ -75,8 +168,7 @@ const Browser = (() => {
     b.innerHTML = `
       <div class="thumb" data-src='${UI.esc(JSON.stringify(Media.thumbSources(item)))}'>
         <span class="thumb-icon">${Media.kindIcon(item.kind)}</span>
-        ${w && w.pct ? `<div class="thumb-progress"><i style="width:${w.pct}%"></i></div>` : ''}
-        ${w && w.watched ? `<span class="thumb-watched">${Icons.check}</span>` : ''}
+        ${marksHtml(w)}
       </div>
       <div class="card-name">${UI.esc(item.kind === 'folder' ? item.name : Media.stripExt(item.name))}</div>
       <div class="card-meta">${UI.esc(meta)}</div>`;
@@ -132,6 +224,7 @@ const Browser = (() => {
   }
 
   async function options(item) {
+    if (item.cont) return continueOptions(item.cont);
     const favs = App.state.config.favorites;
     const isFav = favs.some((f) => f.path === item.path);
     const w = Media.watchState(item.path);
@@ -149,6 +242,7 @@ const Browser = (() => {
       list.push({ label: 'Open with VLC', icon: 'external', value: 'vlc' });
     }
     list.push({ label: `Sort: ${SORTS[settings().sortBy]}`, icon: 'sort', value: 'sort' });
+    list.push({ label: settings().continueInFolders === false ? 'Show Continue watching' : 'Hide Continue watching', icon: 'eye', value: 'cont' });
 
     const c = await UI.menu({ title: item.kind === 'folder' ? item.name : Media.stripExt(item.name), items: list });
     if (!c) return;
@@ -158,6 +252,7 @@ const Browser = (() => {
     if (c === 'vlc') api.openExternalPlayer(item.path);
     if (c === 'sort') cycleSort();
     if (c === 'playall') playAll(item.path);
+    if (c === 'cont') toggleContinue();
     if (c === 'fav' || c === 'unfav') {
       if (c === 'fav') favs.push({ path: item.path, name: item.name });
       else favs.splice(favs.findIndex((f) => f.path === item.path), 1);
@@ -197,9 +292,9 @@ const Browser = (() => {
   // Redraw (watched marks may have changed) keeping focus and scroll
   function refresh() {
     if (!current) return;
-    const focus = Nav.current && Nav.current.dataset.path;
+    const cur = Nav.current;
     const top = scroller.scrollTop;
-    render(focus);
+    render(cur && cur.dataset.path, !!(cur && cur.classList.contains('is-continue')));
     scroller.scrollTop = top;
   }
 
@@ -258,6 +353,7 @@ const Browser = (() => {
 
   function leave() {
     grid.innerHTML = '';
+    contRow.innerHTML = '';
     current = null;
   }
 

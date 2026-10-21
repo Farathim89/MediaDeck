@@ -167,8 +167,10 @@
   function saveProgress(final = false) {
     lastSaved = Date.now();
     if (stream()) return;
-    if (!file || !st.dur || st.dur < 600) return;   // only long things: films, episodes, audiobooks
+    if (!file || !st.dur) return;
     const watched = st.eof || st.time / st.dur > (Number(S().watchedAt) || 92) / 100;
+    // only long things (films, episodes, audiobooks) keep their place; a short video just gets its watched mark
+    if (st.dur < 600 && (isMusic || !watched || (data.progress[file] && data.progress[file].watched))) return;
     const entry = { pos: watched ? 0 : st.time, dur: st.dur, watched };
     if (!final && st.time < 5 && !data.progress[file]) return;
     data.progress[file] = entry;
@@ -499,6 +501,7 @@
         if (!(await player.audio(key, v))) continue;      // (checked and saved by mpv.js)
         S()[key] = v;
         if (key === 'playerClock') document.querySelector('#top .clock').style.display = v === false ? 'none' : '';
+        if (key === 'progressColor') PlayerSettings.applyColor(v);
         if (key === 'subSize') {
           opt.subScale = { Small: 0.85, Normal: 1, Large: 1.2, Huge: 1.45 }[v] || 1;
           await cmd(['set_property', 'sub-scale', opt.subScale]);
@@ -630,6 +633,7 @@
     document.documentElement.dataset.theme = data.settings.theme || 'oled';
     document.documentElement.style.setProperty('--ui-scale', Number(data.settings.uiScale) || 1);       // Settings → Appearance
     document.documentElement.style.setProperty('--text-scale', Number(data.settings.textScale) || 1);
+    PlayerSettings.applyColor(data.settings.progressColor);
     document.querySelector('[data-act="prev"]').innerHTML = Icons.prev;
     // The skip buttons show how far they jump
     document.querySelector('[data-act="rew"]').innerHTML = Icons.rewind.replace('>10<', `>${skipBack()}<`);

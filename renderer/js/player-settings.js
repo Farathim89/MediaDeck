@@ -2,6 +2,11 @@
 // and the player's Y → Options → Player settings both use this list, so the two never differ.
 // Row types as in settings.js: choice (options), toggle, text.
 const PlayerSettings = (() => {
+  // How far a video is played: the player's seek bar and the bars on the cards (CSS --progress)
+  const COLORS = { red: { name: 'Red', hex: '#e53935' }, orange: { name: 'Dark orange', hex: '#e8710a' },
+    amber: { name: 'Amber', hex: '#e5a00d' }, blue: { name: 'Blue', hex: '#2f7cf6' } };
+  const applyColor = (v) => document.documentElement.style.setProperty('--progress', (COLORS[v] || COLORS.orange).hex);
+
   const secs = (list) => list.map((v) => ({ value: v, label: v < 60 ? `${v} seconds` : `${v / 60} minute${v === 60 ? '' : 's'}` }));
 
   const SECTIONS = [
@@ -22,6 +27,8 @@ const PlayerSettings = (() => {
         { label: 'Start speed', type: 'choice', key: 'defaultSpeed', options: () =>
           [0.75, 1, 1.25, 1.5].map((v) => ({ value: v, label: v === 1 ? 'Normal' : `${v}×` })) },
         { label: 'Clock in the player', type: 'toggle', key: 'playerClock' },
+        { label: 'Progress bar colour', desc: 'The seek bar in the player, and how far you got on the cards', type: 'choice', key: 'progressColor',
+          options: () => Object.entries(COLORS).map(([value, c]) => ({ value, label: c.name })), preview: applyColor, after: applyColor },
       ],
     },
     {
@@ -54,6 +61,6 @@ const PlayerSettings = (() => {
     if (item.type === 'text') return typeof v === 'string' && v.length < 200;
     return item.options().some((o) => o.value === v);
   }
-  return { SECTIONS, KEYS, valueLabel, valid };
+  return { SECTIONS, KEYS, COLORS, applyColor, valueLabel, valid };
 })();
 if (typeof module !== 'undefined') module.exports = PlayerSettings;     // (main.js / mpv.js: the same list)

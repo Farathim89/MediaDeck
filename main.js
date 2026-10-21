@@ -844,6 +844,8 @@ function startTestSwitch() {
         return send({ ok: true });
       }
       if (u.pathname === '/eval') return send({ result: await win.webContents.executeJavaScript(u.searchParams.get('js') || 'null') });
+      // MediaDeck's own page as a PNG (to the given file) - works whatever the screen's DPI
+      if (u.pathname === '/shot') { fs.writeFileSync(u.searchParams.get('file'), (await win.webContents.capturePage()).toPNG()); return send({ ok: true }); }
       // focuses the i-th element matching sel the way the controller does, and says whether it is in sight
       if (u.pathname === '/nav-check') {
         return send(await win.webContents.executeJavaScript(`(() => {
@@ -1506,6 +1508,27 @@ async function listDir(dir) {
   }));
   const parent = path.dirname(dir);
   return { path: dir, parent: parent === dir ? null : parent, entries: out };
+}
+
+// The videos a folder's watched mark counts: its own (trailers, samples and extras left out), or, when it has
+// none (a show with season folders), the ones a folder down
+const EXTRA_FILE = /(^|[-_. ])(trailer|sample)$|[-_.](featurette|behindthescenes|deleted|interview|scene|short|other)$/i;
+const EXTRA_DIR = /^(extras?|featurettes|behind the scenes|deleted scenes|interviews|scenes|shorts|trailers|samples?|other)$/i;
+async function folderVideos(dir) {
+  const look = async (d) => {
+    const files = [], dirs = [];
+    let entries = [];
+    try { entries = await fsp.readdir(d, { withFileTypes: true }); } catch {}
+    for (const e of entries) {
+      if (SKIP.has(e.name.toLowerCase()) || e.name.startsWith('$') || e.name.startsWith('.')) continue;
+      if (e.isDirectory()) { if (!EXTRA_DIR.test(e.name)) dirs.push(path.join(d, e.name)); }
+      else if (kindOf(e.name) === 'video' && !EXTRA_FILE.test(path.parse(e.name).name)) files.push(path.join(d, e.name));
+    }
+    return { files, dirs };
+  };
+  const top = await look(dir);
+  if (top.files.length) return top.files;
+  return (await Promise.all(top.dirs.slice(0, 300).map(async (s) => (await look(s)).files))).flat();
 }
 
 // ---------- Program icons ----------
@@ -2172,6 +2195,7 @@ function registerIpc() {
   ipcMain.handle('twitch-open', () => openTwitch());
   ipcMain.handle('twitch-action', (e, a) => twitchAction(a));
   ipcMain.handle('list-dir', (e, dir) => listDir(dir));
+  ipcMain.handle('folder-videos', (e, dirs) => Promise.all([].concat(dirs || []).map((d) => folderVideos(String(d)))));
   ipcMain.handle('drives', async () => { drives = await queryDrives(); return drives; });
   ipcMain.handle('set-progress', (e, file, data) => setProgress(file, data));
   ipcMain.handle('get-progress', () => progress);

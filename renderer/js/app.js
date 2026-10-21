@@ -10,6 +10,7 @@ const App = {
     this.state = await api.getState();
     this.applyTheme(this.state.config.settings.theme);
     this.applyScale();
+    PlayerSettings.applyColor(this.state.config.settings.progressColor);
     this.applyGameView(this.state.config.settings.gameView);
     for (const s of [Home, MediaHome, Browser, Photos, Settings, Setup, PadSetup, Help]) s.init();
     Input.setMaps(this.state.config.controllers);
@@ -17,7 +18,10 @@ const App = {
     // MediaDeck as a window (F11): no title bar, so a strip along the top to move it by
     api.onWinFull((on) => document.documentElement.classList.toggle('windowed', !on));
     // changed in the player (sound output …): our copy follows, so saving Settings doesn't put the old value back
-    api.onSettingsPatch((patch) => Object.assign(this.state.config.settings, patch));
+    api.onSettingsPatch((patch) => {
+      Object.assign(this.state.config.settings, patch);
+      if (patch.progressColor) PlayerSettings.applyColor(patch.progressColor);
+    });
     api.onAppFocus(() => { if (this.current && this.current.refocus) this.current.refocus(); });
     api.onDrivesChanged((data) => { MediaHome.drivesChanged(data); Browser.drivesChanged(data); });
     api.onPlayerClosed((progress) => {

@@ -58,10 +58,13 @@ function defaultConfig() {
       volume: 100,
       defaultSpeed: 1,
       playerClock: true,
+      progressColor: 'orange',       // the seek bar and the cards' bars: red / orange (dark orange) / amber / blue
       rememberSubs: true,
       thumbnails: true,
       folderArt: true,
       keepThumbnails: false,
+      continueInFolders: true,       // Continue watching: a row at the top of a folder (its videos stopped part way)
+      continueOnHome: false,         // … and/or the row on the Media Player start screen
       usbOnly: false,
       startDs4: false,
       inGameOverlay: false,
