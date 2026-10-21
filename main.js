@@ -836,6 +836,25 @@ function startTestSwitch() {
         return send(out);
       }
       if (u.pathname === '/player-audio') return send({ ok: await mpv.setAudio(u.searchParams.get('key'), u.searchParams.get('value')) });
+      // Screen size / Text size for this run only, not saved (tests: screenshots at both ends)
+      if (u.pathname === '/scale') {
+        const ui = Number(u.searchParams.get('ui')) || 1, text = Number(u.searchParams.get('text')) || 1;
+        Object.assign(config.settings, { uiScale: ui, textScale: text });
+        await win.webContents.executeJavaScript(`Object.assign(App.state.config.settings, { uiScale: ${ui}, textScale: ${text} }); App.applyScale()`);
+        return send({ ok: true });
+      }
+      if (u.pathname === '/eval') return send({ result: await win.webContents.executeJavaScript(u.searchParams.get('js') || 'null') });
+      // focuses the i-th element matching sel the way the controller does, and says whether it is in sight
+      if (u.pathname === '/nav-check') {
+        return send(await win.webContents.executeJavaScript(`(() => {
+          const all = [...document.querySelectorAll(${JSON.stringify(u.searchParams.get('sel') || '')})].filter((x) => x.offsetParent);
+          const el = all[${Number(u.searchParams.get('i')) || 0} < 0 ? all.length + ${Number(u.searchParams.get('i')) || 0} : ${Number(u.searchParams.get('i')) || 0}];
+          if (!el) return { found: all.length };
+          Nav.focus(el);
+          const r = el.getBoundingClientRect();
+          return { found: all.length, text: el.textContent.trim().slice(0, 40), top: Math.round(r.top), bottom: Math.round(r.bottom), height: innerHeight, inSight: r.top >= 0 && r.bottom <= innerHeight };
+        })()`));
+      }
       if (u.pathname === '/clean-temp') return send({ removed: await cleanTempLeftovers() });
       if (u.pathname === '/player-set') return send({ ok: await mpv.set(u.searchParams.get('p'), u.searchParams.get('v')) });
       if (u.pathname === '/page-text') return send({ text: await win.webContents.executeJavaScript('document.body.innerText') });
@@ -1068,6 +1087,7 @@ function overlayInfo() {
   const can = (a) => (r.control === 'retroarch' ? !!RA_COMMANDS[a] : !!(r.hotkeys && r.hotkeys[a]));
   return {
     name: r.name, emulator: r.emulator || '', theme: config.settings.theme,
+    uiScale: config.settings.uiScale, textScale: config.settings.textScale,
     actions: ['resume', ...['saveState', 'loadState', 'pause', 'screenshot', 'options'].filter(can), 'home', 'close'],
   };
 }

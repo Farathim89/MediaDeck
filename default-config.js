@@ -25,6 +25,8 @@ function defaultConfig() {
     favorites: [],
     settings: {
       theme: 'oled',
+      uiScale: 1,                // Settings → Appearance → Screen size: everything × this (0.8 … 1.5)
+      textScale: 1,              // … → Text size: only text × this (0.9 … 1.5)
       fullscreen: false,
       window: null,
       minimizeOnLaunch: true,

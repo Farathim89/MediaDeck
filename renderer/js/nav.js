@@ -24,6 +24,8 @@ const Nav = (() => {
     if (el.dataset.group) memory.set(el.dataset.group, el);
     if (el.matches('input, textarea, select')) el.focus({ preventScroll: true });
     else if (document.activeElement && document.activeElement !== document.body) document.activeElement.blur();
+    // a side list (Settings, Help, Home's menu) scrolls to it - with a bigger Screen size it can be taller than the screen
+    if (opts.scroll !== false && el.closest('.tabs')) el.scrollIntoView({ block: 'nearest' });
     el.dispatchEvent(new CustomEvent('nav-focus', { bubbles: true, detail: { scroll: opts.scroll !== false } }));
   }
 

@@ -566,6 +566,8 @@
     if (!data || !data.list || !data.list.length) return player.close();
     player.audioDevices().then((l) => { soundDevices = l || []; });      // names for Y → Sound output
     document.documentElement.dataset.theme = data.settings.theme || 'oled';
+    document.documentElement.style.setProperty('--ui-scale', Number(data.settings.uiScale) || 1);       // Settings → Appearance
+    document.documentElement.style.setProperty('--text-scale', Number(data.settings.textScale) || 1);
     document.querySelector('[data-act="prev"]').innerHTML = Icons.prev;
     // The skip buttons show how far they jump
     document.querySelector('[data-act="rew"]').innerHTML = Icons.rewind.replace('>10<', `>${skipBack()}<`);

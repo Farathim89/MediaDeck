@@ -9,6 +9,7 @@ const App = {
   async init() {
     this.state = await api.getState();
     this.applyTheme(this.state.config.settings.theme);
+    this.applyScale();
     this.applyGameView(this.state.config.settings.gameView);
     for (const s of [Home, MediaHome, Browser, Photos, Settings, Setup, PadSetup, Help]) s.init();
     Input.setMaps(this.state.config.controllers);
@@ -54,6 +55,17 @@ const App = {
 
   applyTheme(id) {
     document.documentElement.dataset.theme = this.THEMES.some((t) => t.id === id) ? id : 'oled';
+  },
+
+  // Settings → Appearance: Screen size makes everything bigger / smaller, Text size only the text (styles.css)
+  UI_SCALES: [{ v: 0.8, l: 'Smaller (80%)' }, { v: 0.9, l: 'Small (90%)' }, { v: 1, l: 'Normal' }, { v: 1.1, l: 'Large (110%)' },
+    { v: 1.25, l: 'Larger (125%)' }, { v: 1.5, l: 'Huge (150%)' }],
+  TEXT_SCALES: [{ v: 0.9, l: 'Small' }, { v: 1, l: 'Normal' }, { v: 1.15, l: 'Large' }, { v: 1.3, l: 'Larger' }, { v: 1.5, l: 'Huge' }],
+  applyScale(ui, text) {
+    const s = this.state.config.settings;
+    const pick = (list, v, cur) => (list.some((x) => x.v === v) ? v : list.some((x) => x.v === cur) ? cur : 1);
+    document.documentElement.style.setProperty('--ui-scale', pick(this.UI_SCALES, ui, s.uiScale));
+    document.documentElement.style.setProperty('--text-scale', pick(this.TEXT_SCALES, text, s.textScale));
   },
 
   // A console's games: big covers, small covers, a list with small covers, or a list (no covers loaded)

@@ -16,6 +16,8 @@
     if (!info) return;
     Input.ignoreHeld();
     document.documentElement.dataset.theme = info.theme || 'oled';
+    document.documentElement.style.setProperty('--ui-scale', Number(info.uiScale) || 1);       // Settings → Appearance
+    document.documentElement.style.setProperty('--text-scale', Number(info.textScale) || 1);
     document.querySelector('.ov-name').textContent = info.name || '';
     document.querySelector('.ov-emu').textContent = info.emulator || '';
     list.innerHTML = '';

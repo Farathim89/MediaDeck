@@ -19,16 +19,16 @@
     }
     @keyframes slideIn { from { transform: translateX(-2rem); opacity: 0; } }
     .ov-top { display: flex; justify-content: space-between; align-items: flex-start; }
-    .ov-kicker { font-size: 0.85rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.14em; color: var(--accent); }
-    .ov-name { margin: 0.5rem 0 0.3rem; font-size: 2rem; font-weight: 750; line-height: 1.12; letter-spacing: -0.01em; }
-    .ov-emu { color: var(--muted); font-size: 1.05rem; }
+    .ov-kicker { font-size: calc(0.85rem * var(--text-scale)); font-weight: 600; text-transform: uppercase; letter-spacing: 0.14em; color: var(--accent); }
+    .ov-name { margin: 0.5rem 0 0.3rem; font-size: calc(2rem * var(--text-scale)); font-weight: 750; line-height: 1.12; letter-spacing: -0.01em; }
+    .ov-emu { color: var(--muted); font-size: calc(1.05rem * var(--text-scale)); }
     #panel .clock { text-align: right; }
     .ov-list { display: flex; flex-direction: column; gap: 0.35rem; margin-top: 2.2rem; }
-    .ov-list .menu-item { font-size: 1.15rem; padding: 0.95rem 1.1rem; }
+    .ov-list .menu-item { font-size: calc(1.15rem * var(--text-scale)); padding: 0.95rem 1.1rem; }
     .ov-sep { height: 1px; background: var(--line); margin: 0.6rem 0.4rem; }
-    .ov-hints { margin-top: auto; display: flex; gap: 1.6rem; color: var(--dim); font-size: 0.85rem; }
+    .ov-hints { margin-top: auto; display: flex; gap: 1.6rem; color: var(--dim); font-size: calc(0.85rem * var(--text-scale)); }
     .ov-hints .hint { display: flex; align-items: center; gap: 0.5rem; }
-    #busy { position: fixed; left: 30rem; right: 0; top: 50%; text-align: center; color: var(--text); font-size: 1.2rem; display: none; }
+    #busy { position: fixed; left: 30rem; right: 0; top: 50%; text-align: center; color: var(--text); font-size: calc(1.2rem * var(--text-scale)); display: none; }
   </style>
 </head>
 <body>

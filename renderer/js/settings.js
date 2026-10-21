@@ -69,6 +69,12 @@ const Settings = (() => {
       items: [
         { label: 'Theme', type: 'choice', key: 'theme', options: () => App.THEMES.map((t) => ({ value: t.id, label: t.name, swatch: t.swatch })), preview: (v) => App.applyTheme(v),
           after: (v) => App.applyTheme(v) },
+        { label: 'Screen size', desc: 'Makes everything bigger or smaller: menus, cards, text and the player\'s controls. Bigger for a TV across the room, smaller for more on the screen.',
+          type: 'choice', key: 'uiScale', options: () => App.UI_SCALES.map((x) => ({ value: x.v, label: x.l })),
+          preview: (v) => App.applyScale(v), after: () => App.applyScale() },
+        { label: 'Text size', desc: 'Only the text gets bigger or smaller; cards and menus keep their size.',
+          type: 'choice', key: 'textScale', options: () => App.TEXT_SCALES.map((x) => ({ value: x.v, label: x.l })),
+          preview: (v) => App.applyScale(undefined, v), after: () => App.applyScale() },
       ],
     },
     {
