@@ -46,12 +46,26 @@ const UI = (() => {
 
   // focus: the value of the item to start on (e.g. what's playing now)
   // onFocus(value): called for the item under the focus (a live preview, e.g. the theme)
-  function menu({ title, message, items, focus, onFocus }) {
+  // timeout: { secs, value, text(secondsLeft) } - counts down in the message and answers value when the time is up
+  // (Settings → Screen resolution: an unanswered "Keep it?" goes back by itself)
+  function menu({ title, message, items, focus, onFocus, timeout }) {
     return show((box, done) => {
-      box.innerHTML = `${title ? `<h2>${esc(title)}</h2>` : ''}${message ? `<p>${esc(message)}</p>` : ''}<div class="menu-list"></div>`;
+      box.innerHTML = `${title ? `<h2>${esc(title)}</h2>` : ''}${message || timeout ? `<p>${esc(message || '')}</p>` : ''}<div class="menu-list"></div>`;
       const list = box.querySelector('.menu-list');
       const buttons = items.map((it) => itemButton(it, done));
       buttons.forEach((b) => list.appendChild(b));
+      if (timeout) {
+        let left = timeout.secs;
+        const p = box.querySelector('p');
+        const tick = () => { if (p) p.textContent = timeout.text ? timeout.text(left) : `${message || ''} (${left} s)`; };
+        tick();
+        const t = setInterval(() => {
+          if (!box.isConnected) { clearInterval(t); return; }
+          left -= 1;
+          if (left <= 0) { clearInterval(t); done(timeout.value); return; }
+          tick();
+        }, 1000);
+      }
       box.addEventListener('nav-focus', (e) => { e.target.scrollIntoView({ block: 'nearest' }); if (onFocus && e.target._value !== undefined) onFocus(e.target._value); });
       const i = focus !== undefined ? items.findIndex((it) => it.value === focus) : -1;
       return buttons[i >= 0 ? i : 0];

@@ -91,12 +91,14 @@ async function send(command) {
 
 function toOsd(msg) { if (osd && !osd.isDestroyed()) osd.webContents.send('mpv:event', msg); }
 
-const OBSERVE = ['time-pos', 'pause', 'duration', 'track-list', 'paused-for-cache', 'eof-reached', 'path', 'volume', 'mute', 'metadata', 'idle-active'];
+const OBSERVE = ['time-pos', 'pause', 'duration', 'track-list', 'paused-for-cache', 'eof-reached', 'path', 'volume', 'mute', 'metadata', 'idle-active',
+  'video-params'];
 
 function onLine(line) {
   let m;
   try { m = JSON.parse(line); } catch { return; }
   if (m.request_id && pending.has(m.request_id)) { pending.get(m.request_id)(m); pending.delete(m.request_id); return; }
+  if (m.event === 'property-change' && m.name === 'video-params') { applyRtx(m.data).catch(() => {}); return; }   // a new video
   if (m.event === 'property-change') toOsd({ prop: m.name, value: m.data });
   else if (m.event === 'end-file') toOsd({ event: 'end-file', reason: m.reason, error: m.file_error });
   else if (m.event === 'file-loaded') toOsd({ event: 'file-loaded' });
@@ -172,9 +174,51 @@ function audioArgs(s) {
   return a;
 }
 
+// ---------- NVIDIA RTX Video: Super Resolution (AI upscaling) and RTX HDR (SDR made HDR) ----------
+// mpv's d3d11vpp filter asks the driver for them (Direct3D 11 renderer; software-decoded video is uploaded to the
+// card by itself). Per video: Super Resolution only when it is smaller than the player (scale = how many times it
+// fits), RTX HDR only for SDR video - never for HDR films, pictures or album covers. Only on an NVIDIA RTX card:
+// elsewhere nvidia-true-hdr would only relabel the picture as HDR (wrong colours). Super Resolution also needs
+// "RTX Video Enhancement → Super resolution" switched on in NVIDIA's own settings - the driver ignores it otherwise.
+let rtxCard = null;           // the NVIDIA RTX card's name, '' = none (asked once)
+function rtxGpu() {
+  if (rtxCard !== null) return Promise.resolve(rtxCard);
+  return new Promise((resolve) => {
+    require('child_process').execFile('powershell.exe', ['-NoProfile', '-Command', '(Get-CimInstance Win32_VideoController).Name -join "|"'],
+      { windowsHide: true, timeout: 15000 }, (err, out) => {
+        rtxCard = String(out || '').split('|').map((x) => x.trim()).find((x) => /NVIDIA.*\bRTX\b/i.test(x)) || '';
+        resolve(rtxCard);
+      });
+  });
+}
+let rtxFor = '';              // the video the filter was set for (w x h gamma), so a new video gets its own
+async function applyRtx(vp, force = false) {
+  if (!vp || !vp.w || !vp.h) return;
+  const key = `${vp.w}x${vp.h} ${vp.gamma}`;
+  if (key === rtxFor && !force) return;
+  rtxFor = key;
+  const s = d.config().settings;
+  const parts = [];
+  if (await rtxGpu() && (s.mpvGpuApi || 'd3d11') === 'd3d11' && !(await get('current-tracks/video/image'))) {
+    if (s.rtxSuperRes !== 'off') {
+      const win = (await get('osd-dimensions')) || {};
+      const k = Math.min((win.w || 0) / vp.w, (win.h || 0) / vp.h);
+      if (k > 1.1) parts.push(`scale=${Math.min(4, k).toFixed(3)}`, 'scaling-mode=nvidia');
+    }
+    // RTX HDR only when it is switched on (off by default; Super Resolution never brings it along)
+    if (s.rtxHdr === 'on' && !['pq', 'hlg'].includes(vp.gamma)) parts.push('nvidia-true-hdr', 'format=p010');
+  }
+  await set('vf', parts.length ? `@rtx:d3d11vpp=${parts.join(':')}` : '');
+}
+
 // Changed in the player: applied at once, and kept in Settings
 async function setAudio(key, value) {
   const s = d.config().settings;
+  if (key === 'rtxSuperRes' || key === 'rtxHdr') {
+    d.saveSettings({ [key]: value });
+    await applyRtx(await get('video-params'), true);
+    return true;
+  }
   if (!['audioDevice', 'audioChannels', 'audioPassthrough'].includes(key)) return false;
   d.saveSettings({ [key]: value });
   if (key === 'audioDevice') {
@@ -236,6 +280,7 @@ async function open(list, index, opts = {}) {
   if (proc) { const old = proc; stop(); await gone(old, 1500); }
   resetPipeReady();
   buf = '';
+  rtxFor = '';
   const mpvDir = path.join(d.dataDir, 'mpv');
   fs.mkdirSync(path.join(mpvDir, 'cache'), { recursive: true });
   createLayers();
@@ -292,6 +337,8 @@ function init(deps) {
   ipcMain.handle('player:audio', (e, key, value) => (fromOsd(e) ? setAudio(key, value) : false));
   ipcMain.handle('player:audio-devices', async (e) => (fromOsd(e) ? audioDevices() : []));
   ipcMain.handle('audio-devices', (e, fresh) => audioDevices(!!fresh));
+  ipcMain.handle('rtx-card', () => rtxGpu());        // Settings → Video: the NVIDIA RTX card's name, '' = none
+  setTimeout(() => rtxGpu(), 5000);
   setTimeout(() => audioDevices(), 4000);     // known before the first film (an optical output gets Dolby Digital / DTS only)
   ipcMain.on('player:close', (e) => {
     if (!fromOsd(e)) return;

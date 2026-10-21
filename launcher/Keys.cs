@@ -14,6 +14,10 @@
 //                                  while MediaDeck's menu is open, so the controller doesn't play the game too
 //   keys.exe border <hwnd> none|default  Windows 11's thin window border (a coloured line along the top of a
 //                                  borderless window that covers the screen) off / back
+//   keys.exe display list <hwnd>   the screen the window is on: its modes and the current one, as JSON
+//   keys.exe display set <hwnd> <w> <h> <hz> try|keep|test  try = for now (not saved; a restart / reset goes back),
+//                                  keep = saved like Windows' own Display settings, test = only ask Windows if it would work
+//   keys.exe display reset <hwnd>  back to the saved mode (undoes a "try")
 // Keys are sent as hardware scan codes, which emulators (DirectInput / raw input) understand.
 using System;
 using System.Collections.Generic;
@@ -32,6 +36,74 @@ interface ITaskbarList2
 static class Keys
 {
     [DllImport("dwmapi.dll")] static extern int DwmSetWindowAttribute(IntPtr h, int attr, ref int value, int size);
+
+    // ---------- Screen resolution / refresh rate (Settings → General) ----------
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+    struct DEVMODE
+    {
+        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 32)] public string dmDeviceName;
+        public short dmSpecVersion, dmDriverVersion, dmSize, dmDriverExtra;
+        public int dmFields, dmPositionX, dmPositionY, dmDisplayOrientation, dmDisplayFixedOutput;
+        public short dmColor, dmDuplex, dmYResolution, dmTTOption, dmCollate;
+        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 32)] public string dmFormName;
+        public short dmLogPixels;
+        public int dmBitsPerPel, dmPelsWidth, dmPelsHeight, dmDisplayFlags, dmDisplayFrequency;
+        public int dmICMMethod, dmICMIntent, dmMediaType, dmDitherType, dmReserved1, dmReserved2, dmPanningWidth, dmPanningHeight;
+    }
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+    struct MONITORINFOEX { public int cbSize; public RECT rcMonitor, rcWork; public int dwFlags; [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 32)] public string szDevice; }
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern bool EnumDisplaySettings(string dev, int mode, ref DEVMODE dm);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern int ChangeDisplaySettingsEx(string dev, ref DEVMODE dm, IntPtr hwnd, int flags, IntPtr lparam);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern int ChangeDisplaySettingsEx(string dev, IntPtr dm, IntPtr hwnd, int flags, IntPtr lparam);
+    [DllImport("user32.dll")] static extern IntPtr MonitorFromWindow(IntPtr h, int flags);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern bool GetMonitorInfo(IntPtr mon, ref MONITORINFOEX mi);
+    const int ENUM_CURRENT_SETTINGS = -1, DM_PELSWIDTH = 0x80000, DM_PELSHEIGHT = 0x100000, DM_DISPLAYFREQUENCY = 0x400000;
+    const int CDS_UPDATEREGISTRY = 1, CDS_TEST = 2;
+
+    static string ScreenOf(IntPtr hwnd)
+    {
+        var mi = new MONITORINFOEX { cbSize = Marshal.SizeOf(typeof(MONITORINFOEX)) };
+        return GetMonitorInfo(MonitorFromWindow(hwnd, 2), ref mi) ? mi.szDevice : null;   // MONITOR_DEFAULTTONEAREST
+    }
+
+    static DEVMODE NewMode() { var dm = new DEVMODE(); dm.dmSize = (short)Marshal.SizeOf(typeof(DEVMODE)); return dm; }
+
+    static int Display(string[] a)
+    {
+        var dev = ScreenOf(new IntPtr(long.Parse(a[2])));
+        if (dev == null) return 2;
+        if (a[1] == "list")
+        {
+            var cur = NewMode();
+            EnumDisplaySettings(dev, ENUM_CURRENT_SETTINGS, ref cur);
+            var seen = new HashSet<string>();
+            var modes = new List<string>();
+            var dm = NewMode();
+            for (int i = 0; EnumDisplaySettings(dev, i, ref dm); i++)
+            {
+                if (dm.dmBitsPerPel != 32 || dm.dmDisplayFrequency < 2) continue;   // (1 / 0 Hz = "hardware default")
+                var key = dm.dmPelsWidth + "x" + dm.dmPelsHeight + "@" + dm.dmDisplayFrequency;
+                if (seen.Add(key)) modes.Add("{\"w\":" + dm.dmPelsWidth + ",\"h\":" + dm.dmPelsHeight + ",\"hz\":" + dm.dmDisplayFrequency + "}");
+                dm = NewMode();
+            }
+            Console.WriteLine("{\"device\":\"" + dev.Replace("\\", "\\\\") + "\",\"current\":{\"w\":" + cur.dmPelsWidth + ",\"h\":" + cur.dmPelsHeight +
+                ",\"hz\":" + cur.dmDisplayFrequency + "},\"modes\":[" + string.Join(",", modes) + "]}");
+            return 0;
+        }
+        if (a[1] == "reset") return ChangeDisplaySettingsEx(dev, IntPtr.Zero, IntPtr.Zero, 0, IntPtr.Zero) == 0 ? 0 : 3;
+        if (a[1] == "set" && a.Length >= 7)
+        {
+            var dm = NewMode();
+            EnumDisplaySettings(dev, ENUM_CURRENT_SETTINGS, ref dm);
+            dm.dmPelsWidth = int.Parse(a[3]); dm.dmPelsHeight = int.Parse(a[4]); dm.dmDisplayFrequency = int.Parse(a[5]);
+            dm.dmFields = DM_PELSWIDTH | DM_PELSHEIGHT | DM_DISPLAYFREQUENCY;
+            int flags = a[6] == "keep" ? CDS_UPDATEREGISTRY : a[6] == "test" ? CDS_TEST : 0;
+            int r = ChangeDisplaySettingsEx(dev, ref dm, IntPtr.Zero, flags, IntPtr.Zero);
+            Console.WriteLine(r);
+            return r == 0 ? 0 : 3;
+        }
+        return 1;
+    }
     [DllImport("ntdll.dll")] static extern int NtSuspendProcess(IntPtr p);
     [DllImport("ntdll.dll")] static extern int NtResumeProcess(IntPtr p);
     [DllImport("kernel32.dll")] static extern IntPtr OpenProcess(uint access, bool inherit, int pid);
@@ -199,6 +271,7 @@ static class Keys
                 tb.MarkFullscreenWindow(new IntPtr(long.Parse(a[1])), false);
                 return 0;
             }
+            if (a.Length >= 3 && a[0] == "display") return Display(a);
             if (a.Length >= 3 && a[0] == "border")
             {
                 int c = a[2] == "none" ? unchecked((int)0xFFFFFFFE) : unchecked((int)0xFFFFFFFF);   // DWMWA_COLOR_NONE / _DEFAULT
@@ -244,7 +317,7 @@ static class Keys
             }
         }
         catch (Exception e) { Console.Error.WriteLine(e.Message); return 1; }
-        Console.Error.WriteLine("usage: keys focus <hwnd> | keys game <pid> | keys confirm <pid> [secs] | keys send <pid> <combo> | keys freeze|thaw <pid> | keys unmark <hwnd> | keys border <hwnd> none|default");
+        Console.Error.WriteLine("usage: keys focus <hwnd> | keys game <pid> | keys confirm <pid> [secs] | keys send <pid> <combo> | keys freeze|thaw <pid> | keys unmark <hwnd> | keys border <hwnd> none|default | keys display list|reset <hwnd> | keys display set <hwnd> <w> <h> <hz> try|keep|test");
         return 1;
     }
 }

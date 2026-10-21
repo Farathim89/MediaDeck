@@ -92,5 +92,8 @@ contextBridge.exposeInMainWorld('api', {
   onWinActive: (fn) => ipcRenderer.on('win-active', (e, on) => fn(on)),
   onWinFull: (fn) => ipcRenderer.on('win-full', (e, on) => fn(on)),
   audioDevices: invoke('audio-devices'),
+  rtxCard: invoke('rtx-card'),
+  displayModes: invoke('display-modes'),
+  displaySet: invoke('display-set'),
   onSettingsPatch: (fn) => ipcRenderer.on('settings-patch', (e, patch) => fn(patch)),
 });

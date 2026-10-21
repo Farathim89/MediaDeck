@@ -42,6 +42,8 @@ function defaultConfig() {
       audioLang: '',
       audioDevice: 'auto',       // mpv's sound output: 'auto' = Windows' default, else 'wasapi/{id}'
       audioChannels: 'auto',     // 'auto' (Windows' speaker setup) | 'stereo' | '5.1' | '7.1' (= up to; exclusive mode)
+      rtxSuperRes: 'on',         // NVIDIA RTX Video Super Resolution for videos smaller than the screen (RTX cards only)
+      rtxHdr: 'off',             // NVIDIA RTX Video HDR for SDR videos (RTX cards only) - only when switched on, never with upscaling by itself
       audioPassthrough: 'on',    // 'on' (Dolby / DTS to the receiver; optical: Dolby Digital / DTS) | 'spdif' | 'off'
       subLang: 'eng',
       subtitles: 'auto',

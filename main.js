@@ -1060,6 +1060,9 @@ const KEYS_EXE = P.tool('keys.exe');
 const RA_COMMANDS = { saveState: 'SAVE_STATE', loadState: 'LOAD_STATE', pause: 'PAUSE_TOGGLE', screenshot: 'SCREENSHOT' };
 
 const keysExe = (args) => new Promise((resolve) => execFile(KEYS_EXE, args, { windowsHide: true }, (err) => resolve(!err)));
+const keysOut = (args) => new Promise((resolve) => execFile(KEYS_EXE, args, { windowsHide: true, timeout: 15000 }, (err, out) => resolve({ ok: !err, out: String(out || '').trim() })));
+let displayTrial = null;      // a new screen mode waiting for "Keep" (Settings → Screen resolution): its go-back timer
+let displayHwnd = '';         // … and MediaDeck's window then (its screen is the one to set back)
 
 const hwndOf = (bw) => { const h = bw.getNativeWindowHandle(); return process.arch === 'x64' ? h.readBigUInt64LE(0).toString() : String(h.readUInt32LE(0)); };
 // A borderless window that covers the screen (MediaDeck's full screen, the PS menu, YouTube, Twitch) still gets
@@ -2141,6 +2144,26 @@ function registerIpc() {
     if (portableData() !== portableBefore) relockAll();
     return true;
   });
+  // Screen resolution / refresh rate (Settings → General), for the screen MediaDeck is on, through keys.exe.
+  // A new mode is tried first (not saved); "Keep" saves it like Windows' Display settings. Without an answer it goes
+  // back by itself - here too, 20 s, in case the screen stays black and the window can't count down.
+  ipcMain.handle('display-modes', async () => {
+    const r = await keysOut(['display', 'list', hwndOf(win)]);
+    try { return JSON.parse(r.out); } catch { return null; }
+  });
+  ipcMain.handle('display-set', async (e, w, h, hz, step) => {
+    const mode = [String(w | 0), String(h | 0), String(hz | 0)];
+    clearTimeout(displayTrial);
+    displayTrial = null;
+    if (step === 'revert') return { ok: (await keysOut(['display', 'reset', hwndOf(win)])).ok };
+    if (step === 'keep') return { ok: (await keysOut(['display', 'set', hwndOf(win), ...mode, 'keep'])).ok };
+    const test = await keysOut(['display', 'set', hwndOf(win), ...mode, 'test']);
+    if (!test.ok) return { ok: false, error: 'This screen does not take that mode' };
+    displayHwnd = hwndOf(win);
+    const r = await keysOut(['display', 'set', displayHwnd, ...mode, 'try']);
+    if (r.ok) displayTrial = setTimeout(() => { displayTrial = null; keysOut(['display', 'reset', displayHwnd]); }, 20000);
+    return { ok: r.ok, error: r.ok ? '' : 'Windows could not switch to that mode' };
+  });
   ipcMain.handle('launch', (e, tile) => launch(tile));
   ipcMain.handle('youtube-open', () => openYouTube());
   ipcMain.handle('youtube-action', (e, a) => youtubeAction(a));
@@ -2268,6 +2291,8 @@ if (!app.requestSingleInstanceLock()) {
     quitting = true;
     // never leave an emulator frozen behind (see freezeGame)
     if (frozen) { try { require('child_process').execFileSync(KEYS_EXE, ['thaw', String(frozen)], { windowsHide: true, timeout: 5000 }); } catch {} frozen = null; }
+    // a screen mode still waiting for "Keep": back to the saved one
+    if (displayTrial) { clearTimeout(displayTrial); try { require('child_process').execFileSync(KEYS_EXE, ['display', 'reset', displayHwnd || '0'], { windowsHide: true, timeout: 5000 }); } catch {} }
     globalShortcut.unregisterAll();
     mpv.stop();
     stopPadWatch(true);

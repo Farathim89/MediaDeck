@@ -409,6 +409,10 @@
     items.push({ label: `Passthrough  ·  ${(PASSTHROUGH.find((x) => x.v === (S().audioPassthrough || 'on')) || PASSTHROUGH[0]).l}`, icon: 'audio', value: 'audioPassthrough' });
     items.push({ label: `Repeat  ·  ${{ off: 'Off', file: 'This file', list: 'Whole list' }[opt.repeat]}`, icon: 'restart', value: 'repeat' });
     if (!isMusic) items.push({ label: `Deinterlace  ·  ${opt.deinterlace ? 'On' : 'Off'}`, icon: 'film', value: 'deint' });
+    if (!isMusic) {      // NVIDIA RTX Video (mpv.js decides per video whether it applies)
+      items.push({ label: `RTX Super Resolution  ·  ${S().rtxSuperRes === 'off' ? 'Off' : 'On'}`, icon: 'film', value: 'rtxSuperRes' });
+      items.push({ label: `RTX HDR  ·  ${S().rtxHdr === 'on' ? 'On' : 'Off'}`, icon: 'film', value: 'rtxHdr' });
+    }
     items.push({ label: 'File info', icon: 'info', value: 'info' });
 
     const c = await UI.menu({ title: 'Options', items });
@@ -451,6 +455,13 @@
       if (v != null) { opt.repeat = v; await cmd(['set_property', 'loop-file', v === 'file' ? 'inf' : 'no']); }
     }
     if (c === 'audioDevice' || c === 'audioChannels' || c === 'audioPassthrough') await soundMenu(c);
+    if (c === 'rtxSuperRes' || c === 'rtxHdr') {
+      const isOn = c === 'rtxHdr' ? S()[c] === 'on' : S()[c] !== 'off';     // (RTX HDR: off unless switched on)
+      const v = isOn ? 'off' : 'on';
+      S()[c] = v;
+      await player.audio(c, v);          // applied to this video at once and kept (Settings → Video)
+      flashText(`${c === 'rtxHdr' ? 'RTX HDR' : 'RTX Super Resolution'} ${v}`);
+    }
     if (c === 'deint') { opt.deinterlace = !opt.deinterlace; await cmd(['set_property', 'deinterlace', opt.deinterlace]); flashText(`Deinterlace ${opt.deinterlace ? 'on' : 'off'}`); }
     if (c === 'info') await infoMenu();
   }
@@ -476,13 +487,21 @@
 
   async function infoMenu() {
     const get = async (p) => { try { return await cmd(['get_property', p]); } catch { return null; } };
-    const [vp, vcodec, acodec, fps, hw, ch, size, aout] = await Promise.all([
+    const [vp, vcodec, acodec, fps, hw, ch, size, aout, vf, vout] = await Promise.all([
       get('video-params'), get('video-codec'), get('audio-codec-name'), get('container-fps'), get('hwdec-current'), get('current-tracks/audio/demux-channel-count'), get('file-size'),
-      get('audio-out-params'),
+      get('audio-out-params'), get('vf'), get('video-out-params'),
     ]);
     const lines = [];
     if (vp && vp.w) lines.push(`Picture: ${vp.w}×${vp.h}${fps ? `  ·  ${Math.round(fps * 100) / 100} fps` : ''}${vp.gamma === 'pq' || vp.gamma === 'hlg' ? '  ·  HDR' : ''}`);
     if (vcodec) lines.push(`Video: ${String(vcodec).split(' ')[0]}${hw && hw !== 'no' ? '  ·  graphics card decoding' : ''}`);
+    const rtx = (Array.isArray(vf) ? vf : []).find((f) => f.label === 'rtx');
+    if (rtx) {
+      const p = rtx.params || {};
+      const what = [];
+      if (p['scaling-mode'] === 'nvidia') what.push(`Super Resolution ${vp && vp.h ? `${vp.h}p → ${vout && vout.h ? vout.h : '?'}p` : ''}`.trim());
+      if ('nvidia-true-hdr' in p) what.push('RTX HDR (SDR made HDR)');      // (a flag: mpv gives it as "")
+      if (what.length) lines.push(`NVIDIA: ${what.join('  ·  ')}`);
+    }
     if (acodec) lines.push(`Audio: ${acodec}${ch ? `  ·  ${{ 1: 'mono', 2: 'stereo', 6: '5.1', 8: '7.1' }[ch] || ch + ' channels'}` : ''}`);
     const spdif = aout && /^spdif-(.+)$/.exec(aout.format || '');
     if (spdif) lines.push(`Sound: passthrough - your receiver decodes it (${{ ac3: 'Dolby Digital', eac3: 'Dolby Digital Plus', truehd: 'Dolby TrueHD', dts: 'DTS', dtshd: 'DTS-HD' }[spdif[1]] || spdif[1]})`);

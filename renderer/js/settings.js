@@ -18,6 +18,71 @@ const Settings = (() => {
   const SPEAKERS = [{ value: 'auto', label: 'Automatic' }, { value: 'stereo', label: 'Stereo' }, { value: '5.1', label: 'Up to 5.1 surround' }, { value: '7.1', label: 'Up to 7.1 surround' }];
   const PASSTHROUGH = [{ value: 'on', label: 'On' }, { value: 'spdif', label: 'Dolby Digital and DTS only (optical)' }, { value: 'off', label: 'Off' }];
   let soundDevices = null;          // [{ name, description }] from mpv
+  // ---------- Screen resolution / refresh rate (Settings → General) ----------
+  const RES_NAMES = { '7680x4320': '8K', '4096x2160': 'DCI 4K', '3840x2160': '4K', '2560x1440': '1440p', '1920x1080': '1080p', '1280x720': '720p' };
+  const fmtHz = (hz) => `${{ 23: '23.976', 29: '29.97', 47: '47.952', 59: '59.94', 71: '71.928', 119: '119.88', 143: '143.86', 239: '239.76' }[hz] || hz} Hz`;
+  const fmtRes = (w, h) => `${w} × ${h}${RES_NAMES[`${w}x${h}`] ? `  (${RES_NAMES[`${w}x${h}`]})` : ''}`;
+  let screenInfo = null;            // { device, current: { w, h, hz }, modes: [{ w, h, hz }] }
+  const screenValue = (what) => {
+    if (!screenInfo) {
+      api.displayModes().then((i) => {
+        screenInfo = i || { current: {}, modes: [] };
+        for (const it of SECTIONS.find((x) => x.id === 'general').items) if (it._row) refreshRow(it._row, it);
+      });
+      return '…';
+    }
+    const c = screenInfo.current || {};
+    if (!c.w) return 'Unknown';
+    return what === 'hz' ? fmtHz(c.hz) : fmtRes(c.w, c.h);
+  };
+  async function pickScreenMode(what) {
+    screenInfo = await api.displayModes();
+    if (!screenInfo || !screenInfo.modes.length) { await UI.menu({ title: 'Screen', message: 'Windows did not list the modes of this screen.', items: [{ label: 'OK', icon: 'check' }] }); return; }
+    const cur = screenInfo.current;
+    let w = cur.w, h = cur.h, hz = cur.hz;
+    if (what === 'res') {
+      const seen = new Set();
+      const res = screenInfo.modes.filter((m) => !seen.has(`${m.w}x${m.h}`) && seen.add(`${m.w}x${m.h}`)).sort((a, b) => b.w * b.h - a.w * a.h || b.w - a.w);
+      const v = await UI.menu({ title: 'Screen resolution', focus: `${cur.w}x${cur.h}`,
+        items: res.map((m) => ({ label: fmtRes(m.w, m.h), value: `${m.w}x${m.h}`, icon: m.w === cur.w && m.h === cur.h ? 'check' : '' })) });
+      if (!v || v === `${cur.w}x${cur.h}`) return;
+      [w, h] = v.split('x').map(Number);
+      const rates = screenInfo.modes.filter((m) => m.w === w && m.h === h).map((m) => m.hz);
+      hz = rates.includes(cur.hz) ? cur.hz : Math.max(...rates);       // the same refresh rate when it has it
+    } else {
+      const rates = [...new Set(screenInfo.modes.filter((m) => m.w === cur.w && m.h === cur.h).map((m) => m.hz))].sort((a, b) => b - a);
+      const v = await UI.menu({ title: `Refresh rate  ·  ${fmtRes(cur.w, cur.h)}`, focus: cur.hz,
+        items: rates.map((r) => ({ label: fmtHz(r), value: r, icon: r === cur.hz ? 'check' : '' })) });
+      if (v == null || v === cur.hz) return;
+      hz = v;
+    }
+    const r = await api.displaySet(w, h, hz, 'try');
+    if (!r || !r.ok) { await UI.menu({ title: 'Screen', message: (r && r.error) || 'That did not work.', items: [{ label: 'OK', icon: 'check' }] }); return; }
+    await new Promise((res) => setTimeout(res, 1200));       // the screen settles (it can go black for a moment)
+    const keep = await UI.menu({ title: 'Keep this screen mode?', focus: 'keep',
+      items: [{ label: 'Keep it', value: 'keep', icon: 'check' }, { label: 'Go back', value: 'back', icon: 'back' }],
+      timeout: { secs: 15, value: 'back', text: (n) => `${fmtRes(w, h)} at ${fmtHz(hz)}. Going back in ${n} s.` } });
+    await api.displaySet(w, h, hz, keep === 'keep' ? 'keep' : 'revert');
+    screenInfo = await api.displayModes();
+    for (const it of SECTIONS.find((x) => x.id === 'general').items) if (it._row) refreshRow(it._row, it);
+  }
+
+  // NVIDIA RTX Video (the player): only on an RTX card, and only with the Direct3D 11 renderer
+  const ON_OFF = [{ value: 'on', label: 'On' }, { value: 'off', label: 'Off' }];
+  let rtxName = null;
+  const rtxValue = (key) => {
+    if (rtxName === null) {
+      api.rtxCard().then((n) => {
+        rtxName = n || '';
+        for (const it of SECTIONS.find((x) => x.id === 'video').items) if (it._row) refreshRow(it._row, it);
+      });
+      return '…';
+    }
+    if (!rtxName) return 'Needs an NVIDIA RTX card';
+    if ((s().mpvGpuApi || 'd3d11') !== 'd3d11') return 'Needs the Direct3D 11 renderer';
+    if (key === 'rtxHdr') return s()[key] === 'on' ? 'on' : 'off';      // RTX HDR: off unless switched on
+    return s()[key] === 'off' ? 'off' : 'on';
+  };
   const soundOutputName = () => {
     const id = s().audioDevice;
     if (!id || id === 'auto') return 'Windows default';
@@ -57,6 +122,10 @@ const Settings = (() => {
               { label: 'Window', value: 'window', icon: full ? '' : 'check' }] });
             if (v && (v === 'full') !== full) s().fullscreen = await api.toggleFullscreen();
           } },
+        { label: 'Screen resolution', desc: 'For the screen MediaDeck is on. You are asked to keep the new one; without an answer it goes back by itself after 15 seconds.',
+          type: 'action', value: () => screenValue('res'), run: () => pickScreenMode('res') },
+        { label: 'Refresh rate', desc: 'Pictures per second. 23.976 / 24 Hz suits films, 50 Hz PAL TV, 60 Hz and up games and menus.',
+          type: 'action', value: () => screenValue('hz'), run: () => pickScreenMode('hz') },
         { label: '24-hour clock', type: 'toggle', key: 'clock24h' },
         { label: 'Minimise when an app starts', desc: 'MediaDeck comes back when the app closes', type: 'toggle', key: 'minimizeOnLaunch' },
         { label: 'Sleep, restart and shut down PC in the Exit menu', desc: 'Off: the Exit menu (Power button, PS / Guide at home) only has Restart MediaDeck and Exit MediaDeck', type: 'toggle', key: 'powerMenuPc' },
@@ -138,6 +207,10 @@ const Settings = (() => {
         { label: 'Video renderer', desc: 'How mpv draws the picture. Direct3D 11 is the safe choice.', type: 'choice', key: 'mpvGpuApi', options: () => [
           { value: 'd3d11', label: 'Direct3D 11' }, { value: 'vulkan', label: 'Vulkan' }, { value: 'opengl', label: 'OpenGL' }] },
         { label: 'Hardware video converting', desc: 'Uses the graphics card when a video has to be converted', type: 'toggle', key: 'hardwareEncode' },
+        { label: 'NVIDIA RTX Super Resolution', desc: 'AI upscaling: videos smaller than the screen (DVD, 720p, 1080p on a 4K TV) are made sharp by the graphics card. Also switch on "RTX Video Enhancement → Super resolution" in the NVIDIA App (or NVIDIA Control Panel → Video) - without that the driver leaves the picture as it is.',
+          type: 'choice', key: 'rtxSuperRes', options: () => ON_OFF, value: () => rtxValue('rtxSuperRes') },
+        { label: 'NVIDIA RTX HDR', desc: 'Turns normal (SDR) videos into HDR with AI, for an HDR TV or monitor with HDR switched on in Windows. HDR films, pictures and album covers stay as they are.',
+          type: 'choice', key: 'rtxHdr', options: () => ON_OFF, value: () => rtxValue('rtxHdr') },
       ],
     },
     {
