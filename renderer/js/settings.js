@@ -15,7 +15,7 @@ const Settings = (() => {
   const secs = (list) => list.map((v) => ({ value: v, label: v < 60 ? `${v} seconds` : `${v / 60} minute${v === 60 ? '' : 's'}` }));
 
   // ---------- Sound (the player: mpv) ----------
-  const SPEAKERS = [{ value: 'auto', label: 'Automatic' }, { value: 'stereo', label: 'Stereo' }, { value: '5.1', label: '5.1 surround' }, { value: '7.1', label: '7.1 surround' }];
+  const SPEAKERS = [{ value: 'auto', label: 'Automatic' }, { value: 'stereo', label: 'Stereo' }, { value: '5.1', label: 'Up to 5.1 surround' }, { value: '7.1', label: 'Up to 7.1 surround' }];
   const PASSTHROUGH = [{ value: 'on', label: 'On' }, { value: 'spdif', label: 'Dolby Digital and DTS only (optical)' }, { value: 'off', label: 'Off' }];
   let soundDevices = null;          // [{ name, description }] from mpv
   const soundOutputName = () => {
@@ -120,7 +120,7 @@ const Settings = (() => {
       items: [
         { label: 'Sound output', desc: 'The speakers, receiver or TV the Media Player and Twitch play on. Windows default follows Windows\' sound settings.',
           type: 'action', value: () => soundOutputName(), run: () => pickSoundOutput() },
-        { label: 'Speakers', desc: 'Automatic follows Windows\' speaker setup for that output. Stereo, 5.1 and 7.1 send exactly that (surround is mixed down for stereo); the player then has the output to itself while it plays.',
+        { label: 'Speakers', desc: 'Automatic follows Windows\' speaker setup for that output. Stereo mixes surround down to two speakers. Up to 5.1 / 7.1 sends each film as it is up to that many channels, so a stereo film stays stereo and your receiver can upmix it. With a choice here the player has the output to itself while it plays.',
           type: 'choice', key: 'audioChannels', options: () => SPEAKERS },
         { label: 'Passthrough', desc: 'Dolby and DTS sound go to your receiver untouched, so it decodes them (Dolby Atmos, DTS:X too). An optical / coaxial output only takes Dolby Digital and DTS; MediaDeck notices that itself. Off: the player decodes the sound.',
           type: 'choice', key: 'audioPassthrough', options: () => PASSTHROUGH },

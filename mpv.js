@@ -159,12 +159,15 @@ function spdifFor(s, device = s.audioDevice) {
   return SPDIF_ALL;
 }
 
-// Automatic follows Windows' speaker setup (shared mode); a fixed layout takes the output exclusively - in shared
-// mode Windows mixes to its own layout (the DENON stayed 5.1 with "stereo")
+// Automatic follows Windows' speaker setup (shared mode); a chosen layout takes the output exclusively - in shared
+// mode Windows mixes to its own layout (the DENON stayed 5.1 with "stereo"). 5.1 / 7.1 mean "up to": mpv picks the
+// layout from the list that fits the film, so a stereo film stays stereo (a fixed 7.1 stretched it to 8 channels and
+// the receiver no longer upmixed it)
+const LAYOUTS = { stereo: 'stereo', '5.1': '5.1,stereo', '7.1': '7.1,5.1,stereo' };
 function audioArgs(s) {
   const a = [];
   if (s.audioDevice && s.audioDevice !== 'auto') a.push(`--audio-device=${s.audioDevice}`);
-  if (['stereo', '5.1', '7.1'].includes(s.audioChannels)) a.push(`--audio-channels=${s.audioChannels}`, '--audio-exclusive=yes');
+  if (LAYOUTS[s.audioChannels]) a.push(`--audio-channels=${LAYOUTS[s.audioChannels]}`, '--audio-exclusive=yes');
   a.push(`--audio-spdif=${spdifFor(s)}`);
   return a;
 }
@@ -179,9 +182,8 @@ async function setAudio(key, value) {
     await send(['set_property', 'audio-spdif', spdifFor(s)]);     // an optical output: Dolby Digital / DTS only
   }
   if (key === 'audioChannels') {
-    const fixed = ['stereo', '5.1', '7.1'].includes(value);
-    await send(['set_property', 'audio-exclusive', fixed]);
-    await send(['set_property', 'audio-channels', fixed ? value : 'auto-safe']);
+    await send(['set_property', 'audio-exclusive', !!LAYOUTS[value]]);
+    await send(['set_property', 'audio-channels', LAYOUTS[value] || 'auto-safe']);
   }
   if (key === 'audioPassthrough') await send(['set_property', 'audio-spdif', spdifFor(s)]);
   watch.stalls = 0;

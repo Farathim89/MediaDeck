@@ -39,7 +39,7 @@ function defaultConfig() {
       gamesFolder: '',
       audioLang: '',
       audioDevice: 'auto',       // mpv's sound output: 'auto' = Windows' default, else 'wasapi/{id}'
-      audioChannels: 'auto',     // 'auto' (Windows' speaker setup) | 'stereo' | '5.1' | '7.1' (fixed: exclusive mode)
+      audioChannels: 'auto',     // 'auto' (Windows' speaker setup) | 'stereo' | '5.1' | '7.1' (= up to; exclusive mode)
       audioPassthrough: 'on',    // 'on' (Dolby / DTS to the receiver; optical: Dolby Digital / DTS) | 'spdif' | 'off'
       subLang: 'eng',
       subtitles: 'auto',

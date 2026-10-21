@@ -353,7 +353,7 @@
   const opt = { speed: 1, subScale: 1, subPos: 100, subDelay: 0, audioDelay: 0, aspect: 'auto', volume: 100, repeat: 'off', deinterlace: false };
 
   // Sound: output, speakers, passthrough - applied at once and kept (Settings → Sound)
-  const SPEAKERS = [{ v: 'auto', l: 'Automatic' }, { v: 'stereo', l: 'Stereo' }, { v: '5.1', l: '5.1 surround' }, { v: '7.1', l: '7.1 surround' }];
+  const SPEAKERS = [{ v: 'auto', l: 'Automatic' }, { v: 'stereo', l: 'Stereo' }, { v: '5.1', l: 'Up to 5.1 surround' }, { v: '7.1', l: 'Up to 7.1 surround' }];
   const PASSTHROUGH = [{ v: 'on', l: 'On' }, { v: 'spdif', l: 'Dolby Digital and DTS only (optical)' }, { v: 'off', l: 'Off' }];
   let soundDevices = [];
   const shortDevice = (desc) => desc.replace(/\s*\([^()]*\)\s*$/, '');      // "DENON-AVR (NVIDIA High Definition Audio)"
