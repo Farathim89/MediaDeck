@@ -14,6 +14,36 @@ const Settings = (() => {
   const choiceName = (opts, v) => (opts.find((o) => o.value === v) || {}).label || v || '';
   const secs = (list) => list.map((v) => ({ value: v, label: v < 60 ? `${v} seconds` : `${v / 60} minute${v === 60 ? '' : 's'}` }));
 
+  // ---------- Sound (the player: mpv) ----------
+  const SPEAKERS = [{ value: 'auto', label: 'Automatic' }, { value: 'stereo', label: 'Stereo' }, { value: '5.1', label: '5.1 surround' }, { value: '7.1', label: '7.1 surround' }];
+  const PASSTHROUGH = [{ value: 'on', label: 'On' }, { value: 'spdif', label: 'Dolby Digital and DTS only (optical)' }, { value: 'off', label: 'Off' }];
+  let soundDevices = null;          // [{ name, description }] from mpv
+  const soundOutputName = () => {
+    const id = s().audioDevice;
+    if (!id || id === 'auto') return 'Windows default';
+    if (!soundDevices) {
+      api.audioDevices().then((l) => {
+        soundDevices = l;
+        const row = SECTIONS.find((x) => x.id === 'sound').items[0];
+        if (row._row) refreshRow(row._row, row);
+      });
+      return '…';
+    }
+    return (soundDevices.find((x) => x.name === id) || {}).description || 'Not connected';
+  };
+  async function pickSoundOutput() {
+    soundDevices = await api.audioDevices(true);
+    const cur = s().audioDevice || 'auto';
+    const v = await UI.menu({ title: 'Sound output', focus: cur, items: [
+      { label: 'Windows default', value: 'auto', icon: cur === 'auto' ? 'check' : 'audio' },
+      ...soundDevices.map((x) => ({ label: x.description, value: x.name, icon: x.name === cur ? 'check' : 'audio' })),
+      ...(cur !== 'auto' && !soundDevices.some((x) => x.name === cur) ? [{ label: 'The one chosen before (not connected now)', value: cur, icon: 'check' }] : []),
+    ] });
+    if (v == null || v === cur) return;
+    s().audioDevice = v;
+    await save();
+  }
+
   const SECTIONS = [
     {
       id: 'general', title: 'General', icon: 'settings', desc: 'How MediaDeck starts and behaves',
@@ -83,6 +113,17 @@ const Settings = (() => {
           { value: 'auto', label: 'Automatic' }, { value: 'off', label: 'Off' }] },
         { label: 'Subtitle size', type: 'choice', key: 'subSize', options: () => ['Small', 'Normal', 'Large', 'Huge'].map((v) => ({ value: v, label: v })) },
         { label: 'Remember my subtitle choice', desc: 'Keeps the language you pick for the next files', type: 'toggle', key: 'rememberSubs' },
+      ],
+    },
+    {
+      id: 'sound', title: 'Sound', icon: 'audio', desc: 'Where the player\'s sound goes, and how (also Y → Options while something plays)',
+      items: [
+        { label: 'Sound output', desc: 'The speakers, receiver or TV the Media Player and Twitch play on. Windows default follows Windows\' sound settings.',
+          type: 'action', value: () => soundOutputName(), run: () => pickSoundOutput() },
+        { label: 'Speakers', desc: 'Automatic follows Windows\' speaker setup for that output. Stereo, 5.1 and 7.1 send exactly that (surround is mixed down for stereo); the player then has the output to itself while it plays.',
+          type: 'choice', key: 'audioChannels', options: () => SPEAKERS },
+        { label: 'Passthrough', desc: 'Dolby and DTS sound go to your receiver untouched, so it decodes them (Dolby Atmos, DTS:X too). An optical / coaxial output only takes Dolby Digital and DTS; MediaDeck notices that itself. Off: the player decodes the sound.',
+          type: 'choice', key: 'audioPassthrough', options: () => PASSTHROUGH },
       ],
     },
     {

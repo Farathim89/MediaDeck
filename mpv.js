@@ -123,6 +123,92 @@ function connectPipe(name, tries = 0) {
   c.on('close', () => { if (pipe === c) pipe = null; });
 }
 
+// ---------- Sound: output, speakers, passthrough ----------
+// Passthrough sends Dolby / DTS untouched to a receiver (mpv opens the output in exclusive mode for it). An optical /
+// coaxial (S/PDIF) output only carries Dolby Digital and DTS; mpv 0.41 then falls back to decoding but never opens
+// the output again - the film stands still. So S/PDIF outputs get only those two, and the guard below steps down.
+const SPDIF_ALL = 'ac3,eac3,dts-hd,truehd';
+const SPDIF_OPTICAL = 'ac3,dts';
+const OPTICAL = /digital output|s\/?pdif|optical|toslink|coax/i;
+let devices = null;        // [{ name, description }] from mpv (cached)
+
+function audioDevices(fresh = false) {
+  const exe = mpvPath();
+  if (!exe) return Promise.resolve([]);
+  if (devices && !fresh) return Promise.resolve(devices);
+  return new Promise((resolve) => {
+    require('child_process').execFile(exe, ['--no-config', '--audio-device=help'], { windowsHide: true, timeout: 10000 }, (err, out) => {
+      const list = [];
+      for (const m of String(out || '').matchAll(/^\s*'([^']+)'\s+\((.*)\)\s*$/gm)) {
+        if (m[1].startsWith('wasapi/')) list.push({ name: m[1], description: m[2] });   // (not 'auto', not openal)
+      }
+      if (list.length) devices = list;
+      resolve(list);
+    });
+  });
+}
+
+function deviceName(id) {
+  return ((devices || []).find((x) => x.name === id) || {}).description || '';
+}
+
+function spdifFor(s, device = s.audioDevice) {
+  const mode = s.audioPassthrough || 'on';
+  if (mode === 'off') return '';
+  if (mode === 'spdif' || OPTICAL.test(deviceName(device))) return SPDIF_OPTICAL;
+  return SPDIF_ALL;
+}
+
+// Automatic follows Windows' speaker setup (shared mode); a fixed layout takes the output exclusively - in shared
+// mode Windows mixes to its own layout (the DENON stayed 5.1 with "stereo")
+function audioArgs(s) {
+  const a = [];
+  if (s.audioDevice && s.audioDevice !== 'auto') a.push(`--audio-device=${s.audioDevice}`);
+  if (['stereo', '5.1', '7.1'].includes(s.audioChannels)) a.push(`--audio-channels=${s.audioChannels}`, '--audio-exclusive=yes');
+  a.push(`--audio-spdif=${spdifFor(s)}`);
+  return a;
+}
+
+// Changed in the player: applied at once, and kept in Settings
+async function setAudio(key, value) {
+  const s = d.config().settings;
+  if (!['audioDevice', 'audioChannels', 'audioPassthrough'].includes(key)) return false;
+  d.saveSettings({ [key]: value });
+  if (key === 'audioDevice') {
+    await send(['set_property', 'audio-device', value || 'auto']);
+    await send(['set_property', 'audio-spdif', spdifFor(s)]);     // an optical output: Dolby Digital / DTS only
+  }
+  if (key === 'audioChannels') {
+    const fixed = ['stereo', '5.1', '7.1'].includes(value);
+    await send(['set_property', 'audio-exclusive', fixed]);
+    await send(['set_property', 'audio-channels', fixed ? value : 'auto-safe']);
+  }
+  if (key === 'audioPassthrough') await send(['set_property', 'audio-spdif', spdifFor(s)]);
+  watch.stalls = 0;
+  return true;
+}
+
+// The guard: a file with sound that plays but whose sound output never opens (current-ao stays empty) = a
+// passthrough format this output refused. One step down each time: all formats -> Dolby Digital / DTS -> off.
+const watch = { timer: null, stalls: 0 };
+function startWatch() {
+  clearInterval(watch.timer);
+  watch.stalls = 0;
+  watch.timer = setInterval(async () => {
+    if (!pipe) return;
+    const get = async (p) => { const r = await send(['get_property', p]); return r && r.error === 'success' ? r.data : undefined; };
+    const [codec, pause, idle, cache, ao, spdif] = await Promise.all(['current-tracks/audio/codec', 'pause', 'idle-active', 'paused-for-cache',
+      'current-ao', 'audio-spdif'].map(get));
+    // only Dolby / DTS sound goes through as it is (AAC, FLAC … are always decoded: not this guard's business)
+    if (!/^(ac3|eac3|truehd|mlp|dts|dca)$/.test(codec || '') || pause || idle || cache || ao || !spdif) { watch.stalls = 0; return; }
+    if (++watch.stalls < 2) return;
+    watch.stalls = 0;
+    const next = spdif.includes('truehd') || spdif.includes('eac3') ? SPDIF_OPTICAL : '';
+    await send(['set_property', 'audio-spdif', next]);
+    toOsd({ event: 'passthrough-fallback', to: next });
+  }, 1500);
+}
+
 function settingsArgs(s) {
   const a = [];
   const size = { Small: 0.8, Normal: 1, Large: 1.25, Huge: 1.5 }[s.subSize] || 1;
@@ -130,14 +216,24 @@ function settingsArgs(s) {
   if (s.subLang) a.push(`--slang=${s.subLang}`);
   if (s.audioLang) a.push(`--alang=${s.audioLang}`);
   if (s.subtitles === 'off') a.push('--sid=no');
+  a.push(...audioArgs(s));
   return a;
 }
 
-function open(list, index, opts = {}) {
+// A player still open: it closes first, and the new one starts once it is gone - one that had the sound output to
+// itself (passthrough, a fixed speaker layout) would otherwise keep the new one from opening it
+const gone = (p, ms) => new Promise((resolve) => {
+  if (!p || p.exitCode !== null) return resolve();
+  p.once('exit', () => resolve());
+  setTimeout(resolve, ms);
+});
+
+async function open(list, index, opts = {}) {
   const exe = mpvPath();
   if (!exe) return { ok: false, error: 'mpv was not found. Set its path in data\\config.json ("mpvPath").' };
-  if (proc) stop();
+  if (proc) { const old = proc; stop(); await gone(old, 1500); }
   resetPipeReady();
+  buf = '';
   const mpvDir = path.join(d.dataDir, 'mpv');
   fs.mkdirSync(path.join(mpvDir, 'cache'), { recursive: true });
   createLayers();
@@ -156,8 +252,10 @@ function open(list, index, opts = {}) {
   ];
   if (process.env.MC_MPV_LOG) args.push(`--log-file=${path.join(mpvDir, 'mpv.log')}`);
   session = { list, index, opts };
-  proc = spawn(exe, args, { windowsHide: true, stdio: 'ignore' });
-  proc.on('exit', () => { proc = null; pipe = null; toOsd({ event: 'mpv-exit' }); });
+  const me = proc = spawn(exe, args, { windowsHide: true, stdio: 'ignore' });
+  // (only this player's own end: an old one ending late must not close the new one)
+  me.on('exit', () => { if (proc !== me) return; proc = null; pipe = null; clearInterval(watch.timer); toOsd({ event: 'mpv-exit' }); });
+  startWatch();
   host.showInactive();
   osd.loadFile(path.join(__dirname, 'renderer', 'player.html'));
   osd.webContents.once('did-finish-load', () => { if (osd) { osd.show(); osd.focus(); } });
@@ -166,6 +264,7 @@ function open(list, index, opts = {}) {
 }
 
 function stop() {
+  clearInterval(watch.timer);
   if (pipe) { try { pipe.write(JSON.stringify({ command: ['quit'] }) + '\n'); } catch {} }
   const p = proc;
   setTimeout(() => { try { if (p && p.exitCode === null) p.kill(); } catch {} }, 800);
@@ -188,6 +287,10 @@ function init(deps) {
     return r ? (r.error === 'success' ? (r.data ?? true) : null) : null;
   });
   ipcMain.handle('player:progress', (e, file, data) => { if (fromOsd(e)) d.setProgress(file, data); return true; });
+  ipcMain.handle('player:audio', (e, key, value) => (fromOsd(e) ? setAudio(key, value) : false));
+  ipcMain.handle('player:audio-devices', async (e) => (fromOsd(e) ? audioDevices() : []));
+  ipcMain.handle('audio-devices', (e, fresh) => audioDevices(!!fresh));
+  setTimeout(() => audioDevices(), 4000);     // known before the first film (an optical output gets Dolby Digital / DTS only)
   ipcMain.on('player:close', (e) => {
     if (!fromOsd(e)) return;
     stop();
@@ -195,4 +298,8 @@ function init(deps) {
   });
 }
 
-module.exports = { init, open, stop, isOpen: () => !!host, available: () => !!(d && mpvPath()) };
+// (tests: the test switch reads properties and changes sound settings like the player's menu)
+const get = async (prop) => { const r = await send(['get_property', prop]); return r && r.error === 'success' ? r.data : null; };
+const set = async (prop, value) => { const r = await send(['set_property', prop, value]); return !!(r && r.error === 'success'); };
+
+module.exports = { init, open, stop, isOpen: () => !!host, available: () => !!(d && mpvPath()), audioDevices, setAudio, get, set };

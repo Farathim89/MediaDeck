@@ -91,4 +91,6 @@ contextBridge.exposeInMainWorld('api', {
   onAppFocus: (fn) => ipcRenderer.on('app-focus', () => fn()),
   onWinActive: (fn) => ipcRenderer.on('win-active', (e, on) => fn(on)),
   onWinFull: (fn) => ipcRenderer.on('win-full', (e, on) => fn(on)),
+  audioDevices: invoke('audio-devices'),
+  onSettingsPatch: (fn) => ipcRenderer.on('settings-patch', (e, patch) => fn(patch)),
 });

@@ -534,7 +534,7 @@ async function playTwitch(req) {
       if (err || !/^https:\/\//.test(url)) { back("Couldn't open this video"); return; }
       const i = await info;
       if (twitchPlay !== me) return;
-      const r = mpv.open([url], 0, { fromStart: true, ...i, stream: true, start: twitchTime(req.time) });
+      const r = await mpv.open([url], 0, { fromStart: true, ...i, stream: true, start: twitchTime(req.time) });
       if (!r.ok) back(r.error);
     });
     return;
@@ -551,7 +551,7 @@ async function playTwitch(req) {
     started = true;
     const i = await info;
     if (twitchPlay !== me) return;
-    const r = mpv.open([`http://127.0.0.1:${m[1]}/`], 0, { fromStart: true, ...i, stream: true, live: true });
+    const r = await mpv.open([`http://127.0.0.1:${m[1]}/`], 0, { fromStart: true, ...i, stream: true, live: true });
     if (!r.ok) back(r.error);
   };
   proc.stdout.on('data', onData);
@@ -810,6 +810,15 @@ function startTestSwitch() {
         return send({ ok: true });
       }
       if (u.pathname === '/bios-import') return send(await importBiosFiles([u.searchParams.get('path')]));
+      // the media player (tests): play a file, read mpv properties, change a sound setting like Y → Options does
+      if (u.pathname === '/play') return send(await mpv.open([u.searchParams.get('file')], 0, {}));
+      if (u.pathname === '/player-props') {
+        const out = {};
+        for (const p of (u.searchParams.get('p') || '').split(',').filter(Boolean)) out[p] = await mpv.get(p);
+        return send(out);
+      }
+      if (u.pathname === '/player-audio') return send({ ok: await mpv.setAudio(u.searchParams.get('key'), u.searchParams.get('value')) });
+      if (u.pathname === '/player-set') return send({ ok: await mpv.set(u.searchParams.get('p'), u.searchParams.get('v')) });
       if (u.pathname === '/page-text') return send({ text: await win.webContents.executeJavaScript('document.body.innerText') });
       if (u.pathname === '/open-settings') { await win.webContents.executeJavaScript(`App.open(Settings, ${JSON.stringify({ section: u.searchParams.get('section') || 'general' })})`); return send({ ok: true }); }
       if (u.pathname === '/twitch-key') { twitch.key(u.searchParams.get('a')); return send({ ok: true }); }
@@ -2190,6 +2199,12 @@ if (!app.requestSingleInstanceLock()) {
       getProgress: () => progress,
       setProgress: (file, data) => setProgress(file, data),
       serverStatus: () => server.status(),
+      // a setting changed in the player (sound output, speakers, passthrough): saved, and the main window's copy too
+      saveSettings: (patch) => {
+        Object.assign(config.settings, patch);
+        writeJson(CONFIG_FILE, config);
+        if (win && !win.isDestroyed()) win.webContents.send('settings-patch', patch);
+      },
       onClosed: () => {
         if (!win || win.isDestroyed()) return;
         // a Twitch stream: back to Twitch where it was

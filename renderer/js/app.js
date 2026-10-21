@@ -15,6 +15,8 @@ const App = {
     Input.setHandler((action) => this.dispatch(action));
     // MediaDeck as a window (F11): no title bar, so a strip along the top to move it by
     api.onWinFull((on) => document.documentElement.classList.toggle('windowed', !on));
+    // changed in the player (sound output …): our copy follows, so saving Settings doesn't put the old value back
+    api.onSettingsPatch((patch) => Object.assign(this.state.config.settings, patch));
     api.onAppFocus(() => { if (this.current && this.current.refocus) this.current.refocus(); });
     api.onDrivesChanged((data) => { MediaHome.drivesChanged(data); Browser.drivesChanged(data); });
     api.onPlayerClosed((progress) => {

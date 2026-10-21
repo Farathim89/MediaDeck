@@ -145,6 +145,9 @@
       UI.toast(`Can't play ${name(file)}`, { icon: 'alert', error: true, duration: 4000 });
       if (index < data.list.length - 1) load(index + 1, { fromStart: true }); else setTimeout(close, 1500);
     } else if (m.event === 'mpv-exit' && !closing) close();
+    else if (m.event === 'passthrough-fallback') {     // mpv.js: the output refused that format, now it plays
+      flashText(m.to ? 'This output takes only Dolby Digital and DTS' : 'No passthrough on this output: decoding the sound');
+    }
   });
 
   function tick() {
@@ -349,6 +352,32 @@
   const ASPECTS = [{ v: 'auto', l: 'Original' }, { v: '16:9', l: '16:9' }, { v: '4:3', l: '4:3' }, { v: '2.39:1', l: 'Cinema (21:9)' }, { v: 'fill', l: 'Fill the screen (crop)' }, { v: 'stretch', l: 'Stretch' }];
   const opt = { speed: 1, subScale: 1, subPos: 100, subDelay: 0, audioDelay: 0, aspect: 'auto', volume: 100, repeat: 'off', deinterlace: false };
 
+  // Sound: output, speakers, passthrough - applied at once and kept (Settings → Sound)
+  const SPEAKERS = [{ v: 'auto', l: 'Automatic' }, { v: 'stereo', l: 'Stereo' }, { v: '5.1', l: '5.1 surround' }, { v: '7.1', l: '7.1 surround' }];
+  const PASSTHROUGH = [{ v: 'on', l: 'On' }, { v: 'spdif', l: 'Dolby Digital and DTS only (optical)' }, { v: 'off', l: 'Off' }];
+  let soundDevices = [];
+  const shortDevice = (desc) => desc.replace(/\s*\([^()]*\)\s*$/, '');      // "DENON-AVR (NVIDIA High Definition Audio)"
+  const soundOutputLabel = () => {
+    const id = S().audioDevice || 'auto';
+    if (id === 'auto') return 'Windows default';
+    const x = soundDevices.find((dv) => dv.name === id);
+    return x ? shortDevice(x.description) : 'Not connected';
+  };
+  async function soundMenu(key) {
+    const cur = S()[key] || (key === 'audioDevice' ? 'auto' : key === 'audioPassthrough' ? 'on' : 'auto');
+    let list;
+    if (key === 'audioDevice') {
+      soundDevices = await player.audioDevices();
+      list = [{ v: 'auto', l: 'Windows default' }, ...soundDevices.map((dv) => ({ v: dv.name, l: dv.description }))];
+    } else list = key === 'audioChannels' ? SPEAKERS : PASSTHROUGH;
+    const title = { audioDevice: 'Sound output', audioChannels: 'Speakers', audioPassthrough: 'Passthrough' }[key];
+    const v = await UI.menu({ title, focus: cur, items: list.map((x) => ({ label: x.l, value: x.v, icon: x.v === cur ? 'check' : '' })) });
+    if (v == null || v === cur) return;
+    S()[key] = v;
+    await player.audio(key, v);
+    flashText(`${title}: ${key === 'audioDevice' ? soundOutputLabel() : (list.find((x) => x.v === v) || {}).l}`);
+  }
+
   const signed = (sec) => `${sec > 0 ? '+' : ''}${sec.toFixed(1)} s`;
   const speedLabel = (v) => (v === 1 ? 'Normal' : `${v}×`);
 
@@ -375,6 +404,9 @@
     items.push({ label: `Audio timing  ·  ${signed(opt.audioDelay)}`, icon: 'restart', value: 'audiodelay' });
     if (!isMusic) items.push({ label: `Picture shape  ·  ${(ASPECTS.find((x) => x.v === opt.aspect) || {}).l}`, icon: 'fullscreen', value: 'aspect' });
     items.push({ label: `Volume  ·  ${opt.volume}%`, icon: 'audio', value: 'volume' });
+    items.push({ label: `Sound output  ·  ${soundOutputLabel()}`, icon: 'audio', value: 'audioDevice' });
+    items.push({ label: `Speakers  ·  ${(SPEAKERS.find((x) => x.v === (S().audioChannels || 'auto')) || SPEAKERS[0]).l}`, icon: 'audio', value: 'audioChannels' });
+    items.push({ label: `Passthrough  ·  ${(PASSTHROUGH.find((x) => x.v === (S().audioPassthrough || 'on')) || PASSTHROUGH[0]).l}`, icon: 'audio', value: 'audioPassthrough' });
     items.push({ label: `Repeat  ·  ${{ off: 'Off', file: 'This file', list: 'Whole list' }[opt.repeat]}`, icon: 'restart', value: 'repeat' });
     if (!isMusic) items.push({ label: `Deinterlace  ·  ${opt.deinterlace ? 'On' : 'Off'}`, icon: 'film', value: 'deint' });
     items.push({ label: 'File info', icon: 'info', value: 'info' });
@@ -418,6 +450,7 @@
       ] });
       if (v != null) { opt.repeat = v; await cmd(['set_property', 'loop-file', v === 'file' ? 'inf' : 'no']); }
     }
+    if (c === 'audioDevice' || c === 'audioChannels' || c === 'audioPassthrough') await soundMenu(c);
     if (c === 'deint') { opt.deinterlace = !opt.deinterlace; await cmd(['set_property', 'deinterlace', opt.deinterlace]); flashText(`Deinterlace ${opt.deinterlace ? 'on' : 'off'}`); }
     if (c === 'info') await infoMenu();
   }
@@ -443,13 +476,17 @@
 
   async function infoMenu() {
     const get = async (p) => { try { return await cmd(['get_property', p]); } catch { return null; } };
-    const [vp, vcodec, acodec, fps, hw, ch, size] = await Promise.all([
-      get('video-params'), get('video-codec'), get('audio-codec-name'), get('container-fps'), get('hwdec-current'), get('audio-params/channel-count'), get('file-size'),
+    const [vp, vcodec, acodec, fps, hw, ch, size, aout] = await Promise.all([
+      get('video-params'), get('video-codec'), get('audio-codec-name'), get('container-fps'), get('hwdec-current'), get('current-tracks/audio/demux-channel-count'), get('file-size'),
+      get('audio-out-params'),
     ]);
     const lines = [];
     if (vp && vp.w) lines.push(`Picture: ${vp.w}×${vp.h}${fps ? `  ·  ${Math.round(fps * 100) / 100} fps` : ''}${vp.gamma === 'pq' || vp.gamma === 'hlg' ? '  ·  HDR' : ''}`);
     if (vcodec) lines.push(`Video: ${String(vcodec).split(' ')[0]}${hw && hw !== 'no' ? '  ·  graphics card decoding' : ''}`);
     if (acodec) lines.push(`Audio: ${acodec}${ch ? `  ·  ${{ 1: 'mono', 2: 'stereo', 6: '5.1', 8: '7.1' }[ch] || ch + ' channels'}` : ''}`);
+    const spdif = aout && /^spdif-(.+)$/.exec(aout.format || '');
+    if (spdif) lines.push(`Sound: passthrough - your receiver decodes it (${{ ac3: 'Dolby Digital', eac3: 'Dolby Digital Plus', truehd: 'Dolby TrueHD', dts: 'DTS', dtshd: 'DTS-HD' }[spdif[1]] || spdif[1]})`);
+    else if (aout && aout['channel-count']) lines.push(`Sound: decoded, sent as ${{ 1: 'mono', 2: 'stereo', 6: '5.1', 8: '7.1' }[aout['channel-count']] || aout['channel-count'] + ' channels'}`);
     if (size) lines.push(`Size: ${(size / 1073741824).toFixed(2)} GB`);
     lines.push(file);
     await UI.menu({ title: stripExt(name(file)), message: lines.join('\n'), items: [{ label: 'OK', icon: 'check' }] });
@@ -527,6 +564,7 @@
   async function start() {
     data = await player.init();
     if (!data || !data.list || !data.list.length) return player.close();
+    player.audioDevices().then((l) => { soundDevices = l || []; });      // names for Y → Sound output
     document.documentElement.dataset.theme = data.settings.theme || 'oled';
     document.querySelector('[data-act="prev"]').innerHTML = Icons.prev;
     // The skip buttons show how far they jump
