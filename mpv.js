@@ -6,6 +6,7 @@ const { spawn } = require('child_process');
 const net = require('net');
 const path = require('path');
 const fs = require('fs');
+const PlayerSettings = require('./renderer/js/player-settings');   // the player's defaults (shared with the windows)
 
 let d = null;          // from main.js: win(), config(), dataDir, onShortcut, getProgress(), setProgress(), onClosed()
 let host = null;
@@ -214,12 +215,22 @@ async function applyRtx(vp, force = false) {
 // Changed in the player: applied at once, and kept in Settings
 async function setAudio(key, value) {
   const s = d.config().settings;
+  // the player's own defaults (Y → Options → Player settings): the same list as Settings → Media Player
+  if (PlayerSettings.KEYS.includes(key)) {
+    if (!PlayerSettings.valid(key, value)) return false;
+    d.saveSettings({ [key]: value });
+    return true;
+  }
   if (key === 'rtxSuperRes' || key === 'rtxHdr') {
+    if (!['on', 'off'].includes(value)) return false;
     d.saveSettings({ [key]: value });
     await applyRtx(await get('video-params'), true);
     return true;
   }
   if (!['audioDevice', 'audioChannels', 'audioPassthrough'].includes(key)) return false;
+  if (key === 'audioDevice' && !(value === 'auto' || /^wasapi\/\{[0-9a-f.{}-]+\}$/i.test(value))) return false;
+  if (key === 'audioChannels' && !['auto', ...Object.keys(LAYOUTS)].includes(value)) return false;
+  if (key === 'audioPassthrough' && !['on', 'spdif', 'off'].includes(value)) return false;
   d.saveSettings({ [key]: value });
   if (key === 'audioDevice') {
     await send(['set_property', 'audio-device', value || 'auto']);

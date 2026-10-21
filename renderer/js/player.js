@@ -414,6 +414,7 @@
       items.push({ label: `RTX HDR  ·  ${S().rtxHdr === 'on' ? 'On' : 'Off'}`, icon: 'film', value: 'rtxHdr' });
     }
     items.push({ label: 'File info', icon: 'info', value: 'info' });
+    items.push({ label: 'Player settings', icon: 'settings', value: 'playerSettings' });
 
     const c = await UI.menu({ title: 'Options', items });
     if (!c) return;
@@ -464,6 +465,48 @@
     }
     if (c === 'deint') { opt.deinterlace = !opt.deinterlace; await cmd(['set_property', 'deinterlace', opt.deinterlace]); flashText(`Deinterlace ${opt.deinterlace ? 'on' : 'off'}`); }
     if (c === 'info') await infoMenu();
+    if (c === 'playerSettings') await playerSettingsMenu();
+  }
+
+  // Y → Options → Player settings: the player's defaults - the same list as MediaDeck's Settings → Media Player
+  // (player-settings.js), saved there too. Most apply at once; sound and NVIDIA RTX are in Options itself.
+  async function playerSettingsMenu() {
+    let secFocus;
+    for (;;) {
+      const secId = await UI.menu({ title: 'Player settings', focus: secFocus,
+        message: 'The same as MediaDeck\'s Settings → Media Player, and saved there. Sound and NVIDIA RTX are in Options.',
+        items: PlayerSettings.SECTIONS.map((x) => ({ label: x.title, value: x.id, icon: x.icon })) });
+      if (!secId) return;
+      secFocus = secId;
+      const sec = PlayerSettings.SECTIONS.find((x) => x.id === secId);
+      let focus;
+      for (;;) {
+        const key = await UI.menu({ title: sec.title, focus,
+          items: sec.items.map((i) => ({ label: `${i.label}  ·  ${PlayerSettings.valueLabel(i, S()[i.key])}`, value: i.key })) });
+        if (!key) break;
+        focus = key;
+        const item = sec.items.find((i) => i.key === key);
+        const cur = S()[key];
+        let v;
+        if (item.type === 'toggle') v = !(cur !== false && cur);
+        else if (item.type === 'text') {
+          v = await UI.prompt({ title: item.label, message: item.desc, value: cur || '' });
+          if (v === null) continue;
+        } else {
+          v = await UI.menu({ title: item.label, focus: cur, items: item.options().map((o) => ({ label: o.label, value: o.value, icon: o.value === cur ? 'check' : '' })) });
+          if (v == null || v === cur) continue;
+        }
+        if (!(await player.audio(key, v))) continue;      // (checked and saved by mpv.js)
+        S()[key] = v;
+        if (key === 'playerClock') document.querySelector('#top .clock').style.display = v === false ? 'none' : '';
+        if (key === 'subSize') {
+          opt.subScale = { Small: 0.85, Normal: 1, Large: 1.2, Huge: 1.45 }[v] || 1;
+          await cmd(['set_property', 'sub-scale', opt.subScale]);
+        }
+        if (key === 'subtitles' && v === 'off') await cmd(['set_property', 'sid', 'no']);
+        flashText(`${item.label}: ${PlayerSettings.valueLabel(item, v)}`);
+      }
+    }
   }
 
   // Timing: nudge in small steps; the menu stays open so you can press several times

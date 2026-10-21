@@ -1080,7 +1080,9 @@ function edgeless(bw) {
       keysExe(['border', hwndOf(bw), covers ? 'none' : 'default']);
     }, 150);
   };
-  for (const ev of ['ready-to-show', 'show', 'resize', 'move']) bw.on(ev, check);
+  // (focus too, and twice more after it shows: once in a while the first call came too early and the line stayed)
+  for (const ev of ['ready-to-show', 'show', 'resize', 'move', 'focus']) bw.on(ev, check);
+  bw.once('show', () => { for (const ms of [1000, 4000]) setTimeout(() => { if (!bw.isDestroyed()) check(); }, ms); });
   check();
 }
 app.on('browser-window-created', (e, bw) => edgeless(bw));

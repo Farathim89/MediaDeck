@@ -6,13 +6,15 @@ const Settings = (() => {
   const listEl = el.querySelector('.settings-list');
   const titleEl = el.querySelector('.settings-title');
   const descEl = el.querySelector('.settings-desc');
+  const subEl = document.createElement('div');      // a group's sub-tabs (Media Player: Playback, Sound …)
+  subEl.className = 'settings-subtabs';
+  descEl.after(subEl);
   let active = 'general';
   let info = null;
 
   const s = () => App.state.config.settings;
   const save = () => api.saveConfig(App.state.config);
   const choiceName = (opts, v) => (opts.find((o) => o.value === v) || {}).label || v || '';
-  const secs = (list) => list.map((v) => ({ value: v, label: v < 60 ? `${v} seconds` : `${v / 60} minute${v === 60 ? '' : 's'}` }));
 
   // ---------- Sound (the player: mpv) ----------
   const SPEAKERS = [{ value: 'auto', label: 'Automatic' }, { value: 'stereo', label: 'Stereo' }, { value: '5.1', label: 'Up to 5.1 surround' }, { value: '7.1', label: 'Up to 7.1 surround' }];
@@ -146,52 +148,10 @@ const Settings = (() => {
           preview: (v) => App.applyScale(undefined, v), after: () => App.applyScale() },
       ],
     },
+    // the media player's own defaults (shared with the player's Y → Options → Player settings)
+    ...PlayerSettings.SECTIONS.map((x) => ({ ...x, group: 'player' })),
     {
-      id: 'media', title: 'Media Player', icon: 'media', desc: 'Browsing your drives and folders',
-      items: [
-        { label: 'Show all files', desc: 'Off: only folders, videos, music and pictures', type: 'toggle', key: 'showAllFiles' },
-        { label: 'Show only USB drives', desc: 'Hides the PC\'s own drives in the Media Player; USB sticks and drives still show up', type: 'toggle', key: 'usbOnly' },
-        { label: 'Hidden drives', desc: 'Hide a drive with Y on it in the Media Player', type: 'action',
-          value: () => { const n = (s().hiddenDrives || []).length; return n ? `${n} hidden` : 'None'; }, run: () => manageHiddenDrives() },
-        { label: 'Sort folders by', type: 'choice', key: 'sortBy', options: () => [
-          { value: 'name', label: 'Name' }, { value: 'date', label: 'Newest first' }, { value: 'size', label: 'Size' }] },
-        { label: 'Thumbnails', desc: 'Pictures of videos, music and photos. Turn off for very slow drives.', type: 'toggle', key: 'thumbnails' },
-        { label: 'Folder pictures', desc: 'poster.jpg / folder.jpg, or a frame from the film inside', type: 'toggle', key: 'folderArt' },
-        { label: 'Keep thumbnails after closing', desc: 'Off: thumbnails are deleted when MediaDeck closes. They are always stored encrypted.', type: 'toggle', key: 'keepThumbnails' },
-      ],
-    },
-    {
-      id: 'playback', title: 'Playback', icon: 'play', desc: 'Skipping, resuming and the player controls',
-      items: [
-        { label: 'Skip back (left arrow)', type: 'choice', key: 'skipBack', options: () => secs([5, 10, 15, 30]) },
-        { label: 'Skip forward (right arrow)', type: 'choice', key: 'skipForward', options: () => secs([10, 15, 30, 60]) },
-        { label: 'Big skip (LT / RT)', desc: 'The triggers on the controller', type: 'choice', key: 'skipBig', options: () => secs([30, 60, 120, 300, 600]) },
-        { label: 'When a video was started before', type: 'choice', key: 'resumeMode', options: () => [
-          { value: 'ask', label: 'Ask' }, { value: 'resume', label: 'Always resume' }, { value: 'start', label: 'Always start over' }] },
-        { label: 'Play the next file automatically', type: 'toggle', key: 'autoplayNext' },
-        { label: 'Count as watched at', desc: 'How far into a video it is marked as watched', type: 'choice', key: 'watchedAt', options: () =>
-          [85, 90, 92, 95, 98].map((v) => ({ value: v, label: `${v}%` })) },
-        { label: 'Hide the controls after', type: 'choice', key: 'osdHide', options: () => [
-          ...[3, 4, 6, 10].map((v) => ({ value: v, label: `${v} seconds` })), { value: 'never', label: 'Never' }] },
-        { label: 'Start volume', type: 'choice', key: 'volume', options: () => [100, 90, 80, 70, 60, 50].map((v) => ({ value: v, label: `${v}%` })) },
-        { label: 'Start speed', type: 'choice', key: 'defaultSpeed', options: () =>
-          [0.75, 1, 1.25, 1.5].map((v) => ({ value: v, label: v === 1 ? 'Normal' : `${v}×` })) },
-        { label: 'Clock in the player', type: 'toggle', key: 'playerClock' },
-      ],
-    },
-    {
-      id: 'subs', title: 'Subtitles & audio', icon: 'subs', desc: 'Which languages and how subtitles look',
-      items: [
-        { label: 'Audio language', desc: 'Language codes in order, e.g. jpn,eng (empty = the file\'s default)', type: 'text', key: 'audioLang' },
-        { label: 'Subtitle language', desc: 'Language codes in order, e.g. eng,swe', type: 'text', key: 'subLang' },
-        { label: 'Subtitles', type: 'choice', key: 'subtitles', options: () => [
-          { value: 'auto', label: 'Automatic' }, { value: 'off', label: 'Off' }] },
-        { label: 'Subtitle size', type: 'choice', key: 'subSize', options: () => ['Small', 'Normal', 'Large', 'Huge'].map((v) => ({ value: v, label: v })) },
-        { label: 'Remember my subtitle choice', desc: 'Keeps the language you pick for the next files', type: 'toggle', key: 'rememberSubs' },
-      ],
-    },
-    {
-      id: 'sound', title: 'Sound', icon: 'audio', desc: 'Where the player\'s sound goes, and how (also Y → Options while something plays)',
+      id: 'sound', group: 'player', title: 'Sound', icon: 'audio', desc: 'Where the player\'s sound goes, and how (also Y → Options while something plays)',
       items: [
         { label: 'Sound output', desc: 'The speakers, receiver or TV the Media Player and Twitch play on. Windows default follows Windows\' sound settings.',
           type: 'action', value: () => soundOutputName(), run: () => pickSoundOutput() },
@@ -202,7 +162,7 @@ const Settings = (() => {
       ],
     },
     {
-      id: 'video', title: 'Video', icon: 'film', desc: 'How videos are drawn and converted',
+      id: 'video', group: 'player', title: 'Video', icon: 'film', desc: 'How videos are drawn and converted',
       items: [
         { label: 'Video renderer', desc: 'How mpv draws the picture. Direct3D 11 is the safe choice.', type: 'choice', key: 'mpvGpuApi', options: () => [
           { value: 'd3d11', label: 'Direct3D 11' }, { value: 'vulkan', label: 'Vulkan' }, { value: 'opengl', label: 'OpenGL' }] },
@@ -211,6 +171,20 @@ const Settings = (() => {
           type: 'choice', key: 'rtxSuperRes', options: () => ON_OFF, value: () => rtxValue('rtxSuperRes') },
         { label: 'NVIDIA RTX HDR', desc: 'Turns normal (SDR) videos into HDR with AI, for an HDR TV or monitor with HDR switched on in Windows. HDR films, pictures and album covers stay as they are.',
           type: 'choice', key: 'rtxHdr', options: () => ON_OFF, value: () => rtxValue('rtxHdr') },
+      ],
+    },
+    {
+      id: 'media', group: 'player', title: 'Browsing', icon: 'folder', desc: 'Browsing your drives and folders in the Media Player',
+      items: [
+        { label: 'Show all files', desc: 'Off: only folders, videos, music and pictures', type: 'toggle', key: 'showAllFiles' },
+        { label: 'Show only USB drives', desc: 'Hides the PC\'s own drives in the Media Player; USB sticks and drives still show up', type: 'toggle', key: 'usbOnly' },
+        { label: 'Hidden drives', desc: 'Hide a drive with Y on it in the Media Player', type: 'action',
+          value: () => { const n = (s().hiddenDrives || []).length; return n ? `${n} hidden` : 'None'; }, run: () => manageHiddenDrives() },
+        { label: 'Sort folders by', type: 'choice', key: 'sortBy', options: () => [
+          { value: 'name', label: 'Name' }, { value: 'date', label: 'Newest first' }, { value: 'size', label: 'Size' }] },
+        { label: 'Thumbnails', desc: 'Pictures of videos, music and photos. Turn off for very slow drives.', type: 'toggle', key: 'thumbnails' },
+        { label: 'Folder pictures', desc: 'poster.jpg / folder.jpg, or a frame from the film inside', type: 'toggle', key: 'folderArt' },
+        { label: 'Keep thumbnails after closing', desc: 'Off: thumbnails are deleted when MediaDeck closes. They are always stored encrypted.', type: 'toggle', key: 'keepThumbnails' },
       ],
     },
     {
@@ -368,23 +342,51 @@ const Settings = (() => {
     UI.toast(v === 'on' ? 'Dolphin uses the GameCube adapter now' : 'Dolphin uses the controllers again', { icon: 'check', duration: 4000 });
   }
 
+  // Sections of one group (the media player's) share one entry on the left and get sub-tabs on the page;
+  // LB / RB go to the previous / next sub-tab. A group opens on the sub-tab used last.
+  const GROUPS = { player: { title: 'Media Player', icon: 'media' } };
+  const groupLast = {};
+  const membersOf = (g) => SECTIONS.filter((x) => x.group === g);
+  const isActiveTab = (b) => (b.dataset.sectionGroup ? b.dataset.sectionGroup === section().group : b.dataset.section === active);
+
   function renderNav() {
     navEl.innerHTML = '';
+    const done = new Set();
     for (const sec of SECTIONS) {
+      if (sec.group && done.has(sec.group)) continue;
+      const g = sec.group && GROUPS[sec.group];
+      if (g) done.add(sec.group);
       const b = document.createElement('button');
-      b.className = 'tab focusable' + (sec.id === active ? ' active' : '');
+      b.className = 'tab focusable';
       b.dataset.group = 'settings-nav';
-      b.dataset.section = sec.id;
-      b.innerHTML = `<span class="tab-icon">${Icons[sec.icon] || ''}</span><span class="tab-label">${UI.esc(sec.title)}</span>`;
-      b.addEventListener('click', () => openSection(sec.id));
+      if (g) b.dataset.sectionGroup = sec.group; else b.dataset.section = sec.id;
+      b.innerHTML = `<span class="tab-icon">${Icons[(g || sec).icon] || ''}</span><span class="tab-label">${UI.esc((g || sec).title)}</span>`;
+      b.addEventListener('click', () => openSection(g ? (groupLast[sec.group] || sec.id) : sec.id));
+      b.classList.toggle('active', isActiveTab(b));
       navEl.appendChild(b);
+    }
+  }
+
+  function renderSubtabs(sec) {
+    subEl.innerHTML = '';
+    subEl.hidden = !sec.group;
+    if (!sec.group) return;
+    for (const m of membersOf(sec.group)) {
+      const b = document.createElement('button');
+      b.className = 'chip focusable subtab' + (m.id === sec.id ? ' active' : '');
+      b.dataset.group = 'settings-subtabs';
+      b.dataset.section = m.id;
+      b.innerHTML = `${Icons[m.icon] || ''}<span>${UI.esc(m.title)}</span>`;
+      b.addEventListener('click', () => openSection(m.id, { stayOnTab: true }));
+      subEl.appendChild(b);
     }
   }
 
   function renderList() {
     const sec = section();
-    titleEl.textContent = sec.title;
+    titleEl.textContent = sec.group ? GROUPS[sec.group].title : sec.title;
     descEl.textContent = sec.desc || '';
+    renderSubtabs(sec);
     listEl.innerHTML = '';
     const items = typeof sec.items === 'function' ? sec.items() : sec.items;
     items.forEach((item, i) => {
@@ -784,13 +786,26 @@ const Settings = (() => {
   }
 
   // A section opens only when chosen (A / Enter / click); the panel folds while you're in the list
-  function openSection(id) {
+  function openSection(id, opts = {}) {
     if (id !== active) {
       active = id;
-      navEl.querySelectorAll('.tab').forEach((b) => b.classList.toggle('active', b.dataset.section === active));
+      if (section().group) groupLast[section().group] = id;
+      navEl.querySelectorAll('.tab').forEach((b) => b.classList.toggle('active', isActiveTab(b)));
       renderList();
     }
-    focusList();
+    const tab = opts.stayOnTab && subEl.querySelector(`.subtab[data-section="${id}"]`);
+    if (tab) Nav.focus(tab); else focusList();
+  }
+
+  // LB / RB, or left / right on the sub-tabs: the group's previous / next sub-tab
+  function stepSubtab(dir, stayOnTab) {
+    const sec = section();
+    if (!sec.group) return false;
+    const list = membersOf(sec.group);
+    const i = list.findIndex((x) => x.id === sec.id) + dir;
+    if (i < 0 || i >= list.length) return true;
+    openSection(list[i].id, { stayOnTab });
+    return true;
   }
 
   el.addEventListener('nav-focus', (e) => {
@@ -810,6 +825,10 @@ const Settings = (() => {
     if (action === 'up' || action === 'down') {
       Nav.move(action, (n) => !!n.closest('.sidebar') === !!inNav);
       return true;
+    }
+    if (action === 'lb' || action === 'rb') return stepSubtab(action === 'lb' ? -1 : 1, !!(cur && cur.classList.contains('subtab')));
+    if (cur && cur.classList.contains('subtab') && (action === 'right' || (action === 'left' && cur.previousElementSibling))) {
+      return stepSubtab(action === 'left' ? -1 : 1, true);       // along the sub-tabs (the first one: left goes to the menu)
     }
     if (action === 'right' && inNav) { focusList(); return true; }
     if (action === 'left' && !inNav) { Nav.focus(navEl.querySelector('.tab.active')); return true; }
