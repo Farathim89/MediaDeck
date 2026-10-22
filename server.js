@@ -251,6 +251,15 @@ class MediaServer {
     }
   }
 
+  // How many thumbnails (and subtitles) are stored, and their size (Settings → Media Player → Browsing)
+  cacheStats() {
+    let files = 0, bytes = 0;
+    for (const dir of [this.thumbDir, this.subDir]) {
+      try { for (const n of fs.readdirSync(dir)) { if (!n.endsWith('.enc')) continue; files++; try { bytes += fs.statSync(path.join(dir, n)).size; } catch {} } } catch {}
+    }
+    return { files, bytes };
+  }
+
   // Deletes the thumbnail and subtitle cache (on exit, or from Settings)
   clearCache() {
     for (const dir of [this.thumbDir, this.subDir]) {

@@ -186,7 +186,14 @@ const Settings = (() => {
         { label: 'Continue watching on the start screen', desc: 'The same row, for all your drives, on the Media Player start screen', type: 'toggle', key: 'continueOnHome' },
         { label: 'Thumbnails', desc: 'Pictures of videos, music and photos. Turn off for very slow drives.', type: 'toggle', key: 'thumbnails' },
         { label: 'Folder pictures', desc: 'poster.jpg / folder.jpg, or a frame from the film inside', type: 'toggle', key: 'folderArt' },
-        { label: 'Keep thumbnails after closing', desc: 'Off: thumbnails are deleted when MediaDeck closes. They are always stored encrypted.', type: 'toggle', key: 'keepThumbnails' },
+        { label: 'Keep thumbnails after closing', desc: 'Off: deleted when MediaDeck closes. They are encrypted, so they only open in MediaDeck (not in a picture viewer).', type: 'toggle', key: 'keepThumbnails' },
+        { label: 'Clear thumbnails', desc: 'Deletes the stored thumbnails and subtitles now; they are made again when needed', type: 'action',
+          value: () => { const t = info && info.thumbs; return !t ? '' : t.files ? `${t.files} · ${Media.formatSize(t.bytes)}` : 'Empty'; },
+          run: async () => { const t = await api.clearCache(); if (info) info.thumbs = t; UI.toast('Thumbnails cleared', { icon: 'check' }); } },
+        { label: 'Keep play history after closing', desc: 'Where you stopped, Continue watching and the watched ticks. Off: forgotten when MediaDeck closes. Always stored encrypted.', type: 'toggle', key: 'keepPlayHistory' },
+        { label: 'Clear play history', desc: 'Forgets now where you stopped and what you watched', type: 'action',
+          value: () => { const n = Object.keys(App.state.progress || {}).length; return n ? `${n} file${n > 1 ? 's' : ''}` : 'Empty'; },
+          run: () => clearPlayHistory() },
       ],
     },
     {
@@ -227,6 +234,10 @@ const Settings = (() => {
         { label: 'Game cards', desc: 'How a console\'s games are shown: big covers, small covers (more on the screen), a list with a small cover on the left, or a list of names without covers', type: 'choice', key: 'gameView',
           options: () => [{ value: 'big', label: 'Big covers' }, { value: 'small', label: 'Small covers' }, { value: 'rows', label: 'List with small covers' }, { value: 'list', label: 'List (no covers)' }],
           after: (v) => App.applyGameView(v) },
+        { label: 'Keep recently played after closing', desc: 'The Recently played rows of your consoles. Off: forgotten when MediaDeck closes. Always stored encrypted.', type: 'toggle', key: 'keepRecentGames' },
+        { label: 'Clear recently played', desc: 'Forgets now which games you played (favourites stay)', type: 'action',
+          value: () => { const n = info ? info.recentGames : null; return n == null ? '' : n ? `${n} game${n > 1 ? 's' : ''}` : 'Empty'; },
+          run: () => clearRecentGames() },
         { label: 'Check for updates at start', desc: 'Once a day, a while after MediaDeck opens. Only asks the emulators\' download pages.', type: 'toggle', key: 'checkEmuUpdates' },
         { label: 'Group versions of a game', desc: 'Rev 1, Sample, other regions, .smc / .sfc: one card, and starting it asks which version', type: 'toggle', key: 'groupVersions' },
         { label: 'Show consoles without games', desc: 'On: a console shows on Home and Consoles as soon as its emulator is installed, also with an empty games folder. Off: only once it has games.',
@@ -290,8 +301,6 @@ const Settings = (() => {
         { label: 'VLC (for "Open with VLC")', type: 'file', key: 'vlcPath', filter: 'exe' },
         { label: 'ffmpeg (thumbnails)', desc: 'Empty = find it automatically. Takes effect after a restart.', type: 'file', key: 'ffmpegPath', filter: 'exe' },
         { label: 'Settings and data folder', type: 'action', value: () => (info ? info.dataDir : ''), run: () => api.openDataFolder() },
-        { label: 'Clear thumbnail cache', desc: 'Deletes the stored (encrypted) thumbnails and subtitles now', type: 'action',
-          run: async () => { await api.clearCache(); UI.toast('Thumbnail cache cleared'); } },
       ],
     },
     {
@@ -530,6 +539,29 @@ const Settings = (() => {
     }
     toast.remove();
     UI.toast(total ? `${found} of ${total} covers found` : 'All games already have a cover', { icon: 'image', duration: 5000 });
+  }
+
+  // The media player's play history (main.js progress.dat): forgotten now, after a yes
+  async function clearPlayHistory() {
+    const n = Object.keys(App.state.progress || {}).length;
+    if (!n) { UI.toast('The play history is already empty', { icon: 'check' }); return; }
+    const ok = await UI.confirm('Clear the play history?',
+      `Where you stopped, Continue watching and the watched ticks of ${n} file${n > 1 ? 's' : ''} are forgotten.`, 'Clear', true);
+    if (!ok) return;
+    await api.clearProgress();
+    App.state.progress = {};
+    UI.toast('Play history cleared', { icon: 'check' });
+  }
+
+  // The consoles' Recently played rows (main.js recent.dat): forgotten now, after a yes
+  async function clearRecentGames() {
+    const n = info ? info.recentGames : 0;
+    if (!n) { UI.toast('Recently played is already empty', { icon: 'check' }); return; }
+    const ok = await UI.confirm('Clear recently played?', `The Recently played rows forget ${n} game${n > 1 ? 's' : ''}. Your favourites and saves stay.`, 'Clear', true);
+    if (!ok) return;
+    await api.clearRecent();
+    info.recentGames = 0;
+    UI.toast('Recently played cleared', { icon: 'check' });
   }
 
   // Show hidden drives again

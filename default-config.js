@@ -63,6 +63,8 @@ function defaultConfig() {
       thumbnails: true,
       folderArt: true,
       keepThumbnails: false,
+      keepRecentGames: true,         // the games' Recently played rows after closing
+      keepPlayHistory: true,         // the media player's history (where you stopped, Continue watching, watched ticks) after closing
       continueInFolders: true,       // Continue watching: a row at the top of a folder (its videos stopped part way)
       continueOnHome: false,         // … and/or the row on the Media Player start screen
       usbOnly: false,

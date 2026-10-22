@@ -100,6 +100,9 @@ function loadConfig() {
   }
   relockAll();
   progress = readProgress();
+  // Play history not kept (Settings → Media Player → Browsing): also what a crash left behind is forgotten
+  if (config.settings.keepPlayHistory === false && Object.keys(progress).length) { progress = {}; writeProgress(progress); }
+  if (config.settings.keepRecentGames === false && fs.existsSync(RECENT_FILE) && loadRecent().length) { recent = []; writeGames(RECENT_FILE, recent); }
 }
 
 // ---------- Private files: encrypted on disk ----------
@@ -1957,6 +1960,12 @@ function registerIpc() {
     writeGames(FAV_FILE, favGames);
     return !has;
   });
+  // Settings → Emulators → Clear recently played
+  ipcMain.handle('recent-clear', () => {
+    recent = [];
+    writeGames(RECENT_FILE, recent);
+    return true;
+  });
   ipcMain.handle('recent-remove', (e, rom) => {
     recent = loadRecent().filter((x) => x.rom !== rom);
     writeGames(RECENT_FILE, recent);
@@ -2104,7 +2113,8 @@ function registerIpc() {
   ipcMain.handle('pcgame-add', (e, exe, name) => { try { return { ok: true, file: addPcGame(exe, name) }; } catch (err) { return { ok: false, error: err.message }; } });
   ipcMain.handle('pcgame-folder', () => { fs.mkdirSync(PC_GAMES_DIR, { recursive: true }); return shell.openPath(PC_GAMES_DIR); });
   ipcMain.handle('bios-open', (e, sub) => { const d = path.join(P.BIOS, sub || ''); fs.mkdirSync(d, { recursive: true }); return shell.openPath(d); });
-  ipcMain.handle('app-info', () => ({ dataDir: DATA, emuDir: emuDir(), appsDir: P.APPS, appDir: P.ROOT, gamesDir: P.GAMES, version: app.getVersion(), electron: process.versions.electron }));
+  ipcMain.handle('app-info', () => ({ dataDir: DATA, emuDir: emuDir(), appsDir: P.APPS, appDir: P.ROOT, gamesDir: P.GAMES, version: app.getVersion(), electron: process.versions.electron,
+    thumbs: server ? server.cacheStats() : null, recentGames: loadRecent().length }));
   // Settings → Controllers → Set up a controller: a pad that isn't Xbox / PlayStation, by its USB vendor:product
   // (RetroArch gets a file for it too, Dolphin's GameCube port 1 listens to it; the SDL emulators get it when they start, see startProgram)
   const padsToEmulators = async () => {
@@ -2219,9 +2229,16 @@ function registerIpc() {
     return true;
   });
   ipcMain.handle('open-data-folder', () => shell.openPath(DATA));
+  // Settings → Media Player → Browsing → Clear play history
+  ipcMain.handle('clear-progress', () => {
+    progress = {};
+    clearTimeout(progressTimer);
+    writeProgress(progress);
+    return true;
+  });
   ipcMain.handle('clear-cache', async () => {
     server.clearCache();
-    return true;
+    return server.cacheStats();
   });
   ipcMain.handle('toggle-fullscreen', () => { setFull(!full); return full; });
   ipcMain.handle('quit', () => app.quit());
@@ -2325,7 +2342,9 @@ if (!app.requestSingleInstanceLock()) {
     stopCursorHide();
     if (server) server.stop();
     clearTimeout(progressTimer);
+    if (config.settings.keepPlayHistory === false) progress = {};   // forgotten when MediaDeck closes
     writeProgress(progress);
+    if (config.settings.keepRecentGames === false) { recent = []; try { writeGames(RECENT_FILE, recent); } catch {} }   // the same for Recently played
     // Thumbnails and subtitles are only kept between sessions if the user wants that
     if (server && !config.settings.keepThumbnails) server.clearCache();
   });
