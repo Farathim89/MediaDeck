@@ -295,9 +295,9 @@ function createWindow() {
   win.on('blur', () => {
     // just came to the front (PS menu, back from a program) and Windows or the program behind took the focus:
     // focusSelf takes it back - no stepping aside now
-    if (Date.now() < claimUntil) { win.webContents.send('win-active', false); return; }
+    if (Date.now() < claimUntil) { tellActive(false); return; }
     if (menuOnTop) holdOnTop(false);
-    win.webContents.send('win-active', false);
+    tellActive(false);
     // back to a running game (after MediaDeck's menu): let go of the pads again and get out of the way
     if (running && isAlive(running.pid)) {
       thawGame();
@@ -309,7 +309,8 @@ function createWindow() {
   });
   // The controller only works in MediaDeck while its window really is the active one (Chromium can
   // keep thinking it has focus after a game or another program came to the front)
-  win.on('focus', () => { padsToGame(false); win.webContents.send('win-active', true); });
+  win.on('focus', () => tellActive(true));
+  win.webContents.on('did-finish-load', () => { toldActive = null; });
   for (const ev of ['resize', 'move', 'maximize', 'unmaximize', 'enter-full-screen', 'leave-full-screen']) win.on(ev, rememberWindow);
 }
 
@@ -393,6 +394,22 @@ function padsToGame(on) {
   try { if (win && !win.isDestroyed()) win.webContents.setBackgroundThrottling(on); } catch {}   // the PS menu: overlay.js
 }
 
+// The page reads the controller only while it was told MediaDeck is the active window ('win-active'). Told on
+// Chromium's focus / blur, and also when Windows itself says MediaDeck is in front (focusSelf): Chromium can miss
+// that it came back, and the controller then stayed dead in MediaDeck while the keyboard worked. Only changes are
+// sent (each "true" makes the page ignore the buttons held at that moment).
+let toldActive = null;
+function tellActive(on) {
+  if (!win || win.isDestroyed()) return;
+  if (on) {
+    padsToGame(false);
+    try { if (!win.webContents.isFocused()) win.webContents.focus(); } catch {}
+  }
+  if (toldActive === on) return;
+  toldActive = on;
+  win.webContents.send('win-active', on);
+}
+
 function bringToFront() {
   if (!win || win.isDestroyed()) return;
   if (win.isMinimized()) win.restore();
@@ -423,7 +440,8 @@ function focusSelf() {
     const other = BrowserWindow.getFocusedWindow();
     if (!other || other === win) {
       const front = await keysExe(['focus', hwndOf(win)]);
-      if (!front && win && !win.isDestroyed() && Date.now() <= claimUntil) bringToFront();
+      if (front) tellActive(true);
+      else if (win && !win.isDestroyed() && Date.now() <= claimUntil) bringToFront();
     }
     setTimeout(step, 250);
   };
@@ -1264,8 +1282,9 @@ async function startProgram(exe, args, cwd, name, meta = {}) {
       running = { pid: child.pid, name: name || path.basename(exe, '.exe'), exe, ...meta };
       startPadWatch();
       // Bring the game's window forward once it exists (Windows doesn't always let it come
-      // to the front by itself); tried a few times during the first seconds only
-      for (const ms of [1500, 3500, 7000]) setTimeout(() => { if (running && running.pid === child.pid && isAlive(child.pid)) keysExe(['game', String(child.pid)]); }, ms);
+      // to the front by itself); tried a few times during the first seconds only - not while the PS menu is up
+      // (PS within 7 s of the start: the menu was pushed behind the program again)
+      for (const ms of [1500, 3500, 7000]) setTimeout(() => { if (running && running.pid === child.pid && isAlive(child.pid) && !menuOnTop && Date.now() > claimUntil) keysExe(['game', String(child.pid)]); }, ms);
       // keys the game needs typed once it shows (MAME32's "type OK"), twice: its disclaimer, then a game's own note
       if (meta.startKeys && meta.startKeys.length) {
         for (const ms of [3000, 6000]) setTimeout(async () => {

@@ -157,6 +157,10 @@ const App = {
     // Emulator actions the game supports (save/load state …) sit between "Back" and "Close"
     const EXTRA = { saveState: ['Save state', 'check'], loadState: ['Load state', 'restart'], pause: ['Pause / continue', 'pause'], screenshot: ['Screenshot', 'image'], options: ['Emulator options', 'settings'] };
     const extra = (info.actions || []).filter((a) => EXTRA[a]).map((a) => ({ label: EXTRA[a][0], icon: EXTRA[a][1], value: a }));
+    // PS again while this menu is open: it stays as it is. Opening it anew put the focus back on "Back to …" - with a
+    // controller that also sends PS with other buttons, on every press (the D-pad then seemed dead in the menu)
+    if (this.runningOpen && UI.isOpen) return;
+    this.runningOpen = true;
     const c = await UI.menu({
       title: info.name,
       message: info.emulator ? `Still running in ${info.emulator}` : 'Still running',
@@ -167,6 +171,7 @@ const App = {
         { label: 'Stay in MediaDeck', icon: 'home', value: 'stay' },
       ],
     });
+    this.runningOpen = false;
     if (c === 'resume') return api.resumeRunning();
     if (EXTRA[c]) return api.runningAction(c);
     if (c !== 'close') return;
