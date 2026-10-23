@@ -417,9 +417,13 @@ function focusSelf() {
   claiming = true;
   const step = async () => {
     if (!win || win.isDestroyed() || Date.now() > claimUntil) { claiming = false; return; }
-    if (!BrowserWindow.getFocusedWindow()) {
-      await keysExe(['focus', hwndOf(win)]);
-      if (win && !win.isDestroyed() && Date.now() <= claimUntil && !win.isFocused()) bringToFront();
+    // Windows' own answer, not Chromium's: Chromium can think MediaDeck still has the focus while Windows gave it to
+    // the program that came over it (the menu then showed with the program in front). keys.exe does nothing when
+    // MediaDeck really is in front.
+    const other = BrowserWindow.getFocusedWindow();
+    if (!other || other === win) {
+      const front = await keysExe(['focus', hwndOf(win)]);
+      if (!front && win && !win.isDestroyed() && Date.now() <= claimUntil) bringToFront();
     }
     setTimeout(step, 250);
   };
@@ -445,8 +449,22 @@ function launch(tile) {
     if (tile.saveLink) { try { ensureSaveLink(tile.saveLink); } catch (e) { console.error('[saves]', e.message); } }
     // An app from the catalog that hides to the tray when closed (PlexDeck) has its own way to quit for real
     const known = Object.values(appInstaller.CATALOG).find((c) => c.quitArgs && c.exe && path.basename(target).toLowerCase() === c.exe.toLowerCase());
-    startProgram(target, splitArgs(tile.args || ''), tile.cwd || path.dirname(target), tile.name, known ? { quitArgs: known.quitArgs } : {}).then(resolve);
+    waitForAppUpdate(known, target, tile.name).then(() =>
+      startProgram(target, splitArgs(tile.args || ''), tile.cwd || path.dirname(target), tile.name, known ? { quitArgs: known.quitArgs } : {}).then(resolve));
   });
+}
+
+// An app that updates itself after it quit (PlexDeck "Later": its updater unpacks and copies the new version into
+// its folder for ~5-20 s): started then, it ran on half-copied files. While it isn't running and its update folder
+// still holds the download or the unpacked files, wait (up to 60 s, then start anyway: a stopped updater can leave
+// the download behind, and the app itself deals with that).
+async function waitForAppUpdate(known, exe, name) {
+  if (!known || !known.updating) return;
+  const dir = path.join(path.dirname(exe), known.updating);
+  const busy = () => { try { return fs.readdirSync(dir).some((n) => /\.zip$/i.test(n) || n.toLowerCase() === 'unpacked'); } catch { return false; } };
+  if (!busy() || (await mainProcessOf(exe))) return;
+  if (win && !win.isDestroyed()) win.webContents.send('toast', `${name || known.name} is updating - it starts when it's done`);
+  for (let i = 0; i < 60 && busy() && !(await mainProcessOf(exe)); i++) await wait(1000);
 }
 
 // A program that keeps its saves in a fixed place outside MediaDeck (GameMaker games: %LOCALAPPDATA%\<game>):
@@ -1066,16 +1084,15 @@ async function closeRunning(force) {
     if (!otherRunning(pid)) focusSelf();   // the quit key gave the emulator the focus; when it's gone Windows would pick another window
     return { closed: true, forced: false };
   }
-  await killTree(pid, force);
-  // An app that only hides to the tray when closed (PlexDeck) quits for real with its own command - no
-  // "Are you sure?" to wait for
+  // An app that only hides to the tray when closed (PlexDeck, Audiobookshelf) quits for real with its own command
+  // first - no close message: during a video it closed PlexDeck's player windows under it, and PlexDeck stopped
+  // with an error box. Its quit stops the video and puts the screen / HDR back, which can take ~16 s: up to 20 s.
   if (!force && running && running.quitArgs && running.exe) {
-    await wait(600);
-    if (isAlive(pid)) {
-      try { spawn(running.exe, running.quitArgs, { detached: true, stdio: 'ignore', windowsHide: true }).unref(); } catch {}
-      for (let t = 0; t < 24 && isAlive(pid); t++) await wait(250);
-    }
+    try { spawn(running.exe, running.quitArgs, { detached: true, stdio: 'ignore', windowsHide: true }).unref(); } catch {}
+    for (let t = 0; t < 80 && isAlive(pid); t++) await wait(250);
   }
+  // (then, or for any other program: Windows' close message)
+  if (isAlive(pid)) await killTree(pid, force);
   if (force) await wait(800);
   else if (isAlive(pid)) {
     // closed, or asking "Are you sure?" (DuckStation, PCSX2): keys.exe answers it as soon as it shows (it keeps
@@ -1273,27 +1290,19 @@ async function startProgram(exe, args, cwd, name, meta = {}) {
           if (!pid) pid = await childProcessOf(child.pid);
           if (!running || running.pid !== child.pid) return;
           if (!pid) { running = null; stopPadWatch(); focusSelf(); return; }
-          running.pid = pid;
-          // no 'exit' event for a process we didn't start: look now and then, and come back when it's gone
-          const watch = setInterval(() => {
-            if (!running || running.pid !== pid) return clearInterval(watch);
-            if (isAlive(pid)) return;
-            clearInterval(watch);
-            running = null;
-            stopPadWatch();
-            focusSelf();
-          }, 2000);
-          if (running.quitArgs) watchTrayHide(pid);
+          followPid({ ...running, pid });
         });
         return;
       }
       // Only the program that is running now: an older one that exits late (after the next
       // game started) must not switch off the PS button for the new one - nor come over it (MAME32 crashes when
       // anything comes in front of it)
-      if (running && running.pid === child.pid) running = null;
+      const was = running && running.pid === child.pid ? running : null;
+      if (was) running = null;
       if (running && isAlive(running.pid)) return;
       stopPadWatch();
       focusSelf();
+      if (was) followRestart(was, child.pid);
     });
     child.unref();
   });
@@ -1322,6 +1331,41 @@ function watchTrayHide(pid) {
     stopPadWatch();
     focusSelf();
   }, 1500);
+}
+
+// An app that ended by itself, not by Close (PlexDeck's update: its updater starts the new version up to ~2 min
+// later, windowed, without MediaDeck's --fullscreen --tv): a new copy in that time is followed again, so the PS
+// button and Close reach it - before, it sat over MediaDeck and PS did nothing
+// A program MediaDeck didn't start itself but follows (the copy it handed over to, one started again after an
+// update): no 'exit' event for it, so it is looked at now and then; when it's gone MediaDeck comes back
+function followPid(rec) {
+  running = rec;
+  const { pid } = rec;
+  startPadWatch();
+  const watch = setInterval(() => {
+    if (!running || running.pid !== pid) return clearInterval(watch);
+    if (isAlive(pid)) return;
+    clearInterval(watch);
+    const was = running;
+    running = null;
+    stopPadWatch();
+    focusSelf();
+    followRestart(was, pid);
+  }, 2000);
+  if (rec.quitArgs) watchTrayHide(pid);
+}
+
+function followRestart(was, oldPid) {
+  if (!was || !was.quitArgs || !was.exe || closing.has(oldPid)) return;
+  const until = Date.now() + 150000;
+  const t = setInterval(async () => {
+    if (Date.now() > until || running) return clearInterval(t);
+    const pid = await mainProcessOf(was.exe);
+    if (!pid || pid === oldPid || running) return;
+    clearInterval(t);
+    console.log(`[apps] ${was.name} started again (an update): followed`);
+    followPid({ ...was, pid });
+  }, 3000);
 }
 
 // ---------- Games ----------

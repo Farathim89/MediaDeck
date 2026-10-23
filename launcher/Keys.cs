@@ -154,7 +154,11 @@ static class Keys
         return GetForegroundWindow() == h;
     }
 
-    // Does the program still show a window (minimized counts)? An app that hides to the tray when closed doesn't.
+    [DllImport("user32.dll")] static extern IntPtr GetWindow(IntPtr h, uint cmd);
+
+    // Does the program still show its main window (minimized counts)? An app that hides to the tray when closed
+    // doesn't. Only windows without an owner: PlexDeck's player layers (owned by its main window) can stay shown
+    // a moment after the main one hid.
     static bool Visible(int pid)
     {
         bool any = false;
@@ -162,7 +166,7 @@ static class Keys
         {
             uint wp; GetWindowThreadProcessId(h, out wp);
             RECT r;
-            if (wp == pid && IsWindowVisible(h) && GetWindowRect(h, out r) && (IsIconic(h) || (r.R - r.L >= 200 && r.B - r.T >= 150))) { any = true; return false; }
+            if (wp == pid && IsWindowVisible(h) && GetWindow(h, 4) == IntPtr.Zero && GetWindowRect(h, out r) && (IsIconic(h) || (r.R - r.L >= 200 && r.B - r.T >= 150))) { any = true; return false; }
             return true;
         }, IntPtr.Zero);
         return any;

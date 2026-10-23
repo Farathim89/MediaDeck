@@ -17,7 +17,8 @@ const P = require('./paths');
 
 const CATALOG = {
   plexdeck: { name: 'PlexDeck', desc: 'Plex for movies & TV, with a TV mode for the controller', gh: 'Farathim89/plexdeck', asset: /^PlexDeck-Portable-.*\.zip$/i,
-    dir: 'PlexDeck', exe: 'PlexDeck.exe', quitArgs: ['--quit'], tile: { name: 'Plex', args: '--fullscreen --tv', subtitle: 'Movies & TV' } },
+    // updating: its own updater works in this folder after PlexDeck quit (a .zip / "unpacked" there, PlexDeck not running)
+    dir: 'PlexDeck', exe: 'PlexDeck.exe', quitArgs: ['--quit'], updating: 'plexdeck-data/update', tile: { name: 'Plex', args: '--fullscreen --tv', subtitle: 'Movies & TV' } },
   absda: { name: 'ABS-DA', desc: 'Audiobookshelf: audiobooks, podcasts and e-books', gh: 'Farathim89/abs-da', asset: /^ABS-DA-Folder-.*\.zip$/i,
     dir: 'Audiobookshelf', exe: 'ABS Desktop App.exe', quitArgs: ['--quit'], tile: { name: 'Audiobookshelf', subtitle: 'Audiobooks & podcasts' } },
   mpv: { name: 'mpv', desc: 'The video player behind the Media Player and Twitch', gh: 'zhongfly/mpv-winbuild', asset: /^mpv-x86_64-\d.*\.7z$/i,
