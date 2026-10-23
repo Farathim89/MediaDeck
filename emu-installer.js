@@ -10,6 +10,7 @@
 const fs = process.versions.electron ? require('original-fs') : require('fs');
 const fsp = fs.promises;
 const path = require('path');
+const crypto = require('crypto');
 const { execFile } = require('child_process');
 
 // Consoles: where their emulators go, their games folder (under the games root) and BIOS folder
@@ -245,7 +246,7 @@ async function resolveUrl(src, net) {
     // stamp: changes with every new build, also for "latest" / "continuous" tags
     const version = /^(latest|continuous|nightly)$/i.test(j.tag) ? (a.date || '').slice(0, 10) || j.tag
       : /^build-/i.test(j.tag) ? ((/v[\d.]+-\d+/.exec(a.name) || [])[0] || j.tag.slice(0, 14)) : j.tag;
-    return { url: a.url, version, size: a.size, stamp: `${j.tag}|${a.name}|${a.date}` };
+    return { url: a.url, version, size: a.size, stamp: `${j.tag}|${a.name}|${a.date}`, digest: a.digest || '' };
   }
   if (src.json) {
     const j = await (await net.fetch(src.json)).json();
@@ -261,21 +262,43 @@ async function resolveUrl(src, net) {
   return { url, version, stamp: url };
 }
 
+// A download against the SHA-256 GitHub gives for it ("sha256:<hex>"); nothing to check without one
+async function checkDigest(file, digest, what = 'The download') {
+  const sha = /^sha256:([0-9a-f]{64})$/.exec(digest || '');
+  if (!sha) return false;
+  const h = crypto.createHash('sha256');
+  await new Promise((res, rej) => fs.createReadStream(file).on('data', (b) => h.update(b)).on('end', res).on('error', rej));
+  if (h.digest('hex') !== sha[1]) throw new Error(`${what} does not match its checksum`);
+  return true;
+}
+
 async function download(url, file, net, onBytes) {
   const r = await net.fetch(url);
   if (!r.ok) throw new Error(`Download failed (${r.status})`);
   const total = Number(r.headers.get('content-length')) || 0;
   const out = fs.createWriteStream(file);
+  // a write that fails (disk full) ends the download with that error instead of an uncaught one and an install
+  // that never ends; the file is always closed (else its folder can't be removed)
+  let failed = null;
+  out.on('error', (e) => { failed = e; });
   const reader = r.body.getReader();
   let got = 0;
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    got += value.length;
-    if (!out.write(Buffer.from(value))) await new Promise((res) => out.once('drain', res));
-    onBytes(got, total);
+  try {
+    for (;;) {
+      if (failed) throw failed;
+      const { done, value } = await reader.read();
+      if (done) break;
+      got += value.length;
+      if (!out.write(Buffer.from(value))) await new Promise((res) => { out.once('drain', res); out.once('error', res); });
+      onBytes(got, total);
+    }
+    if (failed) throw failed;
+    await new Promise((res, rej) => out.end((e) => (e ? rej(e) : res())));
+  } catch (e) {
+    out.destroy();
+    try { await reader.cancel(); } catch {}
+    throw e;
   }
-  await new Promise((res, rej) => out.end((e) => (e ? rej(e) : res())));
 }
 
 function unpack(sevenZip, archive, dest) {
@@ -336,12 +359,13 @@ async function install(emuId, consoleId, opts) {
   if (fs.existsSync(dest) && (await fsp.readdir(dest)).length) throw new Error(`${e.name} is already in ${path.relative(opts.emuDir, dest)}`);
   const say = opts.progress || (() => {});
   say(`${e.name}: finding the latest version…`, 0);
-  const { url, version, stamp } = await resolveUrl(e.src, opts.net);
+  const { url, version, stamp, digest } = await resolveUrl(e.src, opts.net);
   const work = path.join(opts.tempDir, `emu-install-${emuId}-${Date.now()}`);
   await fsp.mkdir(work, { recursive: true });
   try {
     const archive = path.join(work, decodeURIComponent(url.split('/').pop().split('?')[0]) || 'download');
     await download(url, archive, opts.net, (got, total) => say(`${e.name} ${version}: downloading ${Math.round(got / 1048576)}${total ? ` / ${Math.round(total / 1048576)}` : ''} MB`, total ? got / total : 0));
+    await checkDigest(archive, digest, `${e.name} ${version}`);
     say(`${e.name}: unpacking…`, 1);
     const out = path.join(work, 'out');
     const exeDir = await unpackTo(e, opts.sevenZip, archive, out);
@@ -428,13 +452,14 @@ async function update(mod, opts) {
   const e = EMULATORS[id];
   const say = opts.progress || (() => {});
   say(`${e.name}: finding the latest version…`, 0);
-  const { url, version, stamp } = await resolveUrl(e.src, opts.net);
+  const { url, version, stamp, digest } = await resolveUrl(e.src, opts.net);
   const progDir = path.dirname(path.isAbsolute(mod.exe) ? mod.exe : path.join(mod.dir, mod.exe));
   const work = path.join(opts.tempDir, `emu-update-${id}-${Date.now()}`);
   await fsp.mkdir(work, { recursive: true });
   try {
     const archive = path.join(work, decodeURIComponent(url.split('/').pop().split('?')[0]) || 'download');
     await download(url, archive, opts.net, (got, total) => say(`${e.name} ${version}: downloading ${Math.round(got / 1048576)}${total ? ` / ${Math.round(total / 1048576)}` : ''} MB`, total ? got / total : 0));
+    await checkDigest(archive, digest, `${e.name} ${version}`);
     say(`${e.name}: updating…`, 1);
     const out = path.join(work, 'out');
     const exeDir = await unpackTo(e, opts.sevenZip, archive, out);
@@ -451,4 +476,4 @@ async function update(mod, opts) {
   }
 }
 
-module.exports = { CONSOLES, EMULATORS, STARTER, makeStarterFolders, catalog, install, targetDir, resolveUrl, checkUpdates, update, emuIdOf, githubLatest, githubWith, download, unpack, findExeDir };
+module.exports = { CONSOLES, EMULATORS, STARTER, makeStarterFolders, catalog, install, targetDir, resolveUrl, checkUpdates, update, emuIdOf, githubLatest, githubWith, download, checkDigest, unpack, findExeDir };

@@ -342,7 +342,8 @@ const Home = (() => {
     b.dataset.rom = g.rom;
     b._game = { ...g, moduleId: g.moduleId || (t && t.moduleId) };
     // A downloaded cover (encrypted store) first, then a picture found next to the game
-    const src = [Media.url('cover', { p: g.rom }), ...(g.cover ? [Media.url('thumb', { p: g.cover, w: 480 })] : [])];
+    // (with its console: the same file name on two consoles has a cover for each)
+    const src = [Media.url('cover', { p: g.rom, ...(g.console ? { c: g.console } : {}) }), ...(g.cover ? [Media.url('thumb', { p: g.cover, w: 480 })] : [])];
     b.innerHTML = `
       <div class="thumb game-art" data-src='${UI.esc(JSON.stringify(src))}'>
         <span class="thumb-icon game-logo"></span>
@@ -391,13 +392,16 @@ const Home = (() => {
     }
     if (c === 'forget') {
       await api.removeRecent(g.rom);
-      // the console page's row: that card goes, the focus moves to its neighbour (or the games)
-      const card = Nav.current;
+      // the console page's row: that game's card goes (found by its file - the focus may have moved meanwhile, and
+      // the focused card was removed instead), the focus moves to its neighbour (or the games)
+      const card = [...pageEl.querySelectorAll('.console-recent .game-card')].find((b) => b.dataset.rom === g.rom);
+      if (!card) return;
       const row = card.closest('.console-recent');
       const next = card.nextElementSibling || card.previousElementSibling;
+      const hadFocus = Nav.current === card;
       card.remove();
-      if (!row.querySelector('.game-card')) row.remove();
-      Nav.focus(next && next.isConnected ? next : pageEl.querySelector('.games-section .game-card'));
+      if (row && !row.querySelector('.game-card')) row.remove();
+      if (hadFocus) Nav.focus(next && next.isConnected ? next : pageEl.querySelector('.games-section .game-card'));
     }
   }
 
@@ -885,8 +889,18 @@ const Home = (() => {
         App.state.config = r.config;
         await loadConsoles();
         if (!quiet || r.added || r.removed) {
-          if (emuDetail && consoleById(emuDetail)) { const wasScan = Nav.current && Nav.current.dataset.act === 'scan'; renderPage(); const b = wasScan && pageEl.querySelector('[data-act="scan"]'); if (b) Nav.focus(b); }
-          else if (activeTab === 'emus' || activeTab === 'home') { const focusId = Nav.current && (Nav.current.dataset.console || Nav.current.dataset.id); renderTabs(); renderPage(); const back = focusId && (pageEl.querySelector(`[data-console="${focusId}"]`) || pageEl.querySelector(`[data-id="${focusId}"]`)); if (back) Nav.focus(back); }
+          // the same card / button / tab again after the redraw (by its game file, action, console, id or tab) - else
+          // the focus was on a removed card (favourite games, the console page) and the controller did nothing
+          const c = Nav.current && el.contains(Nav.current) ? Nav.current.dataset : null;
+          const was = c && [['rom', c.rom], ['act', c.act], ['console', c.console], ['id', c.id], ['tab', c.tab]].find(([, v]) => v);
+          let redrawn = true;
+          if (emuDetail && consoleById(emuDetail)) renderPage();
+          else if (activeTab === 'emus' || activeTab === 'home') { renderTabs(); renderPage(); }
+          else redrawn = false;
+          if (redrawn && App.current === Home && !UI.isOpen) {
+            const back = was && el.querySelector(`[data-${was[0]}="${CSS.escape(was[1])}"]`);
+            if (back) Nav.focus(back, { scroll: false }); else focusPage();
+          }
         }
         const n = (x, one, many) => `${x} ${x === 1 ? one : many}`;
         const msg = r.added ? `${n(r.added, 'new game', 'new games')} found` : 'No new games';
@@ -1197,6 +1211,8 @@ const Home = (() => {
     await loadConsoles();
     renderTabs();
     renderPage();
+    // (the first-start setup opened over Home meanwhile: its focus stays there - A on Welcome opened the Media Player)
+    if (App.current !== Home) return;
     focusPage();
   }
 

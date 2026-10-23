@@ -320,7 +320,9 @@ async function scanGames(mod) {
 // Command line for starting a game: the module's gameArgs with {rom}, {romname}, {romdir}, {core},
 // {system} (set per game folder, e.g. ares: "Mega Drive"), {emudir} (the emulator's own folder)
 function launchArgs(mod, rom) {
-  const folder = (mod.romFolders || []).find((f) => rom.toLowerCase().startsWith(folderPath(f).toLowerCase()));
+  // the game's own folder: the deepest one it is inside ("GameBoy" must not take "GameBoy Advance"'s games)
+  const inside = (f) => { const d = folderPath(f).toLowerCase().replace(/[\\/]+$/, ''); return rom.toLowerCase().startsWith(d + path.sep) || rom.toLowerCase().startsWith(d + '/'); };
+  const folder = (mod.romFolders || []).filter(inside).sort((x, y) => folderPath(y).length - folderPath(x).length)[0];
   const tokens = [];
   const re = /"([^"]*)"|(\S+)/g;
   let m;

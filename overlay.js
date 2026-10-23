@@ -33,10 +33,15 @@ async function show(data) {
   ov.webContents.setBackgroundThrottling(false);   // see main.js padsToGame
   ov.webContents.send('overlay:open', info);
   ov.showInactive();
-  // Take the keyboard/controller from the game (Windows only allows this with a little trick)
+  // Take the keyboard/controller from the game (Windows only allows this with a little trick) - again until the
+  // overlay really has it (once in a while Windows left it with the game: the controller did nothing in the menu)
   const h = ov.getNativeWindowHandle();
-  d.focusWindow(process.arch === 'x64' ? h.readBigUInt64LE(0).toString() : String(h.readUInt32LE(0)));
+  const hwnd = process.arch === 'x64' ? h.readBigUInt64LE(0).toString() : String(h.readUInt32LE(0));
+  d.focusWindow(hwnd);
   setTimeout(() => { if (ov && !ov.isDestroyed()) ov.focus(); }, 120);
+  for (const ms of [400, 800, 1300, 2000]) {
+    setTimeout(() => { if (ov && !ov.isDestroyed() && ov.isVisible() && !ov.isFocused()) { d.focusWindow(hwnd); ov.focus(); } }, ms);
+  }
 }
 
 function hide() {
@@ -44,6 +49,14 @@ function hide() {
 }
 
 const isOpen = () => !!(ov && !ov.isDestroyed() && ov.isVisible());
+
+// PS again while it is open (something else took its focus meanwhile): it takes the focus back
+function refocus() {
+  if (!isOpen()) return;
+  const h = ov.getNativeWindowHandle();
+  d.focusWindow(process.arch === 'x64' ? h.readBigUInt64LE(0).toString() : String(h.readUInt32LE(0)));
+  setTimeout(() => { if (ov && !ov.isDestroyed()) ov.focus(); }, 120);
+}
 
 function init(deps) {
   d = deps;
@@ -55,4 +68,4 @@ function init(deps) {
   });
 }
 
-module.exports = { init, show, hide, isOpen };
+module.exports = { init, show, hide, isOpen, refocus };

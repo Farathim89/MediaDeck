@@ -93,12 +93,17 @@ const KNOWN = [
   { name: 'BizHawk', system: 'Multi-system', exes: ['emuhawk.exe'], gameArgs: '"{rom}"', romExtensions: ['nes', 'sfc', 'gb', 'gba', 'n64', 'zip'] },
 ];
 
+// (a BOM in front - Notepad / PowerShell 5.1 write one - used to make the file "unreadable", and then it was
+// replaced by a fresh default: its game folders, arguments and hotkeys gone)
 function readJson(file) {
-  try { return JSON.parse(fs.readFileSync(file, 'utf8').replace(/^ï»¿/, '')); } catch { return null; }
+  try { return JSON.parse(fs.readFileSync(file, 'utf8').replace(/^\uFEFF/, '')); } catch { return null; }
 }
 
+// written whole or not at all (a crash halfway left a broken file, which then counted as missing)
 function writeJson(file, data) {
-  fs.writeFileSync(file, JSON.stringify(data, null, 2));
+  const tmp = file + '.tmp';
+  fs.writeFileSync(tmp, JSON.stringify(data, null, 2));
+  fs.renameSync(tmp, file);
 }
 
 // All .exe files in a folder and one level below it (relative paths)
@@ -222,6 +227,8 @@ async function scan(root, depth = 0) {
         continue;
       }
       if (!mod) {
+        // a module file that is there but can't be read is never replaced: kept aside, the folder is set up again
+        if (fs.existsSync(file)) { try { fs.copyFileSync(file, `${file}.unreadable-${Date.now()}`); } catch {} }
         mod = await detect(full, e.name);
         if (!mod) continue;
         writeJson(file, mod);

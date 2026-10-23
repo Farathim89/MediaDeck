@@ -30,6 +30,7 @@
   let seekTimer = null;
   let seekStep = { at: 0, count: 0 };
   let ending = false;
+  let afterEnd = null;   // what comes after the end (next file / start over / close): cancelled by any new choice
   let subLangChoice = null; // language picked by hand, kept for the next files
   let closing = false;
 
@@ -58,6 +59,9 @@
 
   // ---------- Loading files ----------
   async function load(i, { fromStart = false } = {}) {
+    // (RB during "Next: …" played the next one, then the timer the one after: an episode skipped)
+    clearTimeout(afterEnd);
+    afterEnd = null;
     index = i;
     file = data.list[i];
     isMusic = !stream() && !VIDEO_EXT.includes(ext(file));
@@ -184,11 +188,12 @@
     saveProgress(true);
     if (index < data.list.length - 1 && data.settings.autoplayNext !== false) {
       flashText(`Next: ${stripExt(name(data.list[index + 1]))}`);
-      setTimeout(() => load(index + 1, { fromStart: true }), 1200);
+      const next = index + 1;
+      afterEnd = setTimeout(() => load(next, { fromStart: true }), 1200);
     } else if (opt.repeat === 'list' && data.list.length) {
-      setTimeout(() => load(0, { fromStart: true }), 800);
+      afterEnd = setTimeout(() => load(0, { fromStart: true }), 800);
     } else {
-      setTimeout(close, 800);
+      afterEnd = setTimeout(close, 800);
     }
   }
 

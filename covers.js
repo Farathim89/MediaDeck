@@ -243,7 +243,10 @@ const adbFlyer = (short, net) => fetchImage(`https://adb.arcadeitalia.net/?mame=
 async function arcadeCover(short, net) {
   if (!adbPlaceholder) adbPlaceholder = adbFlyer('zzzz-no-such-game', net);
   const none = await adbPlaceholder;
-  const real = (img) => (img && !(none && img.equals(none)) ? img : null);
+  // the placeholder not known (that first answer failed): asked again next time, and no cover is kept now - the
+  // MAME logo used to be saved as every flyer-less game's cover and never fetched again
+  if (!none) { adbPlaceholder = null; return null; }
+  const real = (img) => (img && !img.equals(none) ? img : null);
   let img = real(await adbFlyer(short, net));
   if (img) return img;
   try {
@@ -387,14 +390,14 @@ async function findCover(mod, game, net, opts = {}) {
 // opts: { net, has(rom), save(rom, img), progress(p), switchIndex(), skip(rom), missed(rom) }
 async function downloadAll(mod, games, opts) {
   const { net, has, save, progress = () => {}, skip = () => false, missed = () => {} } = opts;
-  const todo = games.filter((g) => (!g.cover || g.coverIsIcon) && !has(g.rom) && !skip(g.rom));
+  const todo = games.filter((g) => (!g.cover || g.coverIsIcon) && !has(g.rom, consoleOf(mod, g.rom).console) && !skip(g.rom));
   let done = 0, found = 0;
   const queue = [...todo];
   const worker = async () => {
     while (queue.length) {
       const g = queue.shift();
       const img = await findCover(mod, g, net, opts);
-      if (img) { await save(g.rom, img); found++; } else missed(g.rom);
+      if (img) { await save(g.rom, img, consoleOf(mod, g.rom).console); found++; } else missed(g.rom);
       done++;
       progress({ done, total: todo.length, found });
     }

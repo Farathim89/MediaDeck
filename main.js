@@ -47,14 +47,20 @@ function readJson(file, fallback) {
 function writeJson(file, data) {
   fs.mkdirSync(path.dirname(file), { recursive: true });
   const tmp = file + '.tmp';
-  fs.writeFileSync(tmp, JSON.stringify(data, null, 2));
+  // on the disk before it takes the old one's place (a power cut right after could leave an empty file)
+  const fd = fs.openSync(tmp, 'w');
+  try { fs.writeSync(fd, JSON.stringify(data, null, 2)); fs.fsyncSync(fd); } finally { fs.closeSync(fd); }
   fs.renameSync(tmp, file);
 }
 
 function loadConfig() {
   const defaults = defaultConfig();
   config = readJson(CONFIG_FILE, null);
-  const fresh = !config;
+  // there but unreadable (a typo, a cut-off save): kept as config.json.broken-<time>, and MediaDeck starts with
+  // its defaults without the first-start setup - it used to be replaced silently, as if new
+  const broken = !config && fs.existsSync(CONFIG_FILE);
+  if (broken) { try { fs.copyFileSync(CONFIG_FILE, `${CONFIG_FILE}.broken-${Date.now()}`); } catch {} console.error('[config] config.json could not be read; kept as config.json.broken-*'); }
+  const fresh = !config && !broken;
   if (!config) {
     config = defaults;
     writeJson(CONFIG_FILE, config);
@@ -63,6 +69,7 @@ function loadConfig() {
   const setupKnown = !!(config.settings && 'setupDone' in config.settings);
   config.settings = { ...defaults.settings, ...(config.settings || {}) };
   if (!fresh && !setupKnown) config.settings.setupDone = true;
+  if (broken) config.settings.setupDone = true;
   // A new MediaDeck keeps its games in its own folder: Games\<maker>\<console>, one folder per console, made now
   if (fresh) {
     try { emuInstaller.makeStarterFolders(P.GAMES); config.settings.gamesFolder = P.rel(P.GAMES); writeJson(CONFIG_FILE, config); } catch {}
@@ -116,8 +123,16 @@ let portableKey = null;
 const portableData = () => !(config && config.settings && config.settings.portableData === false);
 function pKey() {
   if (portableKey) return portableKey;
-  try { portableKey = Buffer.from(fs.readFileSync(PORTABLE_KEY_FILE, 'utf8').trim(), 'base64'); } catch {}
+  let text = null;
+  try { text = fs.readFileSync(PORTABLE_KEY_FILE, 'utf8'); } catch (e) {
+    // there but not readable right now (held by antivirus / a sync tool): never replaced by a new key, which would
+    // lock away the history, favourites and covers for good - this start works without them
+    if (e.code !== 'ENOENT') throw new Error(`portable.key can't be read (${e.code})`);
+  }
+  if (text !== null) portableKey = Buffer.from(text.trim(), 'base64');
   if (!portableKey || portableKey.length !== 32) {
+    // a damaged key is kept aside (portable.key.bad-<time>) before a new one is made
+    if (text !== null) { try { fs.renameSync(PORTABLE_KEY_FILE, `${PORTABLE_KEY_FILE}.bad-${Date.now()}`); } catch {} }
     portableKey = crypto.randomBytes(32);
     fs.mkdirSync(DATA, { recursive: true });
     fs.writeFileSync(PORTABLE_KEY_FILE, portableKey.toString('base64'));
@@ -140,7 +155,9 @@ function unlock(buf) {
 }
 // A file locked for another PC / Windows account: kept as <file>.other-pc (back on that PC it can be put back)
 function keepUnreadable(file) {
-  try { if (!fs.existsSync(file + '.other-pc')) fs.copyFileSync(file, file + '.other-pc'); } catch {}
+  // a second unreadable one (a third PC) gets its own copy instead of none
+  const copy = fs.existsSync(file + '.other-pc') ? `${file}.other-pc-${Date.now()}` : file + '.other-pc';
+  try { fs.copyFileSync(file, copy); } catch {}
 }
 // Files locked the other way are locked again the way the setting says (at start, and when it changes)
 function relockAll() {
@@ -197,10 +214,13 @@ function readSecret(file, fallback) {
   try { buf = fs.readFileSync(file); } catch { return fallback; }
   try { return JSON.parse(unlock(buf)); } catch { keepUnreadable(file); return fallback; }
 }
+// (not saved this time - the key or the file held for a moment - instead of an error box; the old file stays)
 function writeSecret(file, data) {
   if (!portableData() && !safeStorage.isEncryptionAvailable()) return;
-  fs.writeFileSync(file + '.tmp', lock(JSON.stringify(data)));
-  fs.renameSync(file + '.tmp', file);
+  try {
+    fs.writeFileSync(file + '.tmp', lock(JSON.stringify(data)));
+    fs.renameSync(file + '.tmp', file);
+  } catch (e) { console.error('[data]', path.basename(file), 'not saved:', e.message); }
 }
 // Played / favourite games: their files are kept relative to MediaDeck's folder when they are in it (Games\…)
 const portGame = (g, fn) => ({ ...g, rom: fn(g.rom), ...(typeof g.cover === 'string' && /[\\/]/.test(g.cover) ? { cover: fn(g.cover) } : {}) });
@@ -210,8 +230,10 @@ const writeGames = (file, list) => writeSecret(file, list.map((g) => portGame(g,
 function writeProgress(data) {
   if (!portableData() && !safeStorage.isEncryptionAvailable()) { console.error('[progress] encryption not available; not saved'); return; }
   const tmp = PROGRESS_FILE + '.tmp';
-  fs.writeFileSync(tmp, lock(JSON.stringify(data)));
-  fs.renameSync(tmp, PROGRESS_FILE);
+  try {
+    fs.writeFileSync(tmp, lock(JSON.stringify(data)));
+    fs.renameSync(tmp, PROGRESS_FILE);
+  } catch (e) { console.error('[progress] not saved:', e.message); }
 }
 
 function setProgress(file, data) {
@@ -263,10 +285,17 @@ function createWindow() {
   win.setMenu(null);
   win.loadFile(path.join(__dirname, 'renderer', 'index.html'));
   win.webContents.on('before-input-event', (e, input) => onShortcut(e, input));
+  // MediaDeck's own page only: a file or link dropped on the window would load there - and get its preload (start
+  // programs, power, settings)
+  win.webContents.on('will-navigate', (e) => e.preventDefault());
+  win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
   win.on('closed', () => { win = null; app.quit(); });
   for (const ev of ['display-metrics-changed', 'display-added', 'display-removed']) screen.on(ev, coverScreenAgain);
   // Leaving the PS menu any other way (back to the game, save state, Alt+Tab): stop being on top
   win.on('blur', () => {
+    // just came to the front (PS menu, back from a program) and Windows or the program behind took the focus:
+    // focusSelf takes it back - no stepping aside now
+    if (Date.now() < claimUntil) { win.webContents.send('win-active', false); return; }
     if (menuOnTop) holdOnTop(false);
     win.webContents.send('win-active', false);
     // back to a running game (after MediaDeck's menu): let go of the pads again and get out of the way
@@ -345,7 +374,7 @@ function rememberWindow() {
     const prev = s.window || {};
     s.window = { ...prev, maximized: win.isMaximized() };
     if (!s.fullscreen && !win.isMaximized()) Object.assign(s.window, win.getBounds());
-    writeJson(CONFIG_FILE, config);
+    try { writeJson(CONFIG_FILE, config); } catch (e) { console.error('[config]', e.message); }   // (held by antivirus a moment)
   }, 600);
 }
 
@@ -374,13 +403,29 @@ function bringToFront() {
   win.webContents.send('app-focus');
 }
 
-// After a game closes: Windows won't let a program take the focus back by itself, so
-// keys.exe (which can) puts our window in front, then the usual bringToFront.
+// After a game closes, for the PS menu: Windows won't let a program take the focus back by itself, so
+// keys.exe (which can) puts our window in front, then the usual bringToFront - again and again for 2 s until
+// MediaDeck really is in front (once in a while Windows still left it with the program, the controller then
+// did nothing in the menu). Meanwhile a lost focus is taken back too - not from MediaDeck's own windows (the
+// player, YouTube, Twitch), and not after the player went back to the game on purpose (letGoOfFocus).
+let claimUntil = 0, claiming = false;
 function focusSelf() {
   if (!win || win.isDestroyed()) return;
+  claimUntil = Date.now() + 2000;
   bringToFront();
-  keysExe(['focus', hwndOf(win)]).then(() => setTimeout(bringToFront, 150));
+  if (claiming) return;
+  claiming = true;
+  const step = async () => {
+    if (!win || win.isDestroyed() || Date.now() > claimUntil) { claiming = false; return; }
+    if (!BrowserWindow.getFocusedWindow()) {
+      await keysExe(['focus', hwndOf(win)]);
+      if (win && !win.isDestroyed() && Date.now() <= claimUntil && !win.isFocused()) bringToFront();
+    }
+    setTimeout(step, 250);
+  };
+  setTimeout(step, 100);
 }
+const letGoOfFocus = () => { claimUntil = 0; };
 
 // ---------- Launching apps ----------
 function launch(tile) {
@@ -561,8 +606,15 @@ async function playTwitch(req) {
     return;
   }
   // live: Streamlink serves the stream (ads left out) on a local address the player reads
-  const proc = me.proc = spawn(STREAMLINK, ['--player-external-http', '--player-external-http-interface', '127.0.0.1', '--player-external-http-port', '0',
-    '--player-external-http-continuous', 'no', ...streamlinkFfmpeg(), ...pick.slice(0, -1), `https://www.twitch.tv/${req.channel}`, pick[pick.length - 1]], { windowsHide: true });
+  // (Streamlink that can't start - blocked, half updated - or never gives an address: back to Twitch with a note;
+  // before, the Twitch window stayed hidden and the PS button did nothing)
+  let proc;
+  try {
+    proc = me.proc = spawn(STREAMLINK, ['--player-external-http', '--player-external-http-interface', '127.0.0.1', '--player-external-http-port', '0',
+      '--player-external-http-continuous', 'no', ...streamlinkFfmpeg(), ...pick.slice(0, -1), `https://www.twitch.tv/${req.channel}`, pick[pick.length - 1]], { windowsHide: true });
+  } catch (e) { back(`Couldn't start Streamlink: ${e.message}`); return; }
+  proc.on('error', (e) => { if (twitchPlay === me) back(`Couldn't start Streamlink: ${e.message}`); });
+  setTimeout(() => { if (twitchPlay === me && !started) { try { proc.kill(); } catch {} back(`Couldn't open ${req.channel}`); } }, 45000);
   let out = '';
   let started = false;
   const onData = async (d) => {
@@ -611,6 +663,8 @@ async function installApps(ids, quiet = false) {
       } catch (err) { results.push({ id, name: (appInstaller.CATALOG[id] || {}).name || id, ok: false, error: err.message }); }
     }
   } finally { appInstalling = false; }
+  // FFmpeg just installed or updated: the media server uses it at once (it only looked at start)
+  if (server && results.some((r) => r.ok)) await server.findTools().catch(() => {});
   return { results, config };
 }
 
@@ -658,7 +712,15 @@ function startPadWatch() {
   if (padwatch) return;
   const exe = P.tool('padwatch.exe');
   if (!fs.existsSync(exe)) return;
-  padwatch = spawn(exe, pads.padwatchArgs(config.controllers), { windowsHide: true });
+  // (one that can't start - blocked a moment - is tried again like one that stopped; before, the PS button
+  // stayed dead for the whole session, and a throw here stopped the rest of the start)
+  try { padwatch = spawn(exe, pads.padwatchArgs(config.controllers), { windowsHide: true }); } catch (e) { console.error('[padwatch]', e.message); padwatch = null; return; }
+  padwatch.on('error', (e) => {
+    console.error('[padwatch]', e.message);
+    if (padwatch !== me) return;
+    padwatch = null;
+    if (!quitting) setTimeout(() => { if (!quitting) startPadWatch(); }, 5000);
+  });
   padwatch.stdout.on('data', (d) => {
     for (const line of String(d).split(/\r?\n/)) {
       if (line.trim() === 'home') homePressed();
@@ -680,7 +742,7 @@ function homeReleased() { clearTimeout(holdTimer); holdTimer = null; }
 // PS / Guide / Back+Start (from padwatch, or from the test switch)
 function homePressed() {
   if (!win || win.isDestroyed()) return;
-  if (overlay.isOpen()) return;
+  if (overlay.isOpen()) { overlay.refocus(); return; }
   if (youtube.isShown()) { youtubeHome(); return; }
   if (twitch.isShown()) { twitchHome(); return; }
   // a Twitch stream in MediaDeck's player: B / Back there goes back to Twitch
@@ -701,10 +763,9 @@ function homePressed() {
   // nothing of ours running and MediaDeck in the background: another program has the controller - leave it
   if (!alive && !mpv.isOpen()) return;
   if (alive) { holdOnTop(true); freezeGame(); }
-  bringToFront();
-  // Some full-screen games (Mednafen/SDL) minimise themselves and Windows hands the focus to
-  // another program: the menu shows but the controller wouldn't reach it → take it with keys.exe
-  if (alive) setTimeout(() => { if (win && !win.isDestroyed() && !win.isFocused()) focusSelf(); }, 400);
+  // Over a program Windows often keeps the focus with it (the menu showed but the controller didn't reach it):
+  // the sure way, until MediaDeck really is in front (focusSelf); over the media player (ours) the usual one
+  if (alive) focusSelf(); else bringToFront();
   win.webContents.send('running-menu', alive ? { ...overlayInfo(), alive: true } : null);
 }
 
@@ -875,7 +936,7 @@ function startTestSwitch() {
       if (u.pathname === '/missing-covers') {
         const out = {};
         for (const c of await consoleList(true)) {
-          const list = (await consoleGames(c.id)).list.filter((g) => (!g.cover || g.coverIsIcon) && !server.hasCover(g.rom));
+          const list = (await consoleGames(c.id)).list.filter((g) => (!g.cover || g.coverIsIcon) && !server.hasCover(g.rom, g.console));
           if (list.length) out[c.id] = list.map((g) => ({ title: g.title, file: path.basename(g.rom) }));
         }
         return send(out);
@@ -914,8 +975,10 @@ function startCursorHide() {
   const secs = Number(config.settings.hideCursor) || 0;
   const exe = P.tool('cursorhide.exe');
   if (!secs || !fs.existsSync(exe)) return;
-  const me = cursorHide = spawn(exe, [String(secs), String(process.pid)], { windowsHide: true, stdio: 'ignore' });
+  let me;
+  try { me = cursorHide = spawn(exe, [String(secs), String(process.pid)], { windowsHide: true, stdio: 'ignore' }); } catch (e) { console.error('[cursorhide]', e.message); cursorHide = null; return; }
   me.on('exit', () => { if (cursorHide === me) cursorHide = null; });
+  me.on('error', () => { if (cursorHide === me) cursorHide = null; });
 }
 function stopCursorHide() {
   const exe = P.tool('cursorhide.exe');
@@ -931,8 +994,9 @@ function stopPadWatch(force = false) {
   if (padwatch) { const p = padwatch; padwatch = null; try { p.kill(); } catch {} }
 }
 
+// (EPERM: running, only with more rights than ours - a game started as admin or kept by its anti-cheat)
 function isAlive(pid) {
-  try { process.kill(pid, 0); return true; } catch { return false; }
+  try { process.kill(pid, 0); return true; } catch (e) { return e.code === 'EPERM'; }
 }
 // Another program runs now (a game started while the last one was still closing): MediaDeck must not come over it
 // (MAME32 crashes when anything comes in front of it)
@@ -958,11 +1022,21 @@ function mainProcessOf(exe) {
   }));
 }
 
+// The first program a (now ended) process started, or null - a launcher's game
+function childProcessOf(pid) {
+  const ps = `(Get-CimInstance Win32_Process -Filter "ParentProcessId=${Number(pid)}" | Where-Object { $_.Name -notmatch '^(conhost|WerFault)\.exe$' } | Sort-Object CreationDate | Select-Object -First 1).ProcessId`;
+  return new Promise((resolve) => execFile('powershell.exe', ['-NoProfile', '-Command', ps], { windowsHide: true }, (err, out) => {
+    const id = parseInt(String(out || '').trim(), 10);
+    resolve(Number.isFinite(id) && isAlive(id) ? id : null);
+  }));
+}
+
 function killTree(pid, force) {
   return new Promise((resolve) => execFile('taskkill', ['/PID', String(pid), '/T', ...(force ? ['/F'] : [])], { windowsHide: true }, (err, out, errOut) => {
     // A polite close of the whole tree is refused when a child (e.g. a console host) can only be
     // ended by force: then nothing gets the message. Ask the program itself instead.
-    if (!force && /could not be terminated/i.test(String(errOut || '') + String(out || ''))) {
+    // (its exit code too: the message is in Windows' own language)
+    if (!force && (err || /could not be terminated/i.test(String(errOut || '') + String(out || '')))) {
       execFile('taskkill', ['/PID', String(pid)], { windowsHide: true }, () => resolve());
     } else resolve();
   }));
@@ -1038,19 +1112,24 @@ async function closeRunning(force) {
 // pad even without the focus. Thawed on any way back: Back to game, a menu action, Close, Alt+Tab, MediaDeck quitting.
 // Only emulators: PC games and apps may have anti-cheat that doesn't like it.
 let frozen = null;
+// freeze and thaw one after the other: PS then Back at once started both, and a thaw that finished first left the
+// game frozen for good (Windows counts the freezes)
+let freezeQueue = Promise.resolve();
+const inOrder = (args) => (freezeQueue = freezeQueue.then(() => keysExe(args)));
 async function freezeGame() {
   if (frozen || !running || !isAlive(running.pid) || !running.emulator || running.emulator === 'PC games') return;
   frozen = running.pid;
-  await keysExe(['freeze', String(frozen)]);
+  await inOrder(['freeze', String(frozen)]);
 }
 async function thawGame() {
   if (!frozen) return;
   const pid = frozen;
   frozen = null;
-  await keysExe(['thaw', String(pid)]);
+  await inOrder(['thaw', String(pid)]);
 }
 
 function resumeRunning() {
+  letGoOfFocus();
   thawGame();
   holdOnTop(false);
   if (running) closing.delete(running.pid);   // it didn't close and the player went back to it: no longer "closing"
@@ -1163,6 +1242,7 @@ async function startProgram(exe, args, cwd, name, meta = {}) {
     child.once('error', (e) => resolve({ ok: false, error: e.message }));
     child.once('spawn', () => {
       resolve({ ok: true });
+      letGoOfFocus();
       holdOnTop(false);
       running = { pid: child.pid, name: name || path.basename(exe, '.exe'), exe, ...meta };
       startPadWatch();
@@ -1177,6 +1257,7 @@ async function startProgram(exe, args, cwd, name, meta = {}) {
       }
       padsToGame(true);
       if (config.settings.minimizeOnLaunch !== false) setTimeout(() => win && !win.isDestroyed() && win.minimize(), 400);
+      if (meta.quitArgs) watchTrayHide(child.pid);
     });
     // Come back to the home screen when the program closes (ignore launchers that exit right away;
     // the controller combo keeps working for whatever they started)
@@ -1185,8 +1266,13 @@ async function startProgram(exe, args, cwd, name, meta = {}) {
       if (Date.now() - started <= 5000) {
         // Gone at once: a program that runs only once (PlexDeck, Audiobookshelf) handed over to the copy
         // already running - follow that one, so the PS button and Close still reach it
-        mainProcessOf(exe).then((pid) => {
-          if (!pid || !running || running.pid !== child.pid) return;
+        mainProcessOf(exe).then(async (pid) => {
+          if (!running || running.pid !== child.pid) return;
+          // no copy of it: a launcher that started the real program (follow that), else it really ended at once (a
+          // bad game file, a missing DLL) - MediaDeck comes back; it used to stay minimized with the PS button dead
+          if (!pid) pid = await childProcessOf(child.pid);
+          if (!running || running.pid !== child.pid) return;
+          if (!pid) { running = null; stopPadWatch(); focusSelf(); return; }
           running.pid = pid;
           // no 'exit' event for a process we didn't start: look now and then, and come back when it's gone
           const watch = setInterval(() => {
@@ -1195,8 +1281,9 @@ async function startProgram(exe, args, cwd, name, meta = {}) {
             clearInterval(watch);
             running = null;
             stopPadWatch();
-            bringToFront();
+            focusSelf();
           }, 2000);
+          if (running.quitArgs) watchTrayHide(pid);
         });
         return;
       }
@@ -1206,10 +1293,35 @@ async function startProgram(exe, args, cwd, name, meta = {}) {
       if (running && running.pid === child.pid) running = null;
       if (running && isAlive(running.pid)) return;
       stopPadWatch();
-      bringToFront();
+      focusSelf();
     });
     child.unref();
   });
+}
+
+// An app that hides to the tray when its window is closed (PlexDeck, Audiobookshelf: their ✕ / Alt+F4) doesn't
+// end, so MediaDeck never came back: once its window has been gone ~3 s the player has left it. Started from
+// MediaDeck, ✕ means done: it quits for real with its own command (PlexDeck puts the screen / HDR back first),
+// and MediaDeck comes back.
+function watchTrayHide(pid) {
+  let seen = false;
+  let gone = 0;
+  const since = Date.now();
+  const t = setInterval(async () => {
+    if (!running || running.pid !== pid || !isAlive(pid)) return clearInterval(t);
+    if (closing.has(pid)) return;                   // Close from the PS menu takes care of it
+    const shown = await keysExe(['visible', String(pid)]);
+    if (!running || running.pid !== pid || closing.has(pid)) return;
+    if (shown) { seen = true; gone = 0; return; }
+    if (!seen) { if (Date.now() - since > 90000) clearInterval(t); return; }   // (its window never showed)
+    if (++gone < 2) return;
+    clearInterval(t);
+    console.log(`[apps] ${running.name} went to the tray: quit, back to MediaDeck`);
+    if (running.exe && running.quitArgs) { try { spawn(running.exe, running.quitArgs, { detached: true, stdio: 'ignore', windowsHide: true }).unref(); } catch {} }
+    running = null;
+    stopPadWatch();
+    focusSelf();
+  }, 1500);
 }
 
 // ---------- Games ----------
@@ -1280,6 +1392,7 @@ async function consoleList(all) {
     // How many games the chosen emulator has for it (lists are cached after the first scan)
     const mod = mods.find((m) => m.id === pick.moduleId);
     const list = await gamesFor(mod);
+    noteCoverNames(mod, list);
     const count = c.system ? list.filter((g) => covers.systemFor(mod, g.rom) === c.system).length : list.length;
     // The maker, for the rows on Home ("Nintendo - Wii" -> Nintendo; MAME -> Arcade; DOS games are PC games,
     // whatever libretro's "Microsoft - DOS" says)
@@ -1291,6 +1404,21 @@ async function consoleList(all) {
     .sort((a, b) => order(a) - order(b) || a.name.localeCompare(b.name));
 }
 
+// File name → the consoles that have it: a name on two or more consoles gets a cover for each (server.coverFile).
+// Each scanned list once (the lists are cached).
+const coverNames = new Map();
+const notedLists = new WeakSet();
+function noteCoverNames(mod, list) {
+  if (!server || !mod || notedLists.has(list)) return;
+  notedLists.add(list);
+  for (const g of list) {
+    const id = server.coverId(g.rom);
+    if (!coverNames.has(id)) coverNames.set(id, new Set());
+    coverNames.get(id).add(covers.consoleOf(mod, g.rom).console);
+  }
+  server.noteConsoles(coverNames);
+}
+
 // The games of one console, from the emulator chosen for it
 async function consoleGames(consoleId, moduleId, fresh) {
   const c = (await consoleList(true)).find((x) => x.id === consoleId);
@@ -1298,8 +1426,12 @@ async function consoleGames(consoleId, moduleId, fresh) {
   const mod = await moduleById(moduleId && c.emulators.some((e) => e.moduleId === moduleId) ? moduleId : c.emulator);
   if (!mod) return { moduleId: null, list: [] };
   const mine = (rom) => (c.system ? covers.systemFor(mod, rom) === c.system : true);
-  const list = (await gamesFor(mod, fresh)).filter((g) => mine(g.rom))
-    .map((g) => ({ ...g, ...covers.consoleOf(mod, g.rom), storedCover: (!g.cover || g.coverIsIcon) && server.hasCover(g.rom) }));
+  const all = await gamesFor(mod, fresh);
+  noteCoverNames(mod, all);
+  const list = all.filter((g) => mine(g.rom)).map((g) => {
+    const con = covers.consoleOf(mod, g.rom);
+    return { ...g, ...con, storedCover: (!g.cover || g.coverIsIcon) && server.hasCover(g.rom, con.console) };
+  });
   return { moduleId: mod.id, list };
 }
 
@@ -1539,6 +1671,7 @@ async function folderVideos(dir) {
 // Requests arriving close together share one PowerShell run.
 const ICON_DIR = path.join(DATA, 'cache', 'icons');
 const ICON_PS = `
+[Console]::InputEncoding = [Text.Encoding]::UTF8   # the job list comes as UTF-8 (paths with é, å, ö)
 Add-Type -AssemblyName System.Drawing
 Add-Type -TypeDefinition @"
 using System; using System.Runtime.InteropServices;
@@ -1625,6 +1758,8 @@ function switchIndex() {
     } catch (e) { console.error('[switchtdb]', e.message); return old; }
     finally { fs.rmSync(work, { recursive: true, force: true }); }
   })();
+  // nothing (offline at the first try): asked again next time instead of no Switch covers until a restart
+  switchTdb.then((r) => { if (!r) switchTdb = null; });
   return switchTdb;
 }
 
@@ -1685,8 +1820,8 @@ function extraIndex(src) {
 const COVER_STATE = () => path.join(DATA, 'covers-auto.dat');
 const coverOpts = (extra = {}) => ({
   net, switchIndex, libretroIndex, extraIndex,
-  has: (rom) => server.hasCover(rom),
-  save: (rom, img) => server.saveCover(rom, img),
+  has: (rom, sys) => server.hasCover(rom, sys),
+  save: (rom, img, sys) => server.saveCover(rom, img, sys),
   // an Xbox 360 case wrap (back | spine | front) -> its front, the box's shape (0.71)
   cropFront: (buf) => {
     const im = nativeImage.createFromBuffer(buf);
@@ -1705,8 +1840,9 @@ async function autoCovers() {
   if (Date.now() - (state.lastRun || 0) < 20 * 3600e3) return;
   const recent = (rom) => Date.now() - (state.misses[rom] || 0) < 14 * 86400e3;
   let found = 0;
+  let stopped = false;
   for (const c of await consoleList(true)) {
-    if (running && isAlive(running.pid)) break;   // never while a game runs
+    if (running && isAlive(running.pid)) { stopped = true; break; }   // never while a game runs
     const mod = await moduleById(c.emulator);
     if (!mod || mod.pcGames) continue;           // PC games: covers are the pictures next to them
     try {
@@ -1716,8 +1852,11 @@ async function autoCovers() {
       found += r.found;
     } catch (e) { console.error('[covers]', e.message); }
   }
-  state.lastRun = Date.now();
+  // done only when it went through: stopped for a game (often in the first minute), it tries again in half an hour
+  // instead of skipping the next 20 hours
+  if (!stopped) state.lastRun = Date.now();
   writeSecret(COVER_STATE(), state);
+  if (stopped) setTimeout(() => autoCovers().catch((e) => console.error('[covers]', e.message)), 30 * 60e3);
   if (found && win && !win.isDestroyed()) win.webContents.send('covers-auto', { found });
 }
 
@@ -1811,7 +1950,10 @@ function addPcGame(exe, name, image) {
 async function syncEmulators() {
   ensurePcGames();
   let mods = [];
-  try { mods = await emuModules.scan(emuDir()); } catch (e) { console.error('[emu]', e.message); }
+  // the folder couldn't be read (its drive is offline): the cards stay as they are - before, every emulator
+  // card's name, picture and place was wiped and saved
+  try { mods = await emuModules.scan(emuDir()); } catch (e) { console.error('[emu]', e.message); return mods; }
+  if (!mods.length && config.tiles.some((t) => t.section === 'emulators')) return mods;
   for (const m of mods) { try { emuModules.addKnownExtensions(m); } catch {} }
   const visible = mods.filter((m) => !m.hidden && m.ok);
   const claimed = new Set();
@@ -1821,6 +1963,8 @@ async function syncEmulators() {
     let m = t.moduleId && visible.find((x) => x.id === t.moduleId);
     // Cards from before modules existed take over the module with the same name
     if (!m && !t.moduleId) m = visible.find((x) => !claimed.has(x.id) && x.name.toLowerCase() === (t.name || '').toLowerCase());
+    // its emulator is there but can't be found right now (its exe on a drive that is off): the card is kept
+    if (!m && t.moduleId && mods.some((x) => x.id === t.moduleId && !x.hidden && !x.ok)) { next.push(t); claimed.add(t.moduleId); continue; }
     if (!m || claimed.has(m.id)) continue;
     claimed.add(m.id);
     // relative inside the MediaDeck folder, like every tile (it then works on any drive letter)
@@ -1874,7 +2018,7 @@ async function controllerStatus() {
 
 function startDs4(minimised) {
   if (!fs.existsSync(DS4_EXE)) return false;
-  spawn(DS4_EXE, minimised ? ['-m'] : [], { cwd: path.dirname(DS4_EXE), detached: true, stdio: 'ignore' }).unref();
+  try { spawn(DS4_EXE, minimised ? ['-m'] : [], { cwd: path.dirname(DS4_EXE), detached: true, stdio: 'ignore' }).on('error', (e) => console.error('[ds4]', e.message)).unref(); } catch (e) { console.error('[ds4]', e.message); }
   return true;
 }
 
@@ -1918,7 +2062,10 @@ function registerIpc() {
   ipcMain.handle('emu-games', async (e, moduleId, fresh) => {
     const mod = await moduleById(moduleId);
     // storedCover: a downloaded cover is in the encrypted store
-    return mod ? (await gamesFor(mod, fresh)).map((g) => ({ ...g, ...covers.consoleOf(mod, g.rom), storedCover: (!g.cover || g.coverIsIcon) && server.hasCover(g.rom) })) : [];
+    if (!mod) return [];
+    const all = await gamesFor(mod, fresh);
+    noteCoverNames(mod, all);
+    return all.map((g) => { const con = covers.consoleOf(mod, g.rom); return { ...g, ...con, storedCover: (!g.cover || g.coverIsIcon) && server.hasCover(g.rom, con.console) }; });
   });
   ipcMain.handle('consoles', () => consoleList());
   ipcMain.handle('console-games', (e, consoleId, moduleId, fresh) => consoleGames(consoleId, moduleId, !!fresh));
@@ -1944,13 +2091,13 @@ function registerIpc() {
     return loadRecent()
       .filter((g) => mods.some((m) => m.id === g.moduleId && !m.hidden))
       .slice(0, all ? 100 : 5)
-      .map((g) => ({ ...g, emulator: mods.find((m) => m.id === g.moduleId).name }));
+      .map((g) => { const m = mods.find((x) => x.id === g.moduleId); return { ...g, console: covers.consoleOf(m, g.rom).console, emulator: m.name }; });
   });
   // Favourite games (encrypted like the history)
   ipcMain.handle('fav-games', async () => {
     const mods = await emuModules.scan(emuDir());
     return loadFavs().filter((g) => mods.some((m) => m.id === g.moduleId && !m.hidden))
-      .map((g) => ({ ...g, emulator: mods.find((m) => m.id === g.moduleId).name }));
+      .map((g) => { const m = mods.find((x) => x.id === g.moduleId); return { ...g, console: covers.consoleOf(m, g.rom).console, emulator: m.name }; });
   });
   ipcMain.handle('fav-toggle', (e, game) => {
     loadFavs();
@@ -2170,13 +2317,14 @@ function registerIpc() {
   ipcMain.handle('save-config', (e, next) => {
     // The window's size and full-screen state belong to this process; keep them.
     const { fullscreen, window } = config.settings;
-    const hideBefore = config.settings.hideCursor, portableBefore = portableData();
+    const hideBefore = config.settings.hideCursor, portableBefore = portableData(), ffmpegBefore = config.settings.ffmpegPath;
     // the games folder: relative when it is inside MediaDeck's folder (Games), so the folder can move
     config = { ...next, settings: { ...next.settings, fullscreen, window, gamesFolder: P.rel(next.settings.gamesFolder || '') },
       tiles: (next.tiles || []).map((t) => ({ ...t, ...(t.path ? { path: P.rel(t.path) } : {}), ...(t.image ? { image: P.rel(t.image) } : {}) })) };
     writeJson(CONFIG_FILE, config);
     if (config.settings.hideCursor !== hideBefore) startCursorHide();
     if (portableData() !== portableBefore) relockAll();
+    if (config.settings.ffmpegPath !== ffmpegBefore && server) server.findTools().catch(() => {});   // thumbnails at once, not after a restart
     return true;
   });
   // Screen resolution / refresh rate (Settings → General), for the screen MediaDeck is on, through keys.exe.
@@ -2191,7 +2339,12 @@ function registerIpc() {
     clearTimeout(displayTrial);
     displayTrial = null;
     if (step === 'revert') return { ok: (await keysOut(['display', 'reset', hwndOf(win)])).ok };
-    if (step === 'keep') return { ok: (await keysOut(['display', 'set', hwndOf(win), ...mode, 'keep'])).ok };
+    if (step === 'keep') {
+      const k = await keysOut(['display', 'set', hwndOf(win), ...mode, 'keep']);
+      // Keep didn't take: back to the saved mode (the go-back timer was already stopped)
+      if (!k.ok) await keysOut(['display', 'reset', hwndOf(win)]);
+      return { ok: k.ok };
+    }
     const test = await keysOut(['display', 'set', hwndOf(win), ...mode, 'test']);
     if (!test.ok) return { ok: false, error: 'This screen does not take that mode' };
     displayHwnd = hwndOf(win);
@@ -2224,7 +2377,7 @@ function registerIpc() {
   });
   ipcMain.handle('open-external-player', (e, file) => {
     const vlc = config.settings.vlcPath;
-    if (vlc && fs.existsSync(vlc)) { spawn(vlc, ['--fullscreen', file], { detached: true, stdio: 'ignore' }).unref(); return true; }
+    if (vlc && fs.existsSync(vlc)) { try { spawn(vlc, ['--fullscreen', file], { detached: true, stdio: 'ignore' }).on('error', (e) => console.error('[vlc]', e.message)).unref(); return true; } catch { return false; } }
     shell.openPath(file);
     return true;
   });
@@ -2245,8 +2398,11 @@ function registerIpc() {
   // Restart MediaDeck (the Exit menu): a new copy starts as this one closes
   ipcMain.handle('restart-app', () => { app.relaunch({ args: process.argv.slice(1).filter((a) => a !== '--test') }); app.quit(); });
   ipcMain.handle('power', (e, action) => {
-    const cmds = { sleep: ['rundll32.exe', ['powrprof.dll,SetSuspendState', '0,1,0']], restart: ['shutdown', ['/r', '/t', '0']], shutdown: ['shutdown', ['/s', '/t', '0']] };
-    if (cmds[action]) spawn(cmds[action][0], cmds[action][1], { detached: true, stdio: 'ignore' }).unref();
+    // Sleep: Windows' own call for sleep (rundll32 powrprof SetSuspendState hibernated instead whenever hibernation
+    // is on, Windows' default for Fast Startup - then a controller or the TV remote can't wake the PC)
+    const sleep = "Add-Type -AssemblyName System.Windows.Forms; [void][System.Windows.Forms.Application]::SetSuspendState('Suspend', $false, $false)";
+    const cmds = { sleep: ['powershell.exe', ['-NoProfile', '-Command', sleep]], restart: ['shutdown', ['/r', '/t', '0']], shutdown: ['shutdown', ['/s', '/t', '0']] };
+    if (cmds[action]) { try { spawn(cmds[action][0], cmds[action][1], { detached: true, stdio: 'ignore', windowsHide: true }).on('error', () => {}).unref(); } catch {} }
     return true;
   });
 }
@@ -2329,6 +2485,11 @@ if (!app.requestSingleInstanceLock()) {
     setTimeout(() => cleanTempLeftovers().catch(() => {}), 45000);
     // Bring the home screen back from anywhere
     globalShortcut.register('Control+Alt+Home', bringToFront);
+  }).catch((e) => {
+    // a start that fails (config.json held by antivirus, a read-only folder): say so and end - else MediaDeck kept
+    // running without a window, and every new start only tried to show that window
+    console.error('[start]', e);
+    if (!win) { dialog.showErrorBox('MediaDeck could not start', String((e && e.message) || e)); app.exit(1); }
   });
   app.on('will-quit', () => {
     quitting = true;
@@ -2337,7 +2498,7 @@ if (!app.requestSingleInstanceLock()) {
     // a screen mode still waiting for "Keep": back to the saved one
     if (displayTrial) { clearTimeout(displayTrial); try { require('child_process').execFileSync(KEYS_EXE, ['display', 'reset', displayHwnd || '0'], { windowsHide: true, timeout: 5000 }); } catch {} }
     globalShortcut.unregisterAll();
-    mpv.stop();
+    mpv.stop(true);
     stopPadWatch(true);
     stopCursorHide();
     if (server) server.stop();

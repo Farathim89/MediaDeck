@@ -285,10 +285,22 @@ const gone = (p, ms) => new Promise((resolve) => {
   setTimeout(resolve, ms);
 });
 
-async function open(list, index, opts = {}) {
+// One at a time: a second Play while a player is still starting or closing went through too (two mpv.exe, the
+// controls on the wrong one, windows left over). It waits its turn; of several waiting only the newest plays.
+let opening = Promise.resolve();
+let openId = 0;
+function open(list, index, opts = {}) {
+  const id = ++openId;
+  const run = opening.then(() => (id === openId ? openNow(list, index, opts) : { ok: true, replaced: true }));
+  opening = run.catch(() => {});
+  return run;
+}
+
+async function openNow(list, index, opts = {}) {
   const exe = mpvPath();
   if (!exe) return { ok: false, error: 'mpv was not found. Set its path in data\\config.json ("mpvPath").' };
-  if (proc) { const old = proc; stop(); await gone(old, 1500); }
+  // (also its windows when mpv already ended by itself)
+  if (proc || host) { const old = proc; stop(); await gone(old, 1500); }
   resetPipeReady();
   buf = '';
   rtxFor = '';
@@ -321,10 +333,13 @@ async function open(list, index, opts = {}) {
   return { ok: true };
 }
 
-function stop() {
+// now: MediaDeck is closing - its timers won't run any more, so a player that doesn't quit by itself (hung on the
+// sound device) is ended at once instead of staying behind with the sound output
+function stop(now = false) {
   clearInterval(watch.timer);
   if (pipe) { try { pipe.write(JSON.stringify({ command: ['quit'] }) + '\n'); } catch {} }
   const p = proc;
+  if (now && p && p.exitCode === null) { try { require('child_process').execFileSync('taskkill', ['/PID', String(p.pid), '/F'], { windowsHide: true, timeout: 3000, stdio: 'ignore' }); } catch {} }
   setTimeout(() => { try { if (p && p.exitCode === null) p.kill(); } catch {} }, 800);
   proc = null; pipe = null;
   destroyLayers();

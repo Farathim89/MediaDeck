@@ -1,6 +1,7 @@
 ﻿// Small helper for the in-game overlay.
 //   keys.exe focus <hwnd>          bring a window to the front (Windows normally blocks this
-//                                  for programs in the background)
+//                                  for programs in the background); exit 0 = it is in front, 3 = Windows refused
+//   keys.exe visible <pid>         exit 0 when the program shows a window (minimized counts), 1 when not (in the tray)
 //   keys.exe confirm <pid> [secs]  press Yes/OK in that program's own "confirm shutdown/exit" dialog
 //                                  (secs: keep looking that long, until it shows or the program is gone)
 //   keys.exe ok <pid> <pattern> [secs]  the same for a dialog whose title or text matches the pattern (RPCS3's
@@ -122,13 +123,49 @@ static class Keys
 
     const uint KEYUP = 0x2, SCANCODE = 0x8, EXTENDED = 0x1;
 
-    // Windows lets a program take the foreground right after a key event: tap Alt first
-    static void Focus(IntPtr h)
+    [DllImport("user32.dll")] static extern IntPtr GetForegroundWindow();
+    [DllImport("user32.dll")] static extern bool AttachThreadInput(uint from, uint to, bool attach);
+    [DllImport("kernel32.dll")] static extern uint GetCurrentThreadId();
+    [DllImport("user32.dll")] static extern bool BringWindowToTop(IntPtr h);
+    [DllImport("user32.dll")] static extern void SwitchToThisWindow(IntPtr h, bool altTab);
+
+    // Windows lets a program take the foreground right after a key event: tap Alt first. When that isn't
+    // enough, share the input of the window in front for a moment (Windows then counts us as that program),
+    // and last Windows' own Alt+Tab switch. True when the window really is in front.
+    static bool Focus(IntPtr h)
     {
-        keybd_event(0x12, 0, 0, UIntPtr.Zero);
-        keybd_event(0x12, 0, KEYUP, UIntPtr.Zero);
         if (IsIconic(h)) ShowWindow(h, 9);
-        SetForegroundWindow(h);
+        for (int i = 0; i < 3; i++)
+        {
+            if (GetForegroundWindow() == h) return true;
+            keybd_event(0x12, 0, 0, UIntPtr.Zero);
+            keybd_event(0x12, 0, KEYUP, UIntPtr.Zero);
+            SetForegroundWindow(h);
+            if (GetForegroundWindow() == h) return true;
+            uint pid, front = GetWindowThreadProcessId(GetForegroundWindow(), out pid), me = GetCurrentThreadId();
+            bool shared = front != 0 && front != me && AttachThreadInput(me, front, true);
+            BringWindowToTop(h);
+            SetForegroundWindow(h);
+            if (shared) AttachThreadInput(me, front, false);
+            if (GetForegroundWindow() == h) return true;
+            SwitchToThisWindow(h, true);
+            Thread.Sleep(80);
+        }
+        return GetForegroundWindow() == h;
+    }
+
+    // Does the program still show a window (minimized counts)? An app that hides to the tray when closed doesn't.
+    static bool Visible(int pid)
+    {
+        bool any = false;
+        EnumWindows((h, p) =>
+        {
+            uint wp; GetWindowThreadProcessId(h, out wp);
+            RECT r;
+            if (wp == pid && IsWindowVisible(h) && GetWindowRect(h, out r) && (IsIconic(h) || (r.R - r.L >= 200 && r.B - r.T >= 150))) { any = true; return false; }
+            return true;
+        }, IntPtr.Zero);
+        return any;
     }
 
     // The biggest visible top window of a process or one of its children (the game screen,
@@ -285,8 +322,9 @@ static class Keys
                 CloseHandle(p);
                 return r == 0 ? 0 : 3;
             }
-            if (a.Length >= 2 && a[0] == "focus") { Focus(new IntPtr(long.Parse(a[1]))); return 0; }
-            if (a.Length >= 2 && a[0] == "game") { var h = WindowOf(int.Parse(a[1])); if (h == IntPtr.Zero) return 2; Focus(h); return 0; }
+            if (a.Length >= 2 && a[0] == "focus") return Focus(new IntPtr(long.Parse(a[1]))) ? 0 : 3;
+            if (a.Length >= 2 && a[0] == "game") { var h = WindowOf(int.Parse(a[1])); if (h == IntPtr.Zero) return 2; return Focus(h) ? 0 : 3; }
+            if (a.Length >= 2 && a[0] == "visible") return Visible(int.Parse(a[1])) ? 0 : 1;
             if (a.Length >= 4 && a[0] == "click")
             {
                 var t = new System.Text.RegularExpressions.Regex(a[2], System.Text.RegularExpressions.RegexOptions.IgnoreCase);

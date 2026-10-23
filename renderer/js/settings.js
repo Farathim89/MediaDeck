@@ -394,6 +394,9 @@ const Settings = (() => {
   }
 
   function renderList() {
+    // the row that had the focus has it again after the redraw (rows are rebuilt when a list arrives: the focus was
+    // on a removed row, A did nothing and the D-pad started over at the top)
+    const had = Nav.current && listEl.contains(Nav.current) && Nav.current.dataset.index !== undefined ? Nav.current.dataset.index : null;
     const sec = section();
     titleEl.textContent = sec.group ? GROUPS[sec.group].title : sec.title;
     descEl.textContent = sec.desc || '';
@@ -421,6 +424,11 @@ const Settings = (() => {
       if (item.type !== 'info') b.addEventListener('click', () => change(item, b));
       listEl.appendChild(b);
     });
+    if (had !== null) {
+      const rows = listEl.querySelectorAll('.setting');
+      const again = listEl.querySelector(`.setting[data-index="${had}"]`) || rows[rows.length - 1];
+      if (again) Nav.focus(again, { scroll: false });
+    }
     if (sec.id === 'emulators') loadFolderSummary();
     if (sec.id === 'controllers' && !ctl) refreshCtl();
     if (sec.id === 'apps' && !apps) refreshApps(false);
@@ -494,6 +502,7 @@ const Settings = (() => {
   }
 
   async function installPart(which, name) {
+    if (!ctl) await refreshCtl();   // (pressed before the status came: it offered to install what is there)
     if (ctl && ctl[which] !== 'missing') { UI.toast(`${name} is already installed`, { icon: 'check' }); return; }
     const ok = await UI.confirm(`Install ${name}?`,
       `The ${name} installer starts. Windows asks you to allow it (administrator), then follow its steps. ` +
@@ -505,6 +514,7 @@ const Settings = (() => {
   }
 
   async function toggleGameBar() {
+    if (!ctl) await refreshCtl();
     const on = !ctl.gameBar;
     if (!(await api.gameBarSet(on))) { UI.toast('Could not change the Windows setting', { icon: 'info' }); return; }
     ctl.gameBar = await api.gameBarGet();

@@ -352,6 +352,10 @@ const Browser = (() => {
   }
 
   function leave() {
+    // a folder still loading is forgotten (it focused its card behind the next screen, or a failed one threw you
+    // out of the Media Player seconds later)
+    loadId++;
+    renderId++;
     grid.innerHTML = '';
     contRow.innerHTML = '';
     current = null;

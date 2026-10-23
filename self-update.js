@@ -42,8 +42,9 @@ async function install(net, progress = () => {}) {
   await fsp.mkdir(work, { recursive: true });
   const zip = path.join(work, info.asset.name);
   await emu.download(info.asset.url, zip, net, (got, total) => progress(`MediaDeck ${info.latest}: downloading ${Math.round(got / 1048576)}${total ? ` / ${Math.round(total / 1048576)}` : ''} MB`, total ? got / total : 0));
-  const sha = /^sha256:([0-9a-f]{64})$/.exec(info.asset.digest || '');
-  if (sha && crypto.createHash('sha256').update(await fsp.readFile(zip)).digest('hex') !== sha[1]) throw new Error('The download does not match its checksum');
+  // MediaDeck itself is only replaced by a download that matches the checksum GitHub gives for it (none when GitHub
+  // only answered with its web page, e.g. too many questions in an hour: then later)
+  if (!(await emu.checkDigest(zip, info.asset.digest, 'The download'))) throw new Error('GitHub gave no checksum for the download, so it can\'t be checked - try again later');
   progress('MediaDeck: unpacking…', 1);
   const out = path.join(work, 'new');
   await emu.unpack(P.tool('7za.exe'), zip, out);

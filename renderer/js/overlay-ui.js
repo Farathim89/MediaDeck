@@ -7,6 +7,7 @@
     loadState: ['Load state', 'restart'],
     pause: ['Pause / continue', 'pause'],
     screenshot: ['Screenshot', 'image'],
+    options: ['Emulator options', 'settings'],   // (PCSX2, DuckStation, RPCS3: missing, the whole menu failed)
     home: ['Go to MediaDeck', 'home'],
     close: ['Close the game', 'close'],
   };
@@ -23,6 +24,7 @@
     list.innerHTML = '';
     for (const a of info.actions) {
       if (a === 'home') list.insertAdjacentHTML('beforeend', '<div class="ov-sep"></div>');
+      if (!LABELS[a]) continue;
       const [label, icon] = LABELS[a];
       const b = document.createElement('button');
       b.className = 'menu-item focusable' + (a === 'close' ? ' danger' : '');

@@ -96,7 +96,9 @@ class Vault {
     return Buffer.concat([d.update(buf.subarray(28)), d.final()]);
   }
   async write(file, buf) {
-    const tmp = file + '.tmp';
+    // its own temporary name: two saves of the same file (a cover from Settings and the automatic covers) at once
+    // broke each other's rename
+    const tmp = `${file}.${crypto.randomBytes(4).toString('hex')}.tmp`;
     await fsp.writeFile(tmp, this.seal(buf));
     await fsp.rename(tmp, file);
   }
@@ -137,6 +139,7 @@ class MediaServer {
     this.thumbDir = path.join(dataDir, 'cache', 'thumbs');
     this.subDir = path.join(dataDir, 'cache', 'subs');
     this.coverDir = path.join(dataDir, 'covers');   // downloaded game covers (encrypted, kept)
+    this.sharedNames = new Set();   // cover names (file names) that more than one console has (see coverFile)
     this.getSettings = getSettings;
     this.token = crypto.randomBytes(16).toString('hex');
     this.probeCache = new Map();
@@ -204,7 +207,7 @@ class MediaServer {
       case '/prepare': return this.json(res, await this.prepare(p, url.searchParams));
       case '/stream': return this.serveStream(req, res, url.searchParams.get('id'));
       case '/subs': return this.serveSubs(req, res, p, url.searchParams);
-      case '/cover': return this.serveCover(res, p);
+      case '/cover': return this.serveCover(res, p, url.searchParams.get('c'));
       default: res.writeHead(404); res.end();
     }
   }
@@ -278,7 +281,11 @@ class MediaServer {
     const out = path.join(this.thumbDir, key + '.enc');
     if (fs.existsSync(out)) return this.vault.read(out);
     if (this.failed.has(key)) throw new Error('no thumbnail');
-    if (this.inflight.has(key)) return this.inflight.get(key);
+    // asked again while it is being made: the same job; it is dropped from the queue only when everyone who asked
+    // has gone (a redrawn grid: the old card's request ended, the new card's would get nothing)
+    if (this.inflight.has(key)) { const f = this.inflight.get(key); f.waiters.push(isCancelled); return f.job; }
+    const waiters = [isCancelled];
+    const allGone = () => waiters.every((c) => c && c());
 
     const job = this.thumbs.run(async () => {
       const kind = kindOf(p);
@@ -310,8 +317,8 @@ class MediaServer {
         this.failed.add(key);
         throw e;
       }
-    }, isCancelled);
-    this.inflight.set(key, job);
+    }, allGone);
+    this.inflight.set(key, { job, waiters });
     job.finally(() => this.inflight.delete(key)).catch(() => {});
     return job;
   }
@@ -528,6 +535,8 @@ class MediaServer {
       this.streams.delete(proc);
       if (code && err) console.error('[ffmpeg]', err.trim());
     });
+    // ffmpeg missing or locked (being updated from Settings → Apps): the stream ends instead of MediaDeck crashing
+    proc.on('error', (e) => { this.streams.delete(proc); console.error('[ffmpeg]', e.message); res.destroy(); });
     res.writeHead(200, { 'Content-Type': s.audioOnly ? 'audio/mp4' : 'video/mp4', 'Cache-Control': 'no-store' });
     proc.stdout.pipe(res);
     res.on('close', () => { try { proc.kill('SIGKILL'); } catch {} });
@@ -537,24 +546,36 @@ class MediaServer {
   // A cover is kept by the game's file name, so moving a game to another folder (region folders, a tidy-up)
   // keeps it; generic file names (PS3's EBOOT.BIN, default.xex …) by their game folder. Covers stored by the
   // whole path (MediaDeck 1.0.6 and older) are still read.
-  coverId(rom) {
+  // sys: the game's console ("SNES") joins the key - the same file name on two consoles (zips, .chd discs: "Mortal
+  // Kombat (USA).zip" for SNES and Mega Drive) shared one cover. A cover kept by its file name only (MediaDeck 1.0.40
+  // and older) is still read, except for a name more than one console has (sharedNames, from the game lists):
+  // those consoles each get their own.
+  coverId(rom, sys) {
     const parts = String(rom).toLowerCase().split(/[\\/]+/);
     let name = parts.pop() || '';
     if (/^(eboot\.bin|default\.(xex|xbe)|param\.sfo|main\.dol|boot\.(bin|dol))$/.test(name)) {
       name = (parts.filter((d) => !/^(usrdir|ps3_game|sys|files)$/.test(d)).pop() || '') + '/' + name;
     }
-    return 'cover-name|' + name;
+    return sys ? `cover-name|${String(sys).toLowerCase()}|${name}` : 'cover-name|' + name;
   }
-  coverByName(rom) { return path.join(this.coverDir, this.vault.name(this.coverId(rom)) + '.enc'); }
+  coverByName(rom, sys) { return path.join(this.coverDir, this.vault.name(this.coverId(rom, sys)) + '.enc'); }
   coverByPath(rom) { return path.join(this.coverDir, this.vault.name('cover|' + String(rom).toLowerCase()) + '.enc'); }
-  coverFile(rom) {
+  coverFile(rom, sys) {
+    if (sys) {
+      const own = this.coverByName(rom, sys);
+      if (fs.existsSync(own) || this.sharedNames.has(this.coverId(rom))) return own;
+    }
     const byName = this.coverByName(rom);
     if (fs.existsSync(byName)) return byName;
     const byPath = this.coverByPath(rom);
     return fs.existsSync(byPath) ? byPath : byName;
   }
-  hasCover(rom) { return fs.existsSync(this.coverByName(rom)) || fs.existsSync(this.coverByPath(rom)); }
-  saveCover(rom, buf) { return this.vault.write(this.coverByName(rom), buf); }
+  hasCover(rom, sys) { return fs.existsSync(this.coverFile(rom, sys)); }
+  saveCover(rom, buf, sys) { return this.vault.write(this.coverByName(rom, sys), buf); }
+  // which consoles have each file name (from main's game lists): a name on two or more is "shared"
+  noteConsoles(byName) {
+    for (const [id, set] of byName) if (set.size > 1) this.sharedNames.add(id);
+  }
   // Games moved elsewhere: [[old path, new path]] - their covers follow (kept by file name from now on)
   moveCovers(pairs) {
     let moved = 0;
@@ -567,8 +588,8 @@ class MediaServer {
     return moved;
   }
 
-  async serveCover(res, rom) {
-    const file = this.coverFile(rom || '');
+  async serveCover(res, rom, sys) {
+    const file = this.coverFile(rom || '', sys || '');
     if (!fs.existsSync(file)) { res.writeHead(404); return res.end(); }
     const img = await this.vault.read(file);
     // libretro covers are PNG, GameTDB's (PS3) JPEG

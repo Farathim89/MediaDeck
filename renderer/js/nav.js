@@ -83,7 +83,9 @@ const Nav = (() => {
     move,
     remember(group) { return memory.get(group); },
     forget(group) { memory.delete(group); },
-    activate() { if (current && current.isConnected) current.click(); },
+    // (only inside the screen / menu in use: the focus left on a hidden screen's card - a folder still loading, a
+    // menu over it - pressed that card)
+    activate() { if (current && current.isConnected && root.contains(current)) current.click(); },
     // Clicks / hover with the mouse
     bindMouse(container) {
       container.addEventListener('mousemove', (e) => {

@@ -26,6 +26,7 @@ module.exports = {
   tool: (name) => path.join(TOOLS, name),
   // Paths inside MediaDeck's folder are stored relative to it (Apps\PlexDeck\PlexDeck.exe), so the
   // folder can move (another drive, a USB stick); resolve() turns them back into full paths
-  rel: (p) => { if (!p) return p; const r = path.relative(ROOT, p); return r && !r.startsWith('..') && !path.isAbsolute(r) ? r : p; },
+  // (a link - steam://…, https://… - stays as it is: it became "steam:\rungameid\1")
+  rel: (p) => { if (!p || /^[a-z][a-z0-9+.-]+:\/\//i.test(p)) return p; const r = path.relative(ROOT, p); return r && !r.startsWith('..') && !path.isAbsolute(r) ? r : p; },
   resolve: (p) => (p && !path.isAbsolute(p) && !/^[a-z][a-z0-9+.-]+:/i.test(p) ? path.join(ROOT, p) : p),
 };

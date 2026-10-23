@@ -32,6 +32,9 @@ const Setup = (() => {
   const OK = '<b class="ok">✓</b>', NO = '<b class="no">!</b>', OPT = '<b class="opt">○</b>';
 
   function frame(title, desc, body, buttons, focusSel) {
+    // (a step that got its answer after you left the setup - B in the BIOS check - must not draw or take the focus:
+    // A in Settings then pressed its hidden Done)
+    if (App.current !== Setup) return;
     const dots = only ? '' : `<div class="setup-steps">${STEPS.map((x, i) =>
       `<span class="${i === step ? 'on' : i < step ? 'done' : ''}">${esc(x.name)}</span>`).join('')}</div>`;
     el.innerHTML = `<section class="setup-page">${dots}
@@ -40,7 +43,6 @@ const Setup = (() => {
       <div class="settings-list setup-body">${body}</div>
       <div class="setup-buttons">${buttons}</div></section>`;
     el.appendChild(UI.hints([['a', 'Choose'], ['b', step || only ? 'Back' : 'Skip setup']]));
-    Nav.bindMouse(el);
     const f = (focusSel && el.querySelector(focusSel)) || el.querySelector('.setup-buttons .btn.primary') || Nav.items()[0];
     if (f) Nav.focus(f);
   }
@@ -180,10 +182,14 @@ const Setup = (() => {
     },
   };
 
+  // a step still getting its answers (finding games, the BIOS check - it shows a spinner): A / B wait for it; one
+  // that came back late used to draw over the step you had gone to
+  let loading = false;
   async function show(i) {
     clearInterval(padTimer);
     step = Math.max(0, Math.min(STEPS.length - 1, i));
-    await views[STEPS[step].id]();
+    loading = true;
+    try { await views[STEPS[step].id](); } finally { loading = false; }
   }
 
   function finish() {
@@ -194,7 +200,7 @@ const Setup = (() => {
 
   // ---------- Actions ----------
   async function act(a, id, btn) {
-    if (busy) return;
+    if (busy || loading) return;
     if (a === 'next') return show(step + 1);
     if (a === 'back') return show(step - 1);
     if (a === 'skip' || a === 'finish' || a === 'close') return finish();
@@ -281,6 +287,7 @@ const Setup = (() => {
   const PRESS = { ok: 'A (choose)', back: 'B (back)', x: 'X', menu: 'Y (options)', lb: 'LB', rb: 'RB', lt: 'LT', rt: 'RT', start: 'Start', select: 'Back / Select',
     up: 'Up', down: 'Down', left: 'Left', right: 'Right' };
   function handle(action) {
+    if (loading) return true;
     if (STEPS[step].id === 'controller' && !only && PRESS[action] && action !== 'ok' && action !== 'back') {
       lastPress = PRESS[action];
       const lbl = [...el.querySelectorAll('.setting-label')].find((x) => /^(You pressed|Press a button)/.test(x.textContent));
@@ -295,7 +302,7 @@ const Setup = (() => {
     return false;
   }
 
-  function init() {}
+  function init() { Nav.bindMouse(el); }   // once (it was added again at every redraw)
   function enter(params = {}) {
     only = params.only || null;
     root = ''; candidates = null; rows = null; catalog = null; bios = null; picks = new Set(); views.emulators.touched = false; lastPress = '';

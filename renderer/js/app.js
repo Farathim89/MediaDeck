@@ -184,7 +184,10 @@ const App = {
     if (r.closed) UI.toast(r.forced ? `${info.name} closed (it had no window left)` : `${info.name} closed`, { icon: 'check' });
   },
 
+  // A menu still open when the screen changes by itself (a USB stick pulled, a folder that failed late) is closed
+  // first: closing it later gave the focus back to the screen that was gone (the D-pad then did nothing)
   open(screen, params) {
+    if (UI.isOpen) UI.dismiss();
     if (this.current) this.current.el.classList.remove('active');
     this.stack.push(screen);
     screen.el.classList.add('active');
@@ -192,6 +195,7 @@ const App = {
   },
 
   back() {
+    if (UI.isOpen) UI.dismiss();
     if (this.stack.length <= 1) return;
     const top = this.stack.pop();
     top.el.classList.remove('active');
