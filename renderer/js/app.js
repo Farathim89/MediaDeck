@@ -33,6 +33,8 @@ const App = {
     if (api.onPowerMenu) api.onPowerMenu(() => { if (UI.isOpen) UI.dismiss(); else Home.powerMenu(); });
     if (api.onYouTubeMenu) api.onYouTubeMenu(() => this.youtubeMenu());
     if (api.onTwitchMenu) api.onTwitchMenu(() => this.twitchMenu());
+    if (api.onFirmwareOffer) api.onFirmwareOffer((o) => this.firmwareOffer(o));
+    if (api.onPcCheck) api.onPcCheck((r) => this.pcCheck(r, true));
     api.onToast((text) => UI.toast(text, { icon: 'check' }));
     this.startClock();
     this.open(Home);
@@ -147,6 +149,57 @@ const App = {
     });
     await api.twitchAction(c || 'stay');
     if (c === 'close') UI.toast('Twitch closed', { icon: 'check' });
+  },
+
+  // Newer firmware in the BIOS folder that the installed emulator reads (main.js, a while after the start or after
+  // an emulator update): put it in, or later. Only at Home with nothing else open - else it asks at the next start.
+  async firmwareOffer(o) {
+    if (UI.isOpen || this.current !== Home) return;
+    const c = await UI.menu({
+      title: `${o.console} firmware ${o.version}`,
+      message: `BIOS\\${o.folder} has firmware ${o.version}; ${o.name} uses ${o.installed}. Firmware ${o.installed} is kept in Emulator backups.`,
+      items: [
+        { label: `Put firmware ${o.version} into ${o.name}`, icon: 'refresh', value: 'install' },
+        { label: 'Not now', icon: 'back', value: 'later' },
+        { label: 'Don\'t ask about this file again', icon: 'close', value: 'skip' },
+      ],
+    });
+    if (c === 'skip') api.firmwareSkip(o.moduleId, o.zip);
+    if (c !== 'install') return;
+    const busy = UI.toast(`Firmware ${o.version} into ${o.name}…`, { spinner: true, duration: 0 });
+    const r = await api.firmwareInstall(o.moduleId, o.zip);
+    busy.remove();
+    if (r.ok) UI.toast(`${o.name} has firmware ${r.version} now`, { icon: 'check', duration: 5000 });
+    else UI.menu({ title: 'Firmware not changed', message: r.error, items: [{ label: 'OK', icon: 'check' }] });
+  },
+
+  // Check this PC (Settings → General; by itself when MediaDeck starts on another PC - main.js): what this PC lacks for
+  // the emulators and apps, and putting it in. r: a result already there (auto), else asked now.
+  async pcCheck(r, auto) {
+    if (auto && (UI.isOpen || this.current !== Home)) return;
+    for (;;) {
+      if (!r) { const busy = UI.toast('Checking this PC…', { spinner: true, duration: 0 }); r = await api.pcCheck(); busy.remove(); }
+      if (!r.fixes.length && !r.notes.length) { UI.toast('This PC has everything MediaDeck needs', { icon: 'check', duration: 4000 }); return; }
+      const label = (f) => (f.kind === 'runtime' ? `Install ${f.name}${f.for.length ? ` - for ${f.for.slice(0, 3).join(', ')}${f.for.length > 3 ? ` +${f.for.length - 3}` : ''}` : ''}` : f.name);
+      const items = r.fixes.map((f) => ({ label: label(f), icon: f.kind === 'setting' ? 'folder' : f.kind === 'runtime' || f.kind === 'driver' ? 'plus' : 'refresh', value: f.key }));
+      if (r.fixes.length > 1) items.unshift({ label: 'Do all of these', icon: 'check', value: '__all' });
+      items.push(r.fixes.length ? { label: 'Later', icon: 'back', value: '' } : { label: 'OK', icon: 'check', value: '' });
+      const head = r.fixes.length
+        ? `${r.fixes.length} thing${r.fixes.length > 1 ? 's' : ''} to set up. Runtimes come from Microsoft, emulators from their own pages; Windows asks to allow each installer.`
+        : 'Nothing to install.';
+      const notes = r.notes.length > 4 ? [...r.notes.slice(0, 4), `+${r.notes.length - 4} more`] : r.notes;
+      const c = await UI.menu({ title: auto ? 'MediaDeck on another PC' : 'This PC', message: [head, ...notes].join('  ·  '), items });
+      if (!c) return;
+      for (const key of c === '__all' ? r.fixes.map((f) => f.key) : [c]) {
+        const f = r.fixes.find((x) => x.key === key);
+        const res = await api.pcFix(key);
+        if (res.error) { await UI.menu({ title: `${f ? label(f) : key}: not done`, message: res.error, items: [{ label: 'OK', icon: 'check' }] }); break; }
+        if (res.restart) UI.toast('Restart the PC later to finish that install', { icon: 'restart', duration: 6000 });
+        if (res.opened) UI.toast('Finish the driver installer, then check this PC again', { icon: 'info', duration: 7000 });
+      }
+      r = null;     // what's left
+      auto = false;
+    }
   },
 
   async runningMenu(info) {

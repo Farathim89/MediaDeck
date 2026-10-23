@@ -280,9 +280,19 @@ function setHidden(mod, hidden) {
 
 // Saves the folders where this emulator's games are
 // Remembers which version the install list put in (for "Check for updates")
+// (and for Switch emulators the firmware put in, and how far the installed version reads firmware - an update keeps both)
 function setInstaller(mod, rec) {
   const data = readJson(mod.moduleFile) || {};
-  data.installer = { version: rec.version || '', stamp: rec.stamp || '', date: new Date().toISOString().slice(0, 10) };
+  const was = data.installer || {};
+  const firmware = rec.firmware || was.firmware, firmwareMax = Math.max(rec.firmwareMax || 0, was.firmwareMax || 0);
+  data.installer = { version: rec.version || '', stamp: rec.stamp || '', date: new Date().toISOString().slice(0, 10),
+    ...(firmware ? { firmware } : {}), ...(firmwareMax ? { firmwareMax } : {}) };
+  writeJson(mod.moduleFile, data);
+}
+// The firmware now in it (installFirmware)
+function setFirmware(mod, firmware) {
+  const data = readJson(mod.moduleFile) || {};
+  data.installer = { ...(data.installer || {}), firmware };
   writeJson(mod.moduleFile, data);
 }
 
@@ -332,4 +342,4 @@ function addKnownExtensions(mod) {
   writeJson(mod.moduleFile, data);
   mod.romExtensions = data.romExtensions;
 }
-module.exports = { scan, add, setHidden, setFolders, setInstaller, countGames, addKnownExtensions, MODULE_FILE, POINTER_SUFFIX };
+module.exports = { scan, add, setHidden, setFolders, setInstaller, setFirmware, countGames, addKnownExtensions, ownCopy, MODULE_FILE, POINTER_SUFFIX };

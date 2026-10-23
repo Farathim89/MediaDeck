@@ -115,6 +115,8 @@ const Settings = (() => {
     {
       id: 'general', title: 'General', icon: 'settings', desc: 'How MediaDeck starts and behaves',
       items: [
+        { label: 'Check this PC', desc: 'What this PC lacks for your emulators, apps and PC games - Visual C++, DirectX and .NET runtimes, the controller driver, programs that are missing - and installing it. Runs by itself when MediaDeck starts on another PC.',
+          type: 'action', run: () => App.pcCheck(null, false) },
         { label: 'Display mode', desc: 'Borderless window (full screen) covers the whole screen, as games do today; Window is a normal window you can move and resize. F11 switches between them, and MediaDeck remembers it.',
           type: 'action', value: () => (s().fullscreen ? 'Borderless window (full screen)' : 'Window'),
           run: async () => {
@@ -230,7 +232,8 @@ const Settings = (() => {
         { label: 'Games folder', desc: 'Where your games are, one folder per console (or per maker, then console). New emulators get their console\'s folder from here.', type: 'folder', key: 'gamesFolder',
           value: () => fullPath(s().gamesFolder) },
         { label: 'Emu_modules folder', desc: 'Put an emulator\'s folder here and it shows up in the app', type: 'folder', key: 'emuModulesPath',
-          value: () => s().emuModulesPath || (info && info.emuDir) || '', after: () => rescan(true) },
+          // (the folder in use: main.js uses MediaDeck's own when the chosen one isn't there)
+          value: () => (info && info.emuDir) || fullPath(s().emuModulesPath), after: () => rescan(true) },
         { label: 'Game cards', desc: 'How a console\'s games are shown: big covers, small covers (more on the screen), a list with a small cover on the left, or a list of names without covers', type: 'choice', key: 'gameView',
           options: () => [{ value: 'big', label: 'Big covers' }, { value: 'small', label: 'Small covers' }, { value: 'rows', label: 'List with small covers' }, { value: 'list', label: 'List (no covers)' }],
           after: (v) => App.applyGameView(v) },
@@ -242,7 +245,7 @@ const Settings = (() => {
         { label: 'Group versions of a game', desc: 'Rev 1, Sample, other regions, .smc / .sfc: one card, and starting it asks which version', type: 'toggle', key: 'groupVersions' },
         { label: 'Show consoles without games', desc: 'On: a console shows on Home and Consoles as soon as its emulator is installed, also with an empty games folder. Off: only once it has games.',
           type: 'toggle', key: 'showEmptyConsoles', after: () => Home.refreshConsoles() },
-        { label: 'Open the Emu_modules folder', type: 'action', run: () => api.openPath(s().emuModulesPath || (info && info.emuDir)) },
+        { label: 'Open the Emu_modules folder', type: 'action', run: () => api.openPath((info && info.emuDir) || fullPath(s().emuModulesPath)) },
         { label: 'Download covers automatically', desc: 'Once a day, a while after start: box art for games that have none (new games too). Game names / PS3 serials / Xbox 360 title IDs go to libretro, GameTDB and XboxUnity.', type: 'toggle', key: 'autoCovers' },
         { label: 'Download covers for all emulators', desc: 'Box art from the libretro library (game names are sent to it), PS3 and Switch from GameTDB, Xbox 360 from XboxUnity (title IDs). Stored encrypted.', type: 'action',
           run: () => downloadAllCovers() },

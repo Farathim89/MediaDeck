@@ -119,8 +119,10 @@ const EMULATORS = {
   eden: { name: 'Eden', desc: 'Nintendo Switch (needs prod.keys and the firmware from your own Switch)', exe: /^eden\.exe$/i,
     src: { forgejo: 'https://git.eden-emu.dev', repo: 'eden-emu/eden', asset: /^Eden-Windows-v[\w.-]+-amd64-clang-pgo\.zip$/i },
     portable: ['user/'], biosTo: 'user/keys', biosFiles: /^(prod|title)\.keys$/i,
-    // max: Eden 0.2.x reads firmware up to 22 (its release notes; 23.0.1 fell back to its built-in "22.0.0")
-    firmware: { zip: /^firmware.*\.zip$/i, to: 'user/nand/system/Contents/registered', max: 22 } },
+    // max: Eden 0.2.x reads firmware up to 22 (its release notes; 23.0.1 fell back to its built-in "22.0.0"); a newer
+    // Eden whose release notes say "Firmware 23.0 compatibility" reads more (notes). log: the version it has in use.
+    firmware: { zip: /^firmware.*\.zip$/i, to: 'user/nand/system/Contents/registered', max: 22,
+      notes: /firmware (\d+)(?:\.\d+)* compatib/i, log: 'user/log/eden_log.txt', logRe: /Installed firmware: (\d+\.\d+(?:\.\d+)?)/ } },
   duckstation: { name: 'DuckStation', desc: 'The best PlayStation emulator', exe: /^duckstation-qt.*\.exe$/i,
     src: { gh: 'stenzek/duckstation', asset: /windows-x64-release\.zip$/i }, portable: ['portable.txt'], biosTo: 'bios', biosFiles: /^scph.*\.bin$/i },
   pcsx2: { name: 'PCSX2', desc: 'PlayStation 2', exe: /^pcsx2-qt\.exe$/i,
@@ -263,7 +265,7 @@ async function resolveUrl(src, net) {
     const j = await r.json();
     const a = (j.assets || []).find((x) => src.asset.test(x.name));
     if (!a) throw new Error('No Windows download in the latest release');
-    return { url: a.browser_download_url, version: j.tag_name, size: a.size, stamp: `${j.tag_name}|${a.name}|${a.created_at || ''}`, digest: '' };
+    return { url: a.browser_download_url, version: j.tag_name, size: a.size, stamp: `${j.tag_name}|${a.name}|${a.created_at || ''}`, digest: '', notes: j.body || '' };
   }
   if (src.json) {
     const j = await (await net.fetch(src.json)).json();
@@ -356,22 +358,81 @@ async function moveAll(from, to) {
   }
 }
 
-// Firmware from the BIOS folder (Switch: a .zip of the system's .nca files), unpacked where the emulator keeps it -
-// only into an empty folder (firmware installed in the emulator stays). The newest version in the file names that the
-// emulator can read (firmware.max); returns its file name.
+// ---- firmware (Switch: a .zip of the system's .nca files in the BIOS folder) ----------------------------------------
 const fwVersion = (name) => { const m = /(\d+)\.(\d+)(?:\.(\d+))?/.exec(name); return m ? m.slice(1, 4).map((x) => Number(x) || 0) : [0, 0, 0]; };
-async function copyFirmware(e, dest, from, sevenZip) {
-  if (!e.firmware || !sevenZip) return '';
+const fwNewer = (x, y) => (x[0] - y[0]) || (x[1] - y[1]) || (x[2] - y[2]);
+// The firmware the emulator reads, by its main version: the catalog's max, more when its release notes say so
+// ("Firmware 23.0 compatibility"), never less than an earlier install recorded
+const firmwareMax = (e, notes, was) => Math.max(e.firmware.max || 0, was || 0, Number(((e.firmware.notes && e.firmware.notes.exec(notes || '')) || [])[1]) || 0);
+// The newest firmware .zip in BIOS\<console> that the emulator reads: { zip, version: [major, minor, patch] } or null
+async function bestFirmware(e, from, max) {
   let zips = [];
-  try { zips = (await fsp.readdir(from)).filter((f) => e.firmware.zip.test(f)); } catch { return ''; }
-  if (e.firmware.max) zips = zips.filter((f) => (fwVersion(f)[0] || 0) <= e.firmware.max);
-  const newer = (a, b) => { const x = fwVersion(a), y = fwVersion(b); return (x[0] - y[0]) || (x[1] - y[1]) || (x[2] - y[2]) || 0; };
-  const zip = zips.sort((a, b) => newer(a, b) || a.localeCompare(b)).pop();
+  try { zips = (await fsp.readdir(from)).filter((f) => e.firmware.zip.test(f)); } catch { return null; }
+  if (max) zips = zips.filter((f) => fwVersion(f)[0] <= max);
+  const zip = zips.sort((a, b) => fwNewer(fwVersion(a), fwVersion(b)) || a.localeCompare(b)).pop();
+  return zip ? { zip, version: fwVersion(zip) } : null;
+}
+// At an install: unpacked flat where the emulator keeps it - only into an empty folder (firmware installed in the
+// emulator stays). Returns its version ("18.1.0") or ''.
+async function copyFirmware(e, dest, from, sevenZip, max) {
+  if (!e.firmware || !sevenZip) return '';
+  const best = await bestFirmware(e, from, max);
   const to = path.join(dest, e.firmware.to);
-  if (!zip || (fs.existsSync(to) && (await fsp.readdir(to)).length)) return '';
+  if (!best || (fs.existsSync(to) && (await fsp.readdir(to)).length)) return '';
   await fsp.mkdir(to, { recursive: true });
-  await unpack(sevenZip, path.join(from, zip), to, true);
-  return zip;
+  await unpack(sevenZip, path.join(from, best.zip), to, true);
+  return best.version.join('.');
+}
+// The firmware an installed emulator has: what MediaDeck put in (its module's installer record), else what the
+// emulator itself last said it uses (Eden's log: "Installed firmware: 18.1.0")
+function installedFirmware(mod, e) {
+  if (mod.installer && mod.installer.firmware) return mod.installer.firmware;
+  try {
+    const m = e.firmware.logRe.exec(fs.readFileSync(path.join(path.dirname(mod.exe), e.firmware.log), 'utf8'));
+    return m ? m[1] : '';
+  } catch { return ''; }
+}
+// Newer firmware in the BIOS folder than the installed emulators have, that they read: one offer per emulator
+async function firmwareOffers(mods, biosDir) {
+  const out = [];
+  for (const mod of mods || []) {
+    const id = !mod.hidden && mod.ok && emuIdOf(mod), e = id && EMULATORS[id];
+    if (!e || !e.firmware) continue;
+    const c = CONSOLES.find((x) => x.bios && x.emus.includes(id));
+    const have = installedFirmware(mod, e);
+    if (!c || !have) continue;      // (nothing known installed: not asked)
+    const best = await bestFirmware(e, path.join(biosDir, c.bios), firmwareMax(e, '', mod.installer && mod.installer.firmwareMax));
+    if (best && fwNewer(best.version, fwVersion(have)) > 0) {
+      out.push({ moduleId: mod.id, name: mod.name, console: c.name, folder: c.bios, zip: best.zip, version: best.version.join('.'), installed: have });
+    }
+  }
+  return out;
+}
+// Puts a newer firmware .zip from the BIOS folder into an installed emulator. The firmware it had goes to
+// <backupDir>\<its folder in Emu_modules>\firmware <old version> (nothing deleted). opts: { biosDir, sevenZip, emuDir, backupDir }
+async function installFirmware(mod, zip, opts) {
+  const id = emuIdOf(mod), e = id && EMULATORS[id];
+  const c = e && e.firmware && CONSOLES.find((x) => x.bios && x.emus.includes(id));
+  if (!c) throw new Error(`${mod.name} takes no firmware`);
+  const file = path.join(opts.biosDir, c.bios, path.basename(zip));
+  if (!e.firmware.zip.test(path.basename(zip)) || !fs.existsSync(file)) throw new Error(`${path.basename(zip)} isn't in BIOS\\${c.bios}`);
+  const to = path.join(path.dirname(mod.exe), e.firmware.to);
+  const old = installedFirmware(mod, e) || 'unknown version';
+  if (fs.existsSync(to) && (await fsp.readdir(to)).length) {
+    let backup = path.join(opts.backupDir, path.relative(opts.emuDir, path.dirname(mod.exe)), `firmware ${old.replace(/[<>:"/\\|?*]/g, '_')}`);
+    if (fs.existsSync(backup)) backup += ` (${new Date().toISOString().slice(0, 19).replace(/:/g, '-')})`;
+    await fsp.mkdir(path.dirname(backup), { recursive: true });
+    // the folder moves in one go: a file in use (the emulator open) stops it before anything moved - two firmwares
+    // mixed in one folder wouldn't start. (Emulator backups on another drive: copied, then taken out.)
+    try { await fsp.rename(to, backup); } catch (err) {
+      if (err.code !== 'EXDEV') throw new Error(`${mod.name} is using its firmware: close it, then try again`);
+      await fsp.cp(to, backup, { recursive: true });
+      await fsp.rm(to, { recursive: true });
+    }
+  }
+  await fsp.mkdir(to, { recursive: true });
+  await unpack(opts.sevenZip, file, to, true);
+  return { name: mod.name, version: fwVersion(file).join('.'), zip: path.basename(file), was: old };
 }
 
 // A console's games folder under the games root: directly, or inside a maker folder
@@ -396,7 +457,8 @@ async function install(emuId, consoleId, opts) {
   if (fs.existsSync(dest) && (await fsp.readdir(dest)).length) throw new Error(`${e.name} is already in ${path.relative(opts.emuDir, dest)}`);
   const say = opts.progress || (() => {});
   say(`${e.name}: finding the latest version…`, 0);
-  const { url, version, stamp, digest } = await resolveUrl(e.src, opts.net);
+  const { url, version, stamp, digest, notes } = await resolveUrl(e.src, opts.net);
+  const fwMax = e.firmware ? firmwareMax(e, notes) : 0;
   const work = path.join(opts.tempDir, `emu-install-${emuId}-${Date.now()}`);
   await fsp.mkdir(work, { recursive: true });
   try {
@@ -430,7 +492,7 @@ async function install(emuId, consoleId, opts) {
         }
       }
     }
-    const firmware = c && c.bios && opts.biosDir ? await copyFirmware(e, dest, path.join(opts.biosDir, c.bios), opts.sevenZip) : '';
+    const firmware = c && c.bios && opts.biosDir ? await copyFirmware(e, dest, path.join(opts.biosDir, c.bios), opts.sevenZip, fwMax) : '';
     // player 1 = the first controller, ready to play (pad-defaults.js; after the BIOS: PCSX2 needs to know it's there)
     const padSet = require('./pad-defaults').apply(emuId, dest, { installed: true });
     // the console's game folders (those that exist)
@@ -439,7 +501,7 @@ async function install(emuId, consoleId, opts) {
       for (const g of cc.games || []) romFolders.push(...gameFolders(opts.gamesRoot, g));
     }
     say(`${e.name} ${version} installed`, 1);
-    return { name: e.name, version, stamp, emuId, dir: dest, biosCopied, firmware, padSet, romFolders: [...new Set(romFolders)] };
+    return { name: e.name, version, stamp, emuId, dir: dest, biosCopied, firmware, ...(fwMax ? { firmwareMax: fwMax } : {}), padSet, romFolders: [...new Set(romFolders)] };
   } finally {
     fsp.rm(work, { recursive: true, force: true }).catch(() => {});
   }
@@ -490,7 +552,9 @@ async function update(mod, opts) {
   const e = EMULATORS[id];
   const say = opts.progress || (() => {});
   say(`${e.name}: finding the latest version…`, 0);
-  const { url, version, stamp, digest } = await resolveUrl(e.src, opts.net);
+  const { url, version, stamp, digest, notes } = await resolveUrl(e.src, opts.net);
+  // (a newer version may read newer firmware: firmwareOffers then offers the one in the BIOS folder)
+  const fwMax = e.firmware ? firmwareMax(e, notes, mod.installer && mod.installer.firmwareMax) : 0;
   const progDir = path.dirname(path.isAbsolute(mod.exe) ? mod.exe : path.join(mod.dir, mod.exe));
   const work = path.join(opts.tempDir, `emu-update-${id}-${Date.now()}`);
   await fsp.mkdir(work, { recursive: true });
@@ -508,10 +572,10 @@ async function update(mod, opts) {
     const counts = { replaced: 0, added: 0, kept: 0 };
     await overlay(exeDir, progDir, backup, counts);
     say(`${e.name} updated to ${version}`, 1);
-    return { name: e.name, version, stamp, emuId: id, ...counts };
+    return { name: e.name, version, stamp, emuId: id, ...(fwMax ? { firmwareMax: fwMax } : {}), ...counts };
   } finally {
     fsp.rm(work, { recursive: true, force: true }).catch(() => {});
   }
 }
 
-module.exports = { CONSOLES, EMULATORS, STARTER, makeStarterFolders, catalog, install, targetDir, resolveUrl, checkUpdates, update, emuIdOf, githubLatest, githubWith, download, checkDigest, unpack, findExeDir };
+module.exports = { CONSOLES, EMULATORS, STARTER, makeStarterFolders, catalog, install, targetDir, resolveUrl, checkUpdates, update, emuIdOf, githubLatest, githubWith, download, checkDigest, unpack, findExeDir, firmwareOffers, installFirmware };

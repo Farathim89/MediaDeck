@@ -36,6 +36,7 @@ app.commandLine.appendSwitch('disable-direct-composition');
 
 let win = null;
 let config = null;
+let folderMoved = false;   // this start: the MediaDeck folder is somewhere else than last time (another drive, another PC)
 let progress = {};
 let server = null;
 
@@ -79,6 +80,7 @@ function loadConfig() {
   const ROOT_FILE = path.join(DATA, 'root.json');
   const was = (readJson(ROOT_FILE, {}) || {}).root;
   if (was && path.resolve(was).toLowerCase() !== path.resolve(P.ROOT).toLowerCase()) {
+    folderMoved = true;
     try {
       const moved = require('./relocate').relocate(was, P.ROOT, [P.EMU, P.APPS], P.EMU_BACKUPS);
       console.log(`[moved] ${was} -> ${P.ROOT}: ${moved.length} settings files pointed at the new folder`);
@@ -93,7 +95,11 @@ function loadConfig() {
   const follow = (p) => (oldBase && /^[a-z]:[\\/]/i.test(p) && path.resolve(p).toLowerCase().startsWith(oldBase)
     ? path.join(P.ROOT, path.resolve(p).slice(oldBase.length)) : p);
   for (const t of config.tiles) { if (t.path) t.path = P.rel(follow(t.path)); if (t.image) t.image = P.rel(follow(t.image)); }
-  if (JSON.stringify(config.tiles) !== before) writeJson(CONFIG_FILE, config);
+  // the folders chosen in Settings too (Emu_modules, Games, FFmpeg) - a copy on another PC kept reading the full path
+  // of the Emu_modules folder it came from, and missed the emulators added since (Eden)
+  const settingsBefore = JSON.stringify(config.settings);
+  for (const k of ['emuModulesPath', 'gamesFolder', 'ffmpegPath']) if (config.settings[k]) config.settings[k] = P.rel(follow(config.settings[k]));
+  if (JSON.stringify(config.tiles) !== before || JSON.stringify(config.settings) !== settingsBefore) writeJson(CONFIG_FILE, config);
   config.favorites = config.favorites || [];
   if (!config.tiles.some((t) => t.builtin === 'youtube')) {
     const at = config.tiles.findIndex((t) => t.builtin === 'media') + 1;
@@ -825,6 +831,14 @@ async function checkUpdatesAtStart() {
     writeUpdates({ checked: new Date().toISOString(), list: all.filter((x) => x.update).map(({ moduleId, name, installed, latest }) => ({ moduleId, name, installed, latest })) });
     sendUpdates(true);
   } catch {}
+}
+// Newer Switch firmware in the BIOS folder than Eden has, that the installed Eden reads: MediaDeck asks once
+// (a file the player said "don't ask again" about stays quiet; another, newer one asks again)
+async function offerFirmware() {
+  if (!win || win.isDestroyed() || installing || (running && isAlive(running.pid))) return;
+  const skip = config.settings.firmwareSkip || [];
+  const offer = (await emuInstaller.firmwareOffers(await emuModules.scan(emuDir()), P.BIOS)).find((o) => !skip.includes(`${o.moduleId}|${o.zip}`));
+  if (offer) win.webContents.send('firmware-offer', offer);
 }
 // After an update (or a manual check) the saved list follows
 function rememberUpdates(list) { writeUpdates({ checked: new Date().toISOString(), list: list.filter((x) => x.update).map(({ moduleId, name, installed, latest }) => ({ moduleId, name, installed, latest })) }); }
@@ -1792,7 +1806,15 @@ async function fileIcon(file) {
 }
 
 // ---------- Emulators (from the Emu_modules folder) ----------
-const emuDir = () => config.settings.emuModulesPath || P.EMU;
+// Emu_modules: MediaDeck's own, or the folder chosen in Settings (kept relative when it is inside MediaDeck's folder).
+// One inside another MediaDeck folder (the one this copy came from, or an older MediaDeck on this PC) is the same
+// folder in this one, and one that isn't there is our own - a copy must not use another install's emulators.
+const emuDir = () => {
+  const set = config.settings.emuModulesPath;
+  if (!set) return P.EMU;
+  const p = emuModules.ownCopy(P.resolve(set));
+  return fs.existsSync(p) ? p : P.EMU;
+};
 
 // Keeps the emulator cards in step with the modules: one card per visible module,
 // existing cards keep their place, name and style
@@ -2085,8 +2107,139 @@ function startDs4(minimised) {
   return true;
 }
 
+// ---------- This PC: what the emulators, apps and PC games need from Windows (pc-check.js) ----------
+const pcCheckLib = require('./pc-check');
+// Every program MediaDeck starts: the emulators, the apps on Home, its helper apps, the PC games
+async function pcPrograms() {
+  const out = [];
+  for (const m of await emuModules.scan(emuDir())) {
+    if (m.hidden || m.pcGames) continue;
+    out.push({ name: m.name, exe: m.exe, kind: 'emulator', fix: emuInstaller.emuIdOf(m) ? { kind: 'emulator', id: m.id } : null });
+  }
+  const appExe = (a) => path.join(P.APPS, a.dir, a.up ? 'bin' : '', a.exe);
+  const catalogOf = (exe) => Object.keys(appInstaller.CATALOG).find((id) => !appInstaller.CATALOG[id].setup && path.resolve(appExe(appInstaller.CATALOG[id])).toLowerCase() === path.resolve(exe).toLowerCase());
+  for (const t of config.tiles) {
+    if (t.builtin || !t.path || !/\.exe$/i.test(t.path)) continue;
+    const exe = P.resolve(t.path), id = catalogOf(exe);
+    out.push({ name: t.name, exe, kind: 'app', fix: id ? { kind: 'app', id } : null });
+  }
+  // (DS4Windows, mpv, FFmpeg, Streamlink: the ones whose folder is there; PlexDeck & co. are tiles above)
+  for (const [id, a] of Object.entries(appInstaller.CATALOG)) {
+    if (!a.setup && !a.tile && fs.existsSync(path.join(P.APPS, a.dir))) out.push({ name: a.name, exe: appExe(a), kind: 'app', fix: { kind: 'app', id } });
+  }
+  try {
+    for (const f of fs.readdirSync(PC_GAMES_DIR).filter((x) => /\.game$/i.test(x))) {
+      const g = readJson(path.join(PC_GAMES_DIR, f), null);
+      if (g && g.exe && !/^[a-z][a-z0-9+.-]+:\/\//i.test(g.exe)) out.push({ name: f.replace(/\.game$/i, ''), exe: P.resolve(g.exe), kind: 'game' });
+    }
+  } catch {}
+  return out;
+}
+// { fixes: [{ key, kind, name, for }], notes: [text] } - fixes are what MediaDeck can do (pcFix), notes what it can't
+async function pcCheck() {
+  const fixes = [];
+  // an Emu_modules folder set in Settings that isn't the one in use (another MediaDeck's, or gone)
+  const set = config.settings.emuModulesPath;
+  if (set && path.resolve(P.resolve(set)).toLowerCase() !== path.resolve(emuDir()).toLowerCase()) {
+    fixes.push({ key: 'setting:emuModulesPath', kind: 'setting', name: 'Use this MediaDeck\'s own Emu_modules folder (Settings pointed at another one)', for: [] });
+  }
+  const r = pcCheckLib.check(await pcPrograms());
+  if (fs.existsSync(DS4_EXE) && (await serviceState('ViGEmBus')) === 'missing') {
+    fixes.push({ key: 'driver:vigem', kind: 'driver', id: 'vigem', name: 'Install the ViGEmBus driver - DS4Windows needs it for the controller', for: ['DS4Windows'] });
+  }
+  // game folders that aren't there (another drive on the old PC …): one line with the emulators' names
+  const noGames = [];
+  for (const m of await emuModules.scan(emuDir())) {
+    if (m.hidden || !m.ok) continue;
+    if ((m.romFolders || []).some((f) => { const p = typeof f === 'string' ? f : f && f.path; return p && !fs.existsSync(p); })) noGames.push(m.name);
+  }
+  if (noGames.length) r.notes.push(`Game folders not found for ${noGames.slice(0, 5).join(', ')}${noGames.length > 5 ? ` +${noGames.length - 5}` : ''} (a console's page → Game folders)`);
+  return { fixes: [...fixes, ...r.fixes], notes: r.notes };
+}
+// Runs an installer with Windows' "allow" question (it needs administrator rights) and waits for it: its exit code
+// (1223: the question was answered No)
+function runElevated(file, args = []) {
+  const q = (s) => `'${String(s).replace(/'/g, "''")}'`;
+  const ps = `try { $p = Start-Process -FilePath ${q(file)}${args.length ? ` -ArgumentList ${args.map(q).join(',')}` : ''} -Verb RunAs -Wait -PassThru; exit $p.ExitCode } catch { exit 1223 }`;
+  return new Promise((res) => execFile('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', ps], { windowsHide: true }, (err) => res(err ? (typeof err.code === 'number' ? err.code : -1) : 0)));
+}
+// A Windows runtime from Microsoft (pc-check.js): downloaded to Apps\Setup (kept for the next PC), then installed
+async function installRuntime(f, progress) {
+  const dir = path.join(P.APPS, 'Setup');
+  fs.mkdirSync(dir, { recursive: true });
+  const file = path.join(dir, f.file || decodeURIComponent(f.url.split('/').pop()));
+  if (!fs.existsSync(file)) {
+    await emuInstaller.download(f.url, file + '.part', net, (got, total) => progress(`${f.name}: downloading ${Math.round(got / 1048576)}${total ? ` / ${Math.round(total / 1048576)}` : ''} MB`, total ? got / total : 0));
+    fs.renameSync(file + '.part', file);
+  }
+  progress(`${f.name}: installing - Windows asks to allow it`, 0.99);
+  let code;
+  if (f.unpack) {
+    // DirectX: unpacked into a temporary folder, then its own setup (both in one "allow")
+    const stamp = Date.now(), out = path.join(app.getPath('temp'), `mediadeck-runtime-${stamp}`), bat = `${out}.cmd`;
+    fs.writeFileSync(bat, `@echo off\r\n"${file}" /Q /T:"${out}"\r\n"${out}\\DXSETUP.exe" /silent\r\nexit /b %errorlevel%\r\n`);
+    try { code = await runElevated(bat); } finally { fs.rmSync(bat, { force: true }); fs.rmSync(out, { recursive: true, force: true }); }
+  } else code = await runElevated(file, f.args);
+  // 0: done; 3010 / 1641: done, the PC restarts later; 1638: a newer one is there already
+  if ([0, 3010, 1641, 1638].includes(code)) { progress(`${f.name} installed`, 1); return { ok: true, restart: code === 3010 || code === 1641 }; }
+  return { error: code === 1223 || code === 1602 ? 'Not installed: Windows\' question was answered No' : `The installer stopped (code ${code})` };
+}
+async function pcFix(key) {
+  const progress = (text, pct) => { if (win && !win.isDestroyed()) win.webContents.send('emu-install-progress', { text, pct }); };
+  const f = (await pcCheck()).fixes.find((x) => x.key === key);
+  if (!f) return { ok: true };
+  if (f.kind === 'runtime') return installRuntime(f, progress);
+  if (f.kind === 'setting') {
+    config.settings.emuModulesPath = '';
+    writeJson(CONFIG_FILE, config);
+    if (win && !win.isDestroyed()) win.webContents.send('settings-patch', { emuModulesPath: '' });
+    await syncEmulators();
+    return { ok: true };
+  }
+  if (f.kind === 'app') { const r = await installApps([f.id]); const x = (r.results || [])[0]; return x && x.ok ? { ok: true } : { error: (x && x.error) || r.error || 'Not installed' }; }
+  if (f.kind === 'driver') {
+    if (!appInstaller.exePath(SETUP_ID[f.id])) { const r = await installApps([SETUP_ID[f.id]]); const x = (r.results || [])[0]; if (!x || !x.ok) return { error: (x && x.error) || r.error || 'The installer could not be downloaded' }; }
+    const err = await shell.openPath(appInstaller.exePath(SETUP_ID[f.id]));
+    return err ? { error: err } : { ok: true, opened: true };
+  }
+  if (f.kind === 'emulator') {
+    // its program again from its own page, into its folder (settings, saves and BIOS stay - emuInstaller.update)
+    if (installing) return { error: 'An install or update is already running' };
+    const m = (await emuModules.scan(emuDir())).find((x) => x.id === f.id);
+    if (!m) return { error: 'Emulator not found' };
+    installing = true;
+    try {
+      const r = await emuInstaller.update(m, { tempDir: app.getPath('temp'), sevenZip: P.tool('7za.exe'), net, emuDir: emuDir(), backupDir: P.EMU_BACKUPS, progress });
+      emuModules.setInstaller(m, r);
+    } catch (e) { return { error: e.message }; } finally { installing = false; }
+    await syncEmulators();
+    return { ok: true };
+  }
+  return { error: 'Nothing to do' };
+}
+// Another PC than last time (or the folder moved): the check runs by itself. data\pc.json keeps only a hash of
+// Windows' machine id.
+function machineHash() {
+  return new Promise((res) => execFile('reg', ['query', 'HKLM\\SOFTWARE\\Microsoft\\Cryptography', '/v', 'MachineGuid'], { windowsHide: true }, (err, out) => {
+    const id = (!err && (/MachineGuid\s+REG_SZ\s+(\S+)/i.exec(out) || [])[1]) || require('os').hostname();
+    res(crypto.createHash('sha256').update('mediadeck|' + id).digest('hex').slice(0, 16));
+  }));
+}
+async function pcCheckAtStart() {
+  const file = path.join(DATA, 'pc.json'), id = await machineHash();
+  const known = readJson(file, null);
+  if (!known || known.id !== id) writeJson(file, { id });
+  // (the first start of this version on the PC it was on: only noted)
+  if (config.settings.setupDone === false || (known ? known.id === id : !folderMoved)) return;
+  const r = await pcCheck();
+  console.log(`[pc] another PC or place: ${r.fixes.length} to set up, ${r.notes.length} notes`);
+  if ((r.fixes.length || r.notes.length) && win && !win.isDestroyed()) win.webContents.send('pc-check', { auto: true, ...r });
+}
+
 // ---------- IPC ----------
 function registerIpc() {
+  ipcMain.handle('pc-check', () => pcCheck());
+  ipcMain.handle('pc-fix', (e, key) => pcFix(key));
   ipcMain.handle('get-state', () => ({ config, progress, server: server.status() }));
   ipcMain.handle('watch-drives', (e, on) => setDriveWatch(on));
   ipcMain.handle('emu-rescan', async () => { await relinkMovedFolders().catch(() => {}); const mods = await syncEmulators(); return { config, mods, dir: emuDir() }; });
@@ -2254,7 +2407,31 @@ function registerIpc() {
       }
       await syncEmulators();
     } finally { installing = false; }
+    // a newer version may read the newer firmware in the BIOS folder (after the results are shown)
+    setTimeout(() => offerFirmware().catch(() => {}), 4000);
     return { results, config };
+  });
+  // The firmware offer's answers: put it in (the old firmware to Emulator backups), or don't ask about that file again
+  ipcMain.handle('firmware-install', async (e, moduleId, zip) => {
+    if (installing) return { error: 'An install or update is already running' };
+    if (running && isAlive(running.pid)) return { error: 'Close the game first' };
+    const m = (await emuModules.scan(emuDir())).find((x) => x.id === moduleId);
+    if (!m) return { error: 'Emulator not found' };
+    installing = true;
+    try {
+      const r = await emuInstaller.installFirmware(m, zip, { biosDir: P.BIOS, sevenZip: P.tool('7za.exe'), emuDir: emuDir(), backupDir: P.EMU_BACKUPS });
+      emuModules.setFirmware(m, r.version);
+      console.log(`[firmware] ${r.name}: ${r.was} -> ${r.version} (${r.zip})`);
+      return { ok: true, ...r };
+    } catch (err) { return { error: err.message }; } finally { installing = false; }
+  });
+  ipcMain.handle('firmware-skip', (e, moduleId, zip) => {
+    const key = `${moduleId}|${zip}`;
+    config.settings.firmwareSkip = [...new Set([...(config.settings.firmwareSkip || []), key])];
+    writeJson(CONFIG_FILE, config);
+    // (the page's copy follows, or its next save would drop it)
+    if (win && !win.isDestroyed()) win.webContents.send('settings-patch', { firmwareSkip: config.settings.firmwareSkip });
+    return true;
   });
   ipcMain.handle('emu-set-folders', async (e, moduleId, folders) => {
     const m = (await emuModules.scan(emuDir())).find((x) => x.id === moduleId);
@@ -2382,7 +2559,7 @@ function registerIpc() {
     const { fullscreen, window } = config.settings;
     const hideBefore = config.settings.hideCursor, portableBefore = portableData(), ffmpegBefore = config.settings.ffmpegPath;
     // the games folder: relative when it is inside MediaDeck's folder (Games), so the folder can move
-    config = { ...next, settings: { ...next.settings, fullscreen, window, gamesFolder: P.rel(next.settings.gamesFolder || '') },
+    config = { ...next, settings: { ...next.settings, fullscreen, window, gamesFolder: P.rel(next.settings.gamesFolder || ''), emuModulesPath: P.rel(next.settings.emuModulesPath || '') },
       tiles: (next.tiles || []).map((t) => ({ ...t, ...(t.path ? { path: P.rel(t.path) } : {}), ...(t.image ? { image: P.rel(t.image) } : {}) })) };
     writeJson(CONFIG_FILE, config);
     if (config.settings.hideCursor !== hideBefore) startCursorHide();
@@ -2485,8 +2662,11 @@ if (!app.requestSingleInstanceLock()) {
       try {
         const copied = await setupScan.biosSync(P.BIOS, await emuModules.scan(emuDir()));
         if (copied.length) console.log(`[bios] ${copied.length} BIOS files copied to the emulators: ${copied.slice(0, 8).join('; ')}${copied.length > 8 ? ' …' : ''}`);
+        await offerFirmware();
       } catch (e) { console.error('[bios]', e.message); }
     }, 8000);
+    // on another PC (or the folder moved): what this PC lacks for the emulators and apps (pcCheck)
+    setTimeout(() => pcCheckAtStart().catch((e) => console.error('[pc]', e.message)), 15000);
     // PCSX2 folders on a drive that is gone → its own sub folders (relocate.js)
     try {
       for (const m of await emuModules.scan(emuDir())) {

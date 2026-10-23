@@ -407,7 +407,7 @@ svg { display: block; }
   font-size: calc(1.1rem * var(--text-scale)); text-align: left;
   transition: background 0.15s, color 0.15s;
 }
-.menu-item svg { width: 1.35rem; height: 1.35rem; opacity: 0.85; }
+.menu-item svg { width: 1.35rem; height: 1.35rem; opacity: 0.85; flex-shrink: 0; }   /* (a label on two lines squeezed it) */
 .menu-item.focused { background: var(--focus-bg); color: var(--focus-ink); box-shadow: inset 0.22rem 0 0 var(--focus-ring); }
 .menu-item.danger { color: #fca5a5; }
 .menu-item.danger.focused { background: var(--danger); color: #fff; }
