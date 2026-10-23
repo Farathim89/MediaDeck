@@ -1233,6 +1233,11 @@ const Home = (() => {
         const all = [...tabsEl.querySelectorAll('.tab')];
         const i = all.indexOf(activeTabEl());
         Nav.focus(all[Math.max(0, Math.min(all.length - 1, i + (action === 'lb' ? -1 : 1)))]);
+      } else if (inRail) {
+        // on the A-Z rail: the games of the letter before / after (like A on that letter)
+        const letters = [...cur.closest('.letters-rail').querySelectorAll('button.letter')];
+        const next = letters[letters.indexOf(cur) + (action === 'lb' ? -1 : 1)];
+        if (next) next.click();
       } else if (cur && cur.dataset.letter) {
         jumpLetter(cur, action === 'lb' ? -1 : 1);
       } else {
