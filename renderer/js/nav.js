@@ -34,6 +34,18 @@ const Nav = (() => {
   // Gap between two ranges on one axis (0 when they overlap)
   function gap(a1, a2, b1, b2) { return Math.max(0, Math.max(a1, b1) - Math.min(a2, b2)); }
 
+  // Must really lie on that side (a little overlap is allowed for scaled/focused items),
+  // not just have its centre there: a narrow card below isn't "to the left"
+  function onSide(r, rr, dir) {
+    const c = centre(r), cc = centre(rr);
+    const tolX = Math.min(r.width, rr.width) * 0.25;
+    const tolY = Math.min(r.height, rr.height) * 0.25;
+    if (dir === 'right') return cc.x > c.x + 1 && rr.left >= r.right - tolX;
+    if (dir === 'left') return cc.x < c.x - 1 && rr.right <= r.left + tolX;
+    if (dir === 'down') return cc.y > c.y + 1 && rr.top >= r.bottom - tolY;
+    return cc.y < c.y - 1 && rr.bottom <= r.top + tolY;
+  }
+
   // accept: optional filter for which elements may be moved to
   function move(dir, accept) {
     const list = accept ? items().filter((el) => el === current || accept(el)) : items();
@@ -48,27 +60,25 @@ const Nav = (() => {
     for (const el of list) {
       if (el === current) continue;
       const rr = el.getBoundingClientRect();
+      if (!onSide(r, rr, dir)) continue;
       const cc = centre(rr);
       let primary, secondary;
-      // Must really lie on that side (a little overlap is allowed for scaled/focused items),
-      // not just have its centre there: a narrow card below isn't "to the left"
-      const tolX = Math.min(r.width, rr.width) * 0.25;
-      const tolY = Math.min(r.height, rr.height) * 0.25;
-      if (dir === 'right') { if (cc.x <= c.x + 1 || rr.left < r.right - tolX) continue; primary = rr.left - r.right; secondary = gap(r.top, r.bottom, rr.top, rr.bottom); }
-      if (dir === 'left') { if (cc.x >= c.x - 1 || rr.right > r.left + tolX) continue; primary = r.left - rr.right; secondary = gap(r.top, r.bottom, rr.top, rr.bottom); }
-      if (dir === 'down') { if (cc.y <= c.y + 1 || rr.top < r.bottom - tolY) continue; primary = rr.top - r.bottom; secondary = Math.abs(cc.x - c.x); }
-      if (dir === 'up') { if (cc.y >= c.y - 1 || rr.bottom > r.top + tolY) continue; primary = r.top - rr.bottom; secondary = Math.abs(cc.x - c.x); }
+      if (dir === 'right') { primary = rr.left - r.right; secondary = gap(r.top, r.bottom, rr.top, rr.bottom); }
+      if (dir === 'left') { primary = r.left - rr.right; secondary = gap(r.top, r.bottom, rr.top, rr.bottom); }
+      if (dir === 'down') { primary = rr.top - r.bottom; secondary = Math.abs(cc.x - c.x); }
+      if (dir === 'up') { primary = r.top - rr.bottom; secondary = Math.abs(cc.x - c.x); }
       const vertical = dir === 'up' || dir === 'down';
       const score = Math.max(primary, -8) + secondary * (vertical ? 0.6 : 4);
       if (score < bestScore) { bestScore = score; best = el; }
     }
     if (!best) return false;
 
-    // Entering another row: go back to where we were in it
+    // Entering another row: go back to where we were in it - when that is on the side we're going to
+    // (two rows can share a group: down from a console's chips went back up to its Recently played)
     const g = best.dataset.group;
     if ((dir === 'up' || dir === 'down') && g && g !== current.dataset.group) {
       const remembered = memory.get(g);
-      if (remembered && list.includes(remembered)) best = remembered;
+      if (remembered && list.includes(remembered) && onSide(r, remembered.getBoundingClientRect(), dir)) best = remembered;
     }
     focus(best);
     return true;

@@ -443,7 +443,11 @@ const Home = (() => {
     row.className = 'app-section console-recent recent';
     row.innerHTML = `<h2>Recently played <small>${played.length}</small></h2><div class="game-grid"></div>`;
     const grid = row.querySelector('.game-grid');
-    for (const g of played) grid.appendChild(gameCard({ ...byRom.get(g.rom), moduleId: t.moduleId }, t));
+    for (const g of played) {
+      const card = gameCard({ ...byRom.get(g.rom), moduleId: t.moduleId }, t);
+      card.dataset.group = 'recent';   // a row of its own (sharing the games' one, the focus jumped past the chips)
+      grid.appendChild(card);
+    }
     sec.before(row);
     grid.querySelectorAll('.thumb').forEach((h) => Media.loadThumb(h));
   }
@@ -1145,6 +1149,23 @@ const Home = (() => {
   btnPower.addEventListener('click', powerMenu);
 
   // ---------- Input ----------
+  // A console's (or an emulator's) page, top to bottom: its buttons, Recently played, the chips, the games.
+  // Up / down go to the grid's next row, else to the next of these lines - also where that line doesn't reach
+  // over the focused card (up from the right of the games skipped the chips)
+  const LINES = '.app-actions, .console-recent .game-grid, .game-bar, .games-section .game-grid';
+  function moveLine(dir, line) {
+    if (Nav.move(dir, (n) => n.closest(LINES) === line)) return;
+    const items = Nav.items();
+    const lines = [...pageEl.querySelectorAll(LINES)].filter((l) => items.some((n) => l.contains(n)));
+    const next = lines[lines.indexOf(line) + (dir === 'down' ? 1 : -1)];
+    if (!next) return;
+    const was = Nav.remember('gamebar');
+    Nav.move(dir, (n) => n.closest(LINES) === next);
+    // into the sub tabs: the one shown (All games …) unless you were on another chip there
+    const shown = Nav.current !== was && next.querySelector('.group-chip.active');
+    if (shown) Nav.focus(shown);
+  }
+
   function handle(action) {
     const cur = Nav.current;
     const inSidebar = cur && cur.closest('.sidebar');
@@ -1169,6 +1190,29 @@ const Home = (() => {
       else if (!isTab(cur)) Nav.focus(activeTabEl());
       return true;
     }
+    // A console's (or an emulator's) page, by lines: the A-Z rail is only for the games (Right from a game goes
+    // there, up / down in it go through the letters, Left goes back to the games); left / right stay on their line
+    const inRail = !!(cur && cur.closest('.letters-rail'));
+    const line = !inSidebar && cur && cur.closest(LINES);
+    if (inRail && (action === 'up' || action === 'down')) { Nav.move(action, (n) => !!n.closest('.letters-rail')); return true; }
+    if (inRail && (action === 'left' || action === 'right')) {
+      // back to the game you came from while it is on screen (a letter is small: the row beside it may be the next one)
+      const from = Nav.remember('games');
+      const r = from && from.isConnected && from.closest('.games-section') && from.getBoundingClientRect();
+      if (action === 'left' && r && r.bottom > 0 && r.top < innerHeight) Nav.focus(from);
+      else if (action === 'left') Nav.move('left', (n) => !!n.closest('.games-section .game-grid'));
+      return true;
+    }
+    if (line && (action === 'up' || action === 'down')) { moveLine(action, line); return true; }
+    if (line && action === 'right') {
+      Nav.move('right', (n) => n.closest(LINES) === line || (line.closest('.games-section') && !!n.closest('.letters-rail')));
+      return true;
+    }
+    if (line && action === 'left') {
+      if (!Nav.move('left', (n) => n.closest(LINES) === line)) Nav.focus(activeTabEl());
+      return true;
+    }
+
     // Up / down stay on their own side (tab list or page)
     if (action === 'up' || action === 'down') {
       // From the last tab, down goes to Settings (the first button at the bottom)
