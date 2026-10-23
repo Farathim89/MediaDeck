@@ -2144,9 +2144,12 @@ async function padsFollowPc(only) {
     try {
       if (id === 'duckstation' && padPc.sdlFirst(path.join(dir, 'settings.ini'))) done.push(m.name);
       if (id === 'pcsx2' && padPc.sdlFirst(path.join(dir, 'inis', 'PCSX2.ini'))) done.push(m.name);
-      if (/^(eden|suyu|sudachi|citron|yuzu)\.exe$/i.test(path.basename(m.exe))) {
+      const exe = path.basename(m.exe);
+      if (/^(eden|suyu|sudachi|citron|yuzu|ryujinx)\.exe$/i.test(exe) || id === 'mgba') {
         here = here || await padPc.connectedPads(KEYS_EXE);
-        const kind = padPc.edenFollow(dir, here, padStore(`eden:${m.id}`));
+        const kind = /^ryujinx\.exe$/i.test(exe) ? padPc.ryujinxFollow(dir, here)
+          : id === 'mgba' ? padPc.mgbaFollow(dir, here, padStore(`mgba:${m.id}`))
+            : padPc.edenFollow(dir, here, padStore(`eden:${m.id}`));
         if (kind) done.push(`${m.name} (${kind})`);
       }
       if (id === 'xemu' && padPc.xemuFollow(dir, fs.existsSync(DS4_EXE) && (await serviceState('ViGEmBus')) !== 'missing', padStore(`xemu:${m.id}`))) done.push(m.name);

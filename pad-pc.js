@@ -5,6 +5,8 @@
 //    SDL-0/A": both at once) - on a PC without that controller nothing ever pressed it.
 //  - Eden: player 1 by SDL's id of the controller that is here (from Windows' hardware ids), its own buttons for an
 //    Xbox or a PlayStation pad; what it had is kept per controller and comes back with that controller
+//  - Ryujinx / mGBA: the same by SDL's full id of the controller (they keep it with the CRC of its name); Ryujinx's
+//    buttons are by name, mGBA's by number (its own for an Xbox / a PlayStation pad, what it had kept per pad)
 //  - xemu: on a PC without DS4Windows it binds the controller that is there by itself (auto_bind); with DS4Windows
 //    its own setting comes back (auto_bind there would bind the PS4 controller and its Xbox pad both)
 const path = require('path');
@@ -19,19 +21,47 @@ const { readIni, iniGet, iniSet, writeIni } = require('./pad-defaults');
 // HIDAPI) 03000000 <vid> 0000 <pid> 0000 0000 6800
 const PS_PADS = new Set(['05c4', '09cc', '0ba0', '0ce6', '0df2']);   // DS4 v1 / v2 / USB adapter, DualSense, DualSense Edge
 const le = (h) => h.slice(2, 4) + h.slice(0, 2);
-// keys.exe pads: "xinput 045e 028e 0114 01 slot0" / "hid 054c 09cc 0100 00 \\?\HID#…"
+// SDL_crc16 (CRC-16/ARC): the name part of SDL's ids
+function crc16(s) {
+  let c = 0;
+  for (const b of Buffer.from(s, 'utf8')) { c ^= b; for (let i = 0; i < 8; i++) c = c & 1 ? (c >>> 1) ^ 0xa001 : c >>> 1; }
+  return c.toString(16).padStart(4, '0');
+}
+// SDL's names of the PlayStation pads it reads itself (its HIDAPI drivers)
+const PS_NAME = { '05c4': 'PS4 Controller', '09cc': 'PS4 Controller', '0ba0': 'PS4 Controller', '0ce6': 'DualSense Wireless Controller', '0df2': 'DualSense Edge Wireless Controller' };
+// keys.exe pads: "xinput 045e 028e 0114 01 slot0" / "raw 045e 028e 0000 1 <manufacturer>\t<product>" (1 = an XInput pad)
+// Each pad: guid = Eden's (SDL with its raw input off, no name CRC), sdl = SDL's own with its defaults and the name
+// CRC (Ryujinx, mGBA): Xbox pads through raw input ('r', the CRC of the device's manufacturer + product text),
+// PlayStation pads through HIDAPI ('h', the CRC of SDL's name for them)
 function padsFrom(text) {
+  const lines = String(text || '').split(/\r?\n/);
+  const raw = lines.map((l) => /^raw ([0-9a-f]{4}) ([0-9a-f]{4}) ([0-9a-f]{4}) ([01]) ([^\t]*)\t(.*)$/i.exec(l.trim())).filter(Boolean)
+    .map(([, vid, pid, ver, ig, mfr, prod]) => ({ vid: vid.toLowerCase(), pid: pid.toLowerCase(), ver: ver.toLowerCase(), ig: ig === '1', mfr: mfr.trim(), prod: prod.trim() }));
   const seen = new Map();
-  for (const line of String(text || '').split(/\r?\n/)) {
-    const m = /^(xinput|hid) ([0-9a-f]{4}) ([0-9a-f]{4}) ([0-9a-f]{4}) ([0-9a-f]{2})/i.exec(line.trim());
+  for (const line of lines) {
+    const m = /^xinput ([0-9a-f]{4}) ([0-9a-f]{4}) ([0-9a-f]{4}) ([0-9a-f]{2})/i.exec(line.trim());
     if (!m) continue;
-    const [, type, vid, pid, ver, sub] = m.map((x) => String(x).toLowerCase());
-    let pad = null;
-    if (type === 'xinput') pad = { kind: 'xinput', vid, pid, guid: `03000000${le(vid)}0000${le(pid)}0000${le(ver)}78${sub}` };
-    else if (vid === '054c' && PS_PADS.has(pid)) pad = { kind: 'playstation', vid, pid, guid: `03000000${le(vid)}0000${le(pid)}000000006800` };
-    if (pad && !seen.has(pad.guid)) seen.set(pad.guid, pad);
+    const [, vid, pid, ver, sub] = m.map((x) => String(x).toLowerCase());
+    const r = raw.find((x) => x.ig && x.vid === vid && x.pid === pid);
+    const name = r ? (r.mfr && r.prod ? `${r.mfr} ${r.prod}` : r.prod) : '';
+    const pad = { kind: 'xinput', vid, pid, guid: `03000000${le(vid)}0000${le(pid)}0000${le(ver)}78${sub}`,
+      sdl: r ? `0300${le(crc16(name))}${le(vid)}0000${le(pid)}0000${le(r.ver)}7200` : '' };
+    if (!seen.has(pad.guid)) seen.set(pad.guid, pad);
+  }
+  for (const r of raw) {
+    if (r.ig || r.vid !== '054c' || !PS_PADS.has(r.pid)) continue;
+    const pad = { kind: 'playstation', vid: r.vid, pid: r.pid, guid: `03000000${le(r.vid)}0000${le(r.pid)}000000006800`,
+      sdl: `0300${le(crc16(PS_NAME[r.pid]))}${le(r.vid)}0000${le(r.pid)}000000006800` };
+    if (!seen.has(pad.guid)) seen.set(pad.guid, pad);
   }
   return [...seen.values()].sort((a, b) => (a.kind === 'playstation' ? 0 : 1) - (b.kind === 'playstation' ? 0 : 1));
+}
+// The pad the emulator should play with: the first one (a PlayStation pad before an Xbox one) - unless the one it
+// has is here and isn't just an Xbox pad next to a PlayStation one
+function pick(pads, isBound) {
+  const best = pads[0], here = pads.find(isBound);
+  if (!best || here === best || (here && best.kind !== 'playstation')) return null;
+  return best;
 }
 function connectedPads(keysExe) {
   return new Promise((resolve) => execFile(keysExe, ['pads'], { windowsHide: true, timeout: 5000 }, (err, out) => resolve(padsFrom(out))));
@@ -110,6 +140,58 @@ function edenFollow(dir, pads, store) {
   return pad.kind === 'playstation' ? 'PlayStation controller' : 'Xbox controller';
 }
 
+// ---------- Ryujinx ----------
+// Its player 1 = "<n>-<SDL's GUID as a .NET Guid>" (the first three parts byte-swapped); the buttons are by name, so
+// only the id changes. Returns the kind it now plays with, or ''.
+const dotnetGuid = (h) => [h.slice(0, 8).match(/../g).reverse().join(''), h.slice(8, 12).match(/../g).reverse().join(''), h.slice(12, 16).match(/../g).reverse().join(''), h.slice(16, 20), h.slice(20, 32)].join('-');
+function ryujinxFollow(dir, pads) {
+  const file = [path.join(dir, 'portable', 'Config.json'), path.join(dir, 'Config.json')].find((f) => fs.existsSync(f));
+  if (!file || !pads.length) return '';
+  const text = fs.readFileSync(file, 'utf8');
+  let j;
+  try { j = JSON.parse(text); } catch { return ''; }
+  const p1 = (j.input_config || []).find((c) => c && c.backend === 'GamepadSDL2' && c.player_index === 'Player1');
+  if (!p1) return '';
+  const id = (p) => `0-${dotnetGuid(p.sdl)}`;
+  const pad = pick(pads.filter((p) => p.sdl), (p) => String(p1.id || '').toLowerCase() === id(p));
+  if (!pad || !p1.id) return '';
+  // only the id's text changes (the rest of the file stays as Ryujinx wrote it)
+  const next = text.replace(`"id": "${p1.id}"`, `"id": "${id(pad)}"`);
+  if (next === text) return '';
+  if (!fs.existsSync(file + '.before-pads')) fs.copyFileSync(file, file + '.before-pads');
+  fs.writeFileSync(file, next);
+  return pad.kind === 'playstation' ? 'PlayStation controller' : 'Xbox controller';
+}
+
+// ---------- mGBA ----------
+// [gba.input.SDLB]: the pad (device0 = SDL's GUID) and its buttons by SDL's numbers; GBA A = the right face button,
+// B = the bottom one (by position, as before). What it had is kept per pad and comes back with it.
+function mgbaBinds(p) {
+  const stick = { axisLeftAxis: '-0', axisLeftValue: '-12288', axisRightAxis: '+0', axisRightValue: '12288', axisUpAxis: '-1', axisUpValue: '-12288', axisDownAxis: '+1', axisDownValue: '12288' };
+  if (p.kind === 'playstation') return { keyA: '1', keyB: '0', keySelect: '4', keyStart: '6', keyL: '9', keyR: '10', keyUp: '11', keyDown: '12', keyLeft: '13', keyRight: '14', ...stick };
+  // (Xbox pads through raw input: Back 6, Start 7, LB 4, RB 5; the D-pad is hat 0 - mGBA's keys 4-7 are Right, Left, Up, Down)
+  return { keyA: '1', keyB: '0', keySelect: '6', keyStart: '7', keyL: '4', keyR: '5', keyUp: '-1', keyDown: '-1', keyLeft: '-1', keyRight: '-1',
+    hat0Up: '6', hat0Down: '7', hat0Left: '5', hat0Right: '4', ...stick };
+}
+const MGBA_KEYS = [...new Set([...Object.keys(mgbaBinds({ kind: 'xinput' })), ...Object.keys(mgbaBinds({ kind: 'playstation' }))])];
+function mgbaFollow(dir, pads, store) {
+  const file = path.join(dir, 'config.ini');
+  if (!pads.length || !fs.existsSync(file)) return '';
+  const ini = readIni(file), sec = 'gba.input.SDLB';
+  const device = String(iniGet(ini, sec, 'device0') || '').toLowerCase();
+  if (!device) return '';                                       // no controller chosen in mGBA: it picks one itself
+  const pad = pick(pads.filter((p) => p.sdl), (p) => p.sdl === device);
+  if (!pad) return '';
+  const saved = store.get() || {};
+  saved[device] = Object.fromEntries(MGBA_KEYS.map((k) => [k, iniGet(ini, sec, k)]).filter(([, v]) => v !== undefined));
+  const binds = saved[pad.sdl] || mgbaBinds(pad);
+  iniSet(ini, sec, 'device0', pad.sdl, '=');
+  for (const [k, v] of Object.entries(binds)) { iniSet(ini, sec, k, v, '='); iniSet(ini, `gba.input-profile.${pad.sdl}`, k, v, '='); }
+  writeIni(file, ini);
+  store.set(saved);
+  return pad.kind === 'playstation' ? 'PlayStation controller' : 'Xbox controller';
+}
+
 // ---------- xemu ----------
 // ds4windows: this PC uses DS4Windows (its driver is installed). store: { get(), set(v) }. Returns whether it changed.
 function xemuFollow(dir, ds4windows, store) {
@@ -136,4 +218,4 @@ function xemuFollow(dir, ds4windows, store) {
   return true;
 }
 
-module.exports = { connectedPads, padsFrom, sdlFirst, edenBinds, edenFollow, xemuFollow };
+module.exports = { connectedPads, padsFrom, sdlFirst, edenBinds, edenFollow, ryujinxFollow, mgbaFollow, xemuFollow, dotnetGuid };

@@ -19,9 +19,9 @@
 //   keys.exe display set <hwnd> <w> <h> <hz> try|keep|test  try = for now (not saved; a restart / reset goes back),
 //                                  keep = saved like Windows' own Display settings, test = only ask Windows if it would work
 //   keys.exe display reset <hwnd>  back to the saved mode (undoes a "try")
-//   keys.exe pads                  the game controllers Windows has, one per line: "xinput|hid vid pid version subtype name"
-//                                  (where SDL reads them too: XInput's own ids for Xbox pads, raw input for the others -
-//                                  pad-pc.js makes SDL's ids from them)
+//   keys.exe pads                  the game controllers Windows has, one per line: "xinput vid pid version subtype slotN" (XInput's
+//                                  own ids) and "raw vid pid version 1|0 manufacturer<TAB>product" (raw input; 1 = an XInput pad)
+//                                  - where SDL reads them too; pad-pc.js makes SDL's ids from them
 // Keys are sent as hardware scan codes, which emulators (DirectInput / raw input) understand.
 using System;
 using System.Collections.Generic;
@@ -322,6 +322,18 @@ static class Keys
         [FieldOffset(20)] public ushort VendorId; [FieldOffset(22)] public ushort ProductId; [FieldOffset(24)] public ushort ProductVersion;
     }
     [DllImport("xinput1_4.dll", EntryPoint = "#108")] static extern uint XInputGetCapabilitiesEx(uint one, uint user, uint flags, out XINPUT_CAPABILITIES_EX caps);
+    // the device's own manufacturer / product text (SDL's raw input ids are made with them)
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)] static extern IntPtr CreateFile(string name, uint access, uint share, IntPtr sec, uint disposition, uint flags, IntPtr template);
+    [DllImport("hid.dll")] static extern bool HidD_GetManufacturerString(IntPtr h, byte[] buffer, int length);
+    [DllImport("hid.dll")] static extern bool HidD_GetProductString(IntPtr h, byte[] buffer, int length);
+    static string HidText(IntPtr h, bool product)
+    {
+        var b = new byte[256];
+        if (!(product ? HidD_GetProductString(h, b, b.Length) : HidD_GetManufacturerString(h, b, b.Length))) return "";
+        string s = System.Text.Encoding.Unicode.GetString(b);
+        int z = s.IndexOf('\0');
+        return (z >= 0 ? s.Substring(0, z) : s).Replace('\t', ' ');
+    }
     static int Pads()
     {
         for (uint u = 0; u < 4; u++)
@@ -353,9 +365,11 @@ static class Keys
             GetRawInputDeviceName(d.hDevice, 0x20000007, null, ref nsz);                                  // RIDI_DEVICENAME
             var sb = new System.Text.StringBuilder((int)nsz + 2);
             GetRawInputDeviceName(d.hDevice, 0x20000007, sb, ref nsz);
-            string name = sb.ToString();
-            if (name.IndexOf("IG_", StringComparison.OrdinalIgnoreCase) >= 0) continue;          // an XInput pad: listed above
-            Console.WriteLine(string.Format("hid {0:x4} {1:x4} {2:x4} 00 {3}", info.dwVendorId & 0xffff, info.dwProductId & 0xffff, info.dwVersionNumber & 0xffff, name));
+            string name = sb.ToString(), mfr = "", prod = "";
+            IntPtr f = CreateFile(name, 0, 3, IntPtr.Zero, 3, 0, IntPtr.Zero);                   // no access needed, share read / write, OPEN_EXISTING
+            if (f != new IntPtr(-1)) { mfr = HidText(f, false); prod = HidText(f, true); CloseHandle(f); }
+            Console.WriteLine(string.Format("raw {0:x4} {1:x4} {2:x4} {3} {4}\t{5}", info.dwVendorId & 0xffff, info.dwProductId & 0xffff, info.dwVersionNumber & 0xffff,
+                name.IndexOf("IG_", StringComparison.OrdinalIgnoreCase) >= 0 ? 1 : 0, mfr, prod));
         }
         return 0;
     }
