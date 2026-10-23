@@ -29,6 +29,13 @@ const iniGet = (ini, sec, key) => {
   for (const l of ini.sections.get(sec) || []) { const m = /^\s*([^=;#]+?)\s*=\s*(.*)$/.exec(l); if (m && m[1] === key) return m[2]; }
   return undefined;
 };
+const iniGetAll = (ini, sec, key) => (ini.sections.get(sec) || []).map((l) => /^\s*([^=;#]+?)\s*=\s*(.*)$/.exec(l)).filter((m) => m && m[1] === key).map((m) => m[2]);
+// one more line for the key (DuckStation / PCSX2 read every "key = …" line as another bind of it)
+function iniAdd(ini, sec, key, value, sep = ' = ') {
+  const lines = ini.sections.get(sec);
+  const at = lines.map((l) => (/^\s*([^=;#]+?)\s*=/.exec(l) || [])[1]).lastIndexOf(key);
+  lines.splice(at + 1, 0, `${key}${sep}${value}`);
+}
 function iniSet(ini, sec, key, value, sep = ' = ') {
   if (!ini.sections.has(sec)) { ini.sections.set(sec, []); ini.order.push(sec); }
   const lines = ini.sections.get(sec);
@@ -56,8 +63,9 @@ function writeIni(file, ini) {
 // Binds a section's keys when none of them is bound to a controller yet (keyboard-only or empty). extra: other
 // settings, only where missing. fresh: the same, only in a file that isn't there yet (an emulator writes its own
 // defaults into a new file only, so a new file needs the hotkeys MediaDeck's menu presses). keep: set along with
-// the binds. join: emulators that take several bindings per button keep the keys already there (Keyboard/X & SDL-0/A).
-function iniPad(file, { section, binds, isPad, extra = {}, fresh = {}, keep = {}, join = '', single = [], sep = ' = ' }) {
+// the binds. join: emulators that take several bindings per button in one value keep the keys already there. multi: the
+// same with a line of its own (DuckStation / PCSX2: "Keyboard/X & SDL-0/A" there is a chord - both at once).
+function iniPad(file, { section, binds, isPad, extra = {}, fresh = {}, keep = {}, join = '', multi = false, single = [], sep = ' = ' }) {
   const isNew = !fs.existsSync(file);
   const ini = readIni(file);
   let changed = false;
@@ -68,11 +76,13 @@ function iniPad(file, { section, binds, isPad, extra = {}, fresh = {}, keep = {}
   };
   if (isNew) add(fresh);
   add(extra);
-  const has = Object.keys(binds).some((k) => isPad(iniGet(ini, section, k) || ''));
+  const has = Object.keys(binds).some((k) => (multi ? iniGetAll(ini, section, k) : [iniGet(ini, section, k) || '']).some((v) => isPad(v || '')));
   if (!has) {
     for (const [k, v] of Object.entries(binds)) {
       const old = iniGet(ini, section, k);
-      iniSet(ini, section, k, join && old && old.trim() && !single.includes(k) ? `${old.trim()}${join}${v}` : v, sep);
+      const keepOld = old && old.trim() && !single.includes(k);
+      if (multi && keepOld) iniAdd(ini, section, k, v, sep);
+      else iniSet(ini, section, k, join && keepOld ? `${old.trim()}${join}${v}` : v, sep);
     }
     for (const [sec, kv] of Object.entries(keep)) for (const [k, v] of Object.entries(kv)) iniSet(ini, sec, k, v, sep);
     changed = true;
@@ -246,7 +256,7 @@ function mednafenPads(file) {
 // that uses Documents / AppData is left alone (its settings are there).
 const SETUP = {
   duckstation: (dir) => exists(dir, 'portable.txt') && iniPad(path.join(dir, 'settings.ini'), {
-    section: 'Pad1', isPad: isSdl, binds: { Type: 'AnalogController', ...psPad('A', 'B', 'X', 'Y') }, join: ' & ', single: ['Type'],
+    section: 'Pad1', isPad: isSdl, binds: { Type: 'AnalogController', ...psPad('A', 'B', 'X', 'Y') }, multi: true, single: ['Type'],
     extra: { InputSources: { SDL: 'true' } },
     fresh: { Main: { SetupWizardIncomplete: 'false' }, Hotkeys: { OpenPauseMenu: 'Keyboard/Escape', SaveSelectedSaveState: 'Keyboard/F2',
       LoadSelectedSaveState: 'Keyboard/F1', SelectPreviousSaveStateSlot: 'Keyboard/F3', SelectNextSaveStateSlot: 'Keyboard/F4',
@@ -258,7 +268,7 @@ const SETUP = {
     let bios = '';
     try { bios = fs.readdirSync(path.join(dir, 'bios')).find((f) => /\.bin$/i.test(f)) || ''; } catch {}
     return iniPad(path.join(dir, 'inis', 'PCSX2.ini'), {
-      section: 'Pad1', isPad: isSdl, binds: { Type: 'DualShock2', ...psPad('FaceSouth', 'FaceEast', 'FaceWest', 'FaceNorth') }, join: ' & ', single: ['Type'],
+      section: 'Pad1', isPad: isSdl, binds: { Type: 'DualShock2', ...psPad('FaceSouth', 'FaceEast', 'FaceWest', 'FaceNorth') }, multi: true, single: ['Type'],
       extra: { InputSources: { SDL: 'true' } },
       fresh: { UI: { SettingsVersion: '1', ...(bios ? { SetupWizardIncomplete: 'false' } : {}) }, ...(bios ? { Filenames: { BIOS: bios } } : {}),
         Hotkeys: { ToggleFullscreen: 'Keyboard/Alt & Keyboard/Return', SaveStateToSlot: 'Keyboard/F1', NextSaveStateSlot: 'Keyboard/F2',

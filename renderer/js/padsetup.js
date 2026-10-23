@@ -94,7 +94,16 @@ const PadSetup = (() => {
     if (!pad) {
       for (const p of pads) {
         const s = snap(p);
-        if (s.b.some(Boolean)) { pad = { index: p.index, key: keyOf(p), name: nameOf(p) }; waitRelease = true; rest = null; draw(); return; }
+        if (!s.b.some(Boolean)) continue;
+        // an Xbox / PlayStation controller works in MediaDeck and every emulator already: set up, the emulators got a
+        // second, wrong map of it (pads.js xboxLike)
+        if (/xinput/i.test(p.id) || /^(045e|054c):/.test(keyOf(p))) {
+          clearInterval(timer); timer = null;
+          UI.toast(`${nameOf(p).replace(/\s*\(XInput.*$/i, '')} already works as an Xbox controller in MediaDeck and the emulators - nothing to set up`, { icon: 'check', duration: 6000 });
+          App.back();
+          return;
+        }
+        pad = { index: p.index, key: keyOf(p), name: nameOf(p) }; waitRelease = true; rest = null; draw(); return;
       }
       return;
     }

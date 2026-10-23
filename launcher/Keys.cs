@@ -19,6 +19,9 @@
 //   keys.exe display set <hwnd> <w> <h> <hz> try|keep|test  try = for now (not saved; a restart / reset goes back),
 //                                  keep = saved like Windows' own Display settings, test = only ask Windows if it would work
 //   keys.exe display reset <hwnd>  back to the saved mode (undoes a "try")
+//   keys.exe pads                  the game controllers Windows has, one per line: "xinput|hid vid pid version subtype name"
+//                                  (where SDL reads them too: XInput's own ids for Xbox pads, raw input for the others -
+//                                  pad-pc.js makes SDL's ids from them)
 // Keys are sent as hardware scan codes, which emulators (DirectInput / raw input) understand.
 using System;
 using System.Collections.Generic;
@@ -301,10 +304,67 @@ static class Keys
         for (int i = vks.Count - 1; i >= 0; i--) { Key(vks[i], true); Thread.Sleep(25); }
     }
 
+    // ---- pads: the game controllers in Windows' raw input list ----
+    [StructLayout(LayoutKind.Sequential)] struct RAWINPUTDEVICELIST { public IntPtr hDevice; public uint dwType; }
+    [StructLayout(LayoutKind.Explicit, Size = 32)] struct RID_DEVICE_INFO
+    {
+        [FieldOffset(0)] public uint cbSize; [FieldOffset(4)] public uint dwType;
+        [FieldOffset(8)] public uint dwVendorId; [FieldOffset(12)] public uint dwProductId; [FieldOffset(16)] public uint dwVersionNumber;
+        [FieldOffset(20)] public ushort usUsagePage; [FieldOffset(22)] public ushort usUsage;
+    }
+    [DllImport("user32.dll")] static extern uint GetRawInputDeviceList([Out] RAWINPUTDEVICELIST[] list, ref uint count, uint size);
+    [DllImport("user32.dll", EntryPoint = "GetRawInputDeviceInfoW")] static extern uint GetRawInputDeviceInfo(IntPtr h, uint cmd, IntPtr data, ref uint size);
+    [DllImport("user32.dll", EntryPoint = "GetRawInputDeviceInfoW", CharSet = CharSet.Unicode)] static extern uint GetRawInputDeviceName(IntPtr h, uint cmd, System.Text.StringBuilder name, ref uint size);
+    // XInputGetCapabilitiesEx (xinput1_4 #108): the pad's USB ids and version, as SDL takes them for its id
+    [StructLayout(LayoutKind.Explicit, Size = 32)] struct XINPUT_CAPABILITIES_EX
+    {
+        [FieldOffset(0)] public byte Type; [FieldOffset(1)] public byte SubType;
+        [FieldOffset(20)] public ushort VendorId; [FieldOffset(22)] public ushort ProductId; [FieldOffset(24)] public ushort ProductVersion;
+    }
+    [DllImport("xinput1_4.dll", EntryPoint = "#108")] static extern uint XInputGetCapabilitiesEx(uint one, uint user, uint flags, out XINPUT_CAPABILITIES_EX caps);
+    static int Pads()
+    {
+        for (uint u = 0; u < 4; u++)
+        {
+            XINPUT_CAPABILITIES_EX c;
+            try { if (XInputGetCapabilitiesEx(1, u, 0, out c) != 0) continue; } catch { break; }   // (no xinput1_4: Windows 7)
+            Console.WriteLine(string.Format("xinput {0:x4} {1:x4} {2:x4} {3:x2} slot{4}", c.VendorId, c.ProductId, c.ProductVersion, c.SubType, u));
+        }
+        uint n = 0, sz = (uint)Marshal.SizeOf(typeof(RAWINPUTDEVICELIST));
+        GetRawInputDeviceList(null, ref n, sz);
+        var list = new RAWINPUTDEVICELIST[n];
+        if (n == 0 || GetRawInputDeviceList(list, ref n, sz) == uint.MaxValue) return 3;
+        foreach (var d in list)
+        {
+            if (d.dwType != 2) continue;                                        // RIM_TYPEHID
+            uint isz = 32;
+            IntPtr p = Marshal.AllocHGlobal(32);
+            RID_DEVICE_INFO info;
+            try
+            {
+                Marshal.WriteInt32(p, 32);
+                if (GetRawInputDeviceInfo(d.hDevice, 0x2000000b, p, ref isz) == uint.MaxValue) continue;   // RIDI_DEVICEINFO
+                info = (RID_DEVICE_INFO)Marshal.PtrToStructure(p, typeof(RID_DEVICE_INFO));
+            }
+            finally { Marshal.FreeHGlobal(p); }
+            // joystick, game pad, multi-axis controller
+            if (info.usUsagePage != 1 || (info.usUsage != 4 && info.usUsage != 5 && info.usUsage != 8)) continue;
+            uint nsz = 0;
+            GetRawInputDeviceName(d.hDevice, 0x20000007, null, ref nsz);                                  // RIDI_DEVICENAME
+            var sb = new System.Text.StringBuilder((int)nsz + 2);
+            GetRawInputDeviceName(d.hDevice, 0x20000007, sb, ref nsz);
+            string name = sb.ToString();
+            if (name.IndexOf("IG_", StringComparison.OrdinalIgnoreCase) >= 0) continue;          // an XInput pad: listed above
+            Console.WriteLine(string.Format("hid {0:x4} {1:x4} {2:x4} 00 {3}", info.dwVendorId & 0xffff, info.dwProductId & 0xffff, info.dwVersionNumber & 0xffff, name));
+        }
+        return 0;
+    }
+
     static int Main(string[] a)
     {
         try
         {
+            if (a.Length >= 1 && a[0] == "pads") return Pads();
             if (a.Length >= 2 && a[0] == "unmark")
             {
                 var tb = (ITaskbarList2)new TaskbarList();

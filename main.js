@@ -37,6 +37,7 @@ app.commandLine.appendSwitch('disable-direct-composition');
 let win = null;
 let config = null;
 let folderMoved = false;   // this start: the MediaDeck folder is somewhere else than last time (another drive, another PC)
+let xboxSetupsForgotten = [];   // this start: setups of Xbox / PlayStation controllers taken out of the config
 let progress = {};
 let server = null;
 
@@ -100,6 +101,13 @@ function loadConfig() {
   const settingsBefore = JSON.stringify(config.settings);
   for (const k of ['emuModulesPath', 'gamesFolder', 'ffmpegPath']) if (config.settings[k]) config.settings[k] = P.rel(follow(config.settings[k]));
   if (JSON.stringify(config.tiles) !== before || JSON.stringify(config.settings) !== settingsBefore) writeJson(CONFIG_FILE, config);
+  // a setup saved for an Xbox / PlayStation controller (the setup took any pad): forgotten before the page reads the
+  // config - the emulators know that controller themselves (its maps leave RetroArch and Dolphin: forgetXboxSetups)
+  xboxSetupsForgotten = Object.keys(config.controllers || {}).filter((k) => pads.xboxLike(k, config.controllers[k]));
+  if (xboxSetupsForgotten.length) {
+    for (const k of xboxSetupsForgotten) delete config.controllers[k];
+    writeJson(CONFIG_FILE, config);
+  }
   config.favorites = config.favorites || [];
   if (!config.tiles.some((t) => t.builtin === 'youtube')) {
     const at = config.tiles.findIndex((t) => t.builtin === 'media') + 1;
@@ -1605,6 +1613,7 @@ async function launchGame(moduleId, rom) {
   }
   let args;
   try { args = games.launchArgs(mod, startRom); } catch (e) { return { ok: false, error: e.message }; }
+  await padsFollowPc(mod).catch(() => {});      // player 1 on the controller that is here (Eden, DuckStation …)
   // Mednafen keeps its settings in %HOME%\.mednafen when HOME is set (Git Bash, MSYS): always its own folder
   const env = emuInstaller.emuIdOf(mod) === 'mednafen' ? { MEDNAFEN_HOME: path.dirname(mod.exe) } : null;
   const r = await startProgram(mod.exe, args, mod.gameCwd === 'rom' ? path.dirname(rom) : path.dirname(mod.exe), game.title,
@@ -2107,6 +2116,53 @@ function startDs4(minimised) {
   return true;
 }
 
+// Settings → Controllers → Set up a controller: a pad that isn't Xbox / PlayStation, by its USB vendor:product
+// (RetroArch gets a file for it too, Dolphin's GameCube port 1 listens to it; the SDL emulators get it when they start, see startProgram)
+async function padsToEmulators() {
+  try {
+    const mods = (await emuModules.scan(emuDir())).filter((m) => m.ok);
+    const done = [];
+    const ra = mods.find((m) => games.isRetroArch(m));
+    try { if (ra && pads.writeRetroArch(path.dirname(ra.exe), config.controllers)) done.push('RetroArch'); } catch (err) { console.log('[controllers] RetroArch:', err.message); }
+    for (const d of mods.filter((m) => /^dolphin/i.test(path.basename(m.exe || '')))) {
+      try { if (pads.writeDolphin(path.dirname(d.exe), config.controllers)) done.push('Dolphin'); } catch (err) { console.log('[controllers] Dolphin:', err.message); }
+    }
+    return [...new Set(done)].join(' and ');
+  } catch (err) { console.log('[controllers]', err.message); return ''; }
+}
+// Player 1 on this PC (pad-pc.js): DuckStation / PCSX2 on the first controller, Eden on the controller that is here,
+// xemu binding it by itself on a PC without DS4Windows. At the start, and before a game of one of them starts (the
+// controller may have been switched on since). only: that emulator's module.
+const padPc = require('./pad-pc');
+const PADS_PC = path.join(DATA, 'pads-pc.json');      // what Eden / xemu had, per controller / per PC
+const padStore = (k) => ({ get: () => (readJson(PADS_PC, {}) || {})[k], set: (v) => { const j = readJson(PADS_PC, {}) || {}; j[k] = v; writeJson(PADS_PC, j); } });
+async function padsFollowPc(only) {
+  const done = [];
+  let here = null;
+  for (const m of (await emuModules.scan(emuDir())).filter((x) => x.ok && !x.hidden && (!only || x.id === only.id))) {
+    const id = emuInstaller.emuIdOf(m), dir = path.dirname(m.exe);
+    try {
+      if (id === 'duckstation' && padPc.sdlFirst(path.join(dir, 'settings.ini'))) done.push(m.name);
+      if (id === 'pcsx2' && padPc.sdlFirst(path.join(dir, 'inis', 'PCSX2.ini'))) done.push(m.name);
+      if (/^(eden|suyu|sudachi|citron|yuzu)\.exe$/i.test(path.basename(m.exe))) {
+        here = here || await padPc.connectedPads(KEYS_EXE);
+        const kind = padPc.edenFollow(dir, here, padStore(`eden:${m.id}`));
+        if (kind) done.push(`${m.name} (${kind})`);
+      }
+      if (id === 'xemu' && padPc.xemuFollow(dir, fs.existsSync(DS4_EXE) && (await serviceState('ViGEmBus')) !== 'missing', padStore(`xemu:${m.id}`))) done.push(m.name);
+    } catch (e) { console.error('[pads]', m.name, e.message); }
+  }
+  if (done.length) console.log(`[pads] player 1 for this PC: ${done.join(', ')}`);
+  return done;
+}
+
+// Xbox / PlayStation setups forgotten at start (loadConfig): their maps leave RetroArch and Dolphin again
+async function forgetXboxSetups() {
+  if (!xboxSetupsForgotten.length) return;
+  await padsToEmulators();
+  console.log(`[controllers] forgot the setup of ${xboxSetupsForgotten.join(', ')} (an Xbox / PlayStation controller)`);
+}
+
 // ---------- This PC: what the emulators, apps and PC games need from Windows (pc-check.js) ----------
 const pcCheckLib = require('./pc-check');
 // Every program MediaDeck starts: the emulators, the apps on Home, its helper apps, the PC games
@@ -2502,20 +2558,6 @@ function registerIpc() {
   ipcMain.handle('bios-open', (e, sub) => { const d = path.join(P.BIOS, sub || ''); fs.mkdirSync(d, { recursive: true }); return shell.openPath(d); });
   ipcMain.handle('app-info', () => ({ dataDir: DATA, emuDir: emuDir(), appsDir: P.APPS, appDir: P.ROOT, gamesDir: P.GAMES, version: app.getVersion(), electron: process.versions.electron,
     thumbs: server ? server.cacheStats() : null, recentGames: loadRecent().length }));
-  // Settings → Controllers → Set up a controller: a pad that isn't Xbox / PlayStation, by its USB vendor:product
-  // (RetroArch gets a file for it too, Dolphin's GameCube port 1 listens to it; the SDL emulators get it when they start, see startProgram)
-  const padsToEmulators = async () => {
-    try {
-      const mods = (await emuModules.scan(emuDir())).filter((m) => m.ok);
-      const done = [];
-      const ra = mods.find((m) => games.isRetroArch(m));
-      try { if (ra && pads.writeRetroArch(path.dirname(ra.exe), config.controllers)) done.push('RetroArch'); } catch (err) { console.log('[controllers] RetroArch:', err.message); }
-      for (const d of mods.filter((m) => /^dolphin/i.test(path.basename(m.exe || '')))) {
-        try { if (pads.writeDolphin(path.dirname(d.exe), config.controllers)) done.push('Dolphin'); } catch (err) { console.log('[controllers] Dolphin:', err.message); }
-      }
-      return [...new Set(done)].join(' and ');
-    } catch (err) { console.log('[controllers]', err.message); return ''; }
-  };
   ipcMain.handle('pad-save', async (e, key, pad) => {
     config.controllers = { ...(config.controllers || {}), [String(key)]: { name: pad.name, type: pad.type || 'other', map: pad.map, saved: new Date().toISOString() } };
     writeJson(CONFIG_FILE, config);
@@ -2667,6 +2709,8 @@ if (!app.requestSingleInstanceLock()) {
     }, 8000);
     // on another PC (or the folder moved): what this PC lacks for the emulators and apps (pcCheck)
     setTimeout(() => pcCheckAtStart().catch((e) => console.error('[pc]', e.message)), 15000);
+    forgetXboxSetups().catch((e) => console.error('[controllers]', e.message));
+    setTimeout(() => padsFollowPc().catch((e) => console.error('[pads]', e.message)), 10000);
     // PCSX2 folders on a drive that is gone → its own sub folders (relocate.js)
     try {
       for (const m of await emuModules.scan(emuDir())) {

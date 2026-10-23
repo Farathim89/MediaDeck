@@ -75,16 +75,22 @@ function sdlLine(key, pad) {
   return `${guid},${name},${out.join(',')},platform:Windows,`;
 }
 
+// An Xbox / PlayStation controller (XInput, Microsoft or Sony): every emulator knows it already - a setup saved for
+// one (Settings → Controllers took any pad) gave the emulators a second, wrong map of it
+const xboxLike = (key, pad) => /^(045e|054c):/i.test(String(key)) || /xinput/i.test(`${key} ${(pad && pad.name) || ''}`);
+// the set-up pads the emulators get (and padwatch): not those
+const setUp = (controllers) => Object.fromEntries(Object.entries(controllers || {}).filter(([k, p]) => !xboxLike(k, p)));
+
 // every set-up pad's SDL mapping, one per line (for SDL_GAMECONTROLLERCONFIG)
 function sdlConfig(controllers) {
-  return Object.entries(controllers || {}).map(([k, p]) => sdlLine(k, p)).filter(Boolean).join('\n');
+  return Object.entries(setUp(controllers)).map(([k, p]) => sdlLine(k, p)).filter(Boolean).join('\n');
 }
 
 // padwatch: the buttons of Start and Back (Start + Back held 1 s = MediaDeck's menu in a game), per pad
 // "0810:e501=9+4" (button numbers as Windows' joystick API counts them: from 0, like the Gamepad API)
 function padwatchArgs(controllers) {
   const out = [];
-  for (const [k, p] of Object.entries(controllers || {})) {
+  for (const [k, p] of Object.entries(setUp(controllers))) {
     const s = p.map && p.map.start, b = p.map && p.map.back;
     if (s && b && s.t === 'b' && b.t === 'b') out.push('--pad', `${k}=${s.i}+${b.i}`);
   }
@@ -124,7 +130,7 @@ function writeRetroArch(raDir, controllers) {
   if (!fs.existsSync(path.join(raDir, 'autoconfig'))) return 0;
   fs.mkdirSync(dir, { recursive: true });
   const want = new Map();
-  for (const [k, p] of Object.entries(controllers || {})) { const f = retroarchFile(k, p); if (f) want.set(f.name, f.text); }
+  for (const [k, p] of Object.entries(setUp(controllers))) { const f = retroarchFile(k, p); if (f) want.set(f.name, f.text); }
   for (const f of fs.readdirSync(dir)) if (/^00 MediaDeck - /.test(f) && !want.has(f)) fs.unlinkSync(path.join(dir, f));
   for (const [n, t] of want) fs.writeFileSync(path.join(dir, n), t);
   return want.size;
@@ -176,7 +182,7 @@ function writeDolphin(dir, controllers) {
   if (!fs.existsSync(path.join(dir, 'portable.txt'))) return 0;
   const file = path.join(dir, 'User', 'Config', 'GCPadNew.ini');
   const ini = readIni(file);
-  const pads = Object.values(controllers || {}).filter((p) => p && p.map && p.name);
+  const pads = Object.values(setUp(controllers)).filter((p) => p && p.map && p.name);
   // a pad set up before (or since forgotten): its old `SDL/n/Name:…` (`DInput/n/Name:…` at first) parts go first
   const ours = /^`(DInput|SDL)\/\d+\/(?!Keyboard Mouse)[^:`]+:[^`]*`$/;
   let changed = false;
@@ -203,4 +209,4 @@ function writeDolphin(dir, controllers) {
   return pads.length;
 }
 
-module.exports = { sdlGuid, sdlLine, sdlConfig, padwatchArgs, retroarchFile, writeRetroArch, dolphinBinds, writeDolphin };
+module.exports = { sdlGuid, sdlLine, sdlConfig, padwatchArgs, retroarchFile, writeRetroArch, dolphinBinds, writeDolphin, xboxLike };
