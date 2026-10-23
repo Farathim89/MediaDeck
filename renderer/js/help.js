@@ -35,7 +35,7 @@ const Help = (() => {
       ['Where it goes', `In MediaDeck's ${k('BIOS')} folder, in the console's folder - e.g. ${k('BIOS\\Sony - PlayStation\\scph5501.bin')}. Settings → Emulators → ${k('BIOS check')} shows, per console, which files it needs, which are there and opens the folder.`],
       ['Import them in one go', `Your BIOS files in a folder or zip, named any way? ${k('BIOS check')} → ${k('Import BIOS files…')}: each file is recognised by its checksum, named and put in its console's folder, and copied to the emulators. Your folder is only read.`],
       ['Added later', `BIOS files you put in ${k('BIOS')} later are copied to the emulators that need them at the next start of MediaDeck (nothing is overwritten). Straight away: ${k('BIOS check')} → ${k('Copy BIOS files to the emulators')}.`],
-      ['PS3 and Switch', 'They need firmware, not a BIOS file: install it from RPCS3\'s File menu (PS3UPDAT.PUP from playstation.com) and Ryujinx\'s Tools menu (prod.keys and the firmware from your own Switch).'],
+      ['PS3 and Switch', 'They need firmware, not a BIOS file: install it from RPCS3\'s File menu (PS3UPDAT.PUP from playstation.com). For the Switch, put prod.keys, title.keys and the firmware .zip from your own Switch in BIOS\\Nintendo - Switch before installing Eden: MediaDeck puts them into it (Ryujinx: its Tools menu).'],
     ] },
     { id: 'saves', title: 'Saves', icon: 'check', desc: 'Where your progress is kept', blocks: [
       ['In-game saves', 'Each emulator keeps its saves (memory cards, battery saves) in its own folder in Emu_modules - they stay when the emulator is updated. Back up Emu_modules to keep them safe.'],

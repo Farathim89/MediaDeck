@@ -36,7 +36,7 @@ const BIOS = [
   { system: 'Sony - PlayStation 3', folder: 'Sony - PlayStation 3', need: 'firmware',
     files: 'PS3UPDAT.PUP - the official firmware from playstation.com, installed from RPCS3\'s File menu' },
   { system: 'Nintendo - Switch', folder: 'Nintendo - Switch', need: 'required', all: [/^prod\.keys$/i],
-    files: 'prod.keys (+ title.keys) and a firmware .zip, from your own Switch - installed in Ryujinx' },
+    files: 'prod.keys (+ title.keys) and a firmware .zip, from your own Switch - MediaDeck puts them into Eden when it installs it', emu: ['eden', 'user/keys'] },
   { system: 'Sega - Saturn', folder: 'Sega - Saturn', need: 'required', match: /^(sega_101|mpr-17933)\.bin$/i,
     files: 'mpr-17933.bin (USA / Europe) or sega_101.bin (Japan)', emu: ['mednafen', 'firmware'] },
   { system: 'Sega - Mega-CD - Sega CD', folder: 'Sega - Mega CD - Sega CD', need: 'cd', match: /^bios_cd_[uej]\.bin$/i,

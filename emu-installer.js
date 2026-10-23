@@ -3,6 +3,7 @@
 // made portable, given their BIOS from the BIOS folder and pointed at the console's games.
 //
 // Sources:  { gh: 'owner/repo', asset: /regex/ }      latest GitHub release asset
+//           { forgejo: url, repo: 'owner/repo', asset } latest release on a project's own Forgejo / Gitea (Eden)
 //           { page: url, link: /regex/, base: url }    first link on an official download page
 //           { json: url, pick: (j) => url }            an official update feed (Dolphin)
 // Electron's own fs treats .asar files as folders (an app's resources\app.asar would be copied
@@ -22,6 +23,7 @@ const CONSOLES = [
   { id: 'gcwii', name: 'GameCube & Wii', maker: 'Nintendo', folder: 'Nintendo\\2001 - GameCube & Wii', games: ['Nintendo GameCube', 'Nintendo WII'], emus: ['dolphin'] },
   { id: 'nds', name: 'Nintendo DS', maker: 'Nintendo', folder: 'Nintendo\\2004 - Nintendo DS', games: ['Nintendo Ds'], emus: ['melonds', 'retroarch'] },
   { id: '3ds', name: 'Nintendo 3DS', maker: 'Nintendo', folder: 'Nintendo\\2011 - Nintendo 3DS', games: ['Nintendo 3Ds'], emus: ['azahar'] },
+  { id: 'switch', name: 'Switch', maker: 'Nintendo', folder: 'Nintendo\\2017 - Switch', games: ['Nintendo Switch'], bios: 'Nintendo - Switch', emus: ['eden'] },
   { id: 'ps1', name: 'PlayStation', maker: 'Sony', folder: 'Sony\\1994 - PlayStation', games: ['PlayStation'], bios: 'Sony - PlayStation', emus: ['duckstation', 'retroarch'] },
   { id: 'ps2', name: 'PlayStation 2', maker: 'Sony', folder: 'Sony\\2000 - PlayStation 2', games: ['PlayStation 2'], bios: 'Sony - PlayStation 2', emus: ['pcsx2'] },
   { id: 'psp', name: 'PSP', maker: 'Sony', folder: 'Sony\\2004 - PSP', games: ['PlayStation Portable'], emus: ['ppsspp'] },
@@ -62,7 +64,7 @@ const CONSOLES = [
 // names (a name with its own maker folder: 'Coleco/ColecoVision'); the emulators find them like the names in "games" above
 const STARTER = {
   nes: ['NES'], snes: ['SNES'], n64: ['Nintendo 64'], gb: ['Game Boy', 'Game Boy Color', 'Game Boy Advance'], gcwii: ['GameCube', 'Wii'],
-  nds: ['Nintendo DS'], '3ds': ['Nintendo 3DS'], wiiu: ['Wii U'], vb: ['Virtual Boy'],
+  nds: ['Nintendo DS'], '3ds': ['Nintendo 3DS'], switch: ['Switch'], wiiu: ['Wii U'], vb: ['Virtual Boy'],
   ps1: ['PlayStation'], ps2: ['PlayStation 2'], psp: ['PSP'], ps3: ['PlayStation 3'], vita: ['PS Vita'], ps4: ['PlayStation 4'],
   sms: ['Master System', 'SG-1000'], md: ['Mega Drive', '32X', 'Mega CD'], saturn: ['Saturn'], dc: ['Dreamcast'], gg: ['Game Gear'],
   pce: ['PC Engine'], pcfx: ['PC-FX'], ngp: ['Neo Geo Pocket', 'Neo Geo Pocket Color'], a2600: ['Atari 2600'], lynx: ['Atari Lynx'],
@@ -113,6 +115,12 @@ const EMULATORS = {
     src: { gh: 'melonDS-emu/melonDS', asset: /windows-x86_64\.zip$/i } },
   azahar: { name: 'Azahar', desc: 'Nintendo 3DS (Citra / Lime3DS continued)', exe: /^azahar\.exe$/i,
     src: { gh: 'azahar-emu/azahar', asset: /^azahar-windows-msvc-[\d.]+\.zip$/i }, portable: ['user/'] },
+  // its keys go to user\keys; firmware: the firmware .zip in BIOS\Nintendo - Switch, unpacked into its system memory
+  eden: { name: 'Eden', desc: 'Nintendo Switch (needs prod.keys and the firmware from your own Switch)', exe: /^eden\.exe$/i,
+    src: { forgejo: 'https://git.eden-emu.dev', repo: 'eden-emu/eden', asset: /^Eden-Windows-v[\w.-]+-amd64-clang-pgo\.zip$/i },
+    portable: ['user/'], biosTo: 'user/keys', biosFiles: /^(prod|title)\.keys$/i,
+    // max: Eden 0.2.x reads firmware up to 22 (its release notes; 23.0.1 fell back to its built-in "22.0.0")
+    firmware: { zip: /^firmware.*\.zip$/i, to: 'user/nand/system/Contents/registered', max: 22 } },
   duckstation: { name: 'DuckStation', desc: 'The best PlayStation emulator', exe: /^duckstation-qt.*\.exe$/i,
     src: { gh: 'stenzek/duckstation', asset: /windows-x64-release\.zip$/i }, portable: ['portable.txt'], biosTo: 'bios', biosFiles: /^scph.*\.bin$/i },
   pcsx2: { name: 'PCSX2', desc: 'PlayStation 2', exe: /^pcsx2-qt\.exe$/i,
@@ -248,6 +256,15 @@ async function resolveUrl(src, net) {
       : /^build-/i.test(j.tag) ? ((/v[\d.]+-\d+/.exec(a.name) || [])[0] || j.tag.slice(0, 14)) : j.tag;
     return { url: a.url, version, size: a.size, stamp: `${j.tag}|${a.name}|${a.date}`, digest: a.digest || '' };
   }
+  // Forgejo / Gitea: the newest release that isn't a pre-release (its files can be links to another server, size 0)
+  if (src.forgejo) {
+    const r = await net.fetch(`${src.forgejo}/api/v1/repos/${src.repo}/releases/latest`);
+    if (!r.ok) throw new Error(`${new URL(src.forgejo).host}: ${r.status}`);
+    const j = await r.json();
+    const a = (j.assets || []).find((x) => src.asset.test(x.name));
+    if (!a) throw new Error('No Windows download in the latest release');
+    return { url: a.browser_download_url, version: j.tag_name, size: a.size, stamp: `${j.tag_name}|${a.name}|${a.created_at || ''}`, digest: '' };
+  }
   if (src.json) {
     const j = await (await net.fetch(src.json)).json();
     const url = src.pick(j);
@@ -289,7 +306,8 @@ async function download(url, file, net, onBytes) {
       const { done, value } = await reader.read();
       if (done) break;
       got += value.length;
-      if (!out.write(Buffer.from(value))) await new Promise((res) => { out.once('drain', res); out.once('error', res); });
+      // (the listener that didn't fire goes too: one left per wait piled up - Node warned after 10)
+      if (!out.write(Buffer.from(value))) await new Promise((res) => { const go = () => { out.off('drain', go); out.off('error', go); res(); }; out.once('drain', go); out.once('error', go); });
       onBytes(got, total);
     }
     if (failed) throw failed;
@@ -301,9 +319,10 @@ async function download(url, file, net, onBytes) {
   }
 }
 
-function unpack(sevenZip, archive, dest) {
+// flat: every file straight into dest (a firmware zip with a folder of its own)
+function unpack(sevenZip, archive, dest, flat) {
   return new Promise((resolve, reject) => {
-    execFile(sevenZip, ['x', '-y', `-o${dest}`, archive], { windowsHide: true, maxBuffer: 64 * 1024 * 1024 }, (err, out, errOut) => {
+    execFile(sevenZip, [flat ? 'e' : 'x', '-y', `-o${dest}`, archive], { windowsHide: true, maxBuffer: 64 * 1024 * 1024 }, (err, out, errOut) => {
       if (err) reject(new Error(`Unpacking failed: ${String(errOut || err.message).trim().split('\n').pop()}`)); else resolve();
     });
   });
@@ -335,6 +354,24 @@ async function moveAll(from, to) {
     const a = path.join(from, name), b = path.join(to, name);
     try { await fsp.rename(a, b); } catch { await fsp.cp(a, b, { recursive: true, force: false, errorOnExist: false }); }
   }
+}
+
+// Firmware from the BIOS folder (Switch: a .zip of the system's .nca files), unpacked where the emulator keeps it -
+// only into an empty folder (firmware installed in the emulator stays). The newest version in the file names that the
+// emulator can read (firmware.max); returns its file name.
+const fwVersion = (name) => { const m = /(\d+)\.(\d+)(?:\.(\d+))?/.exec(name); return m ? m.slice(1, 4).map((x) => Number(x) || 0) : [0, 0, 0]; };
+async function copyFirmware(e, dest, from, sevenZip) {
+  if (!e.firmware || !sevenZip) return '';
+  let zips = [];
+  try { zips = (await fsp.readdir(from)).filter((f) => e.firmware.zip.test(f)); } catch { return ''; }
+  if (e.firmware.max) zips = zips.filter((f) => (fwVersion(f)[0] || 0) <= e.firmware.max);
+  const newer = (a, b) => { const x = fwVersion(a), y = fwVersion(b); return (x[0] - y[0]) || (x[1] - y[1]) || (x[2] - y[2]) || 0; };
+  const zip = zips.sort((a, b) => newer(a, b) || a.localeCompare(b)).pop();
+  const to = path.join(dest, e.firmware.to);
+  if (!zip || (fs.existsSync(to) && (await fsp.readdir(to)).length)) return '';
+  await fsp.mkdir(to, { recursive: true });
+  await unpack(sevenZip, path.join(from, zip), to, true);
+  return zip;
 }
 
 // A console's games folder under the games root: directly, or inside a maker folder
@@ -393,6 +430,7 @@ async function install(emuId, consoleId, opts) {
         }
       }
     }
+    const firmware = c && c.bios && opts.biosDir ? await copyFirmware(e, dest, path.join(opts.biosDir, c.bios), opts.sevenZip) : '';
     // player 1 = the first controller, ready to play (pad-defaults.js; after the BIOS: PCSX2 needs to know it's there)
     const padSet = require('./pad-defaults').apply(emuId, dest, { installed: true });
     // the console's game folders (those that exist)
@@ -401,7 +439,7 @@ async function install(emuId, consoleId, opts) {
       for (const g of cc.games || []) romFolders.push(...gameFolders(opts.gamesRoot, g));
     }
     say(`${e.name} ${version} installed`, 1);
-    return { name: e.name, version, stamp, emuId, dir: dest, biosCopied, padSet, romFolders: [...new Set(romFolders)] };
+    return { name: e.name, version, stamp, emuId, dir: dest, biosCopied, firmware, padSet, romFolders: [...new Set(romFolders)] };
   } finally {
     fsp.rm(work, { recursive: true, force: true }).catch(() => {});
   }

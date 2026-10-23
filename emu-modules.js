@@ -43,7 +43,7 @@ const KNOWN = [
   { name: 'PCSX2', system: 'PlayStation 2', pattern: /^pcsx2(-qt)?(-avx2)?\.exe$/i, gameArgs: '-fullscreen -batch -- "{rom}"', romExtensions: ['iso', 'chd', 'cso', 'gz', 'bin', 'mdf', 'elf'], hotkeys: { options: 'Alt+Return', saveState: 'F1', loadState: 'F3', pause: 'Space', screenshot: 'F8' } },
   { name: 'RPCS3', system: 'PlayStation 3', exes: ['rpcs3.exe'], gameArgs: '--no-gui "{rom}"', romExtensions: ['bin', 'iso', 'pkg'], hotkeys: { options: 'Shift+F10', saveState: 'Ctrl+S', pause: 'Ctrl+P', screenshot: 'F12' } },
   { name: 'Ryujinx', system: 'Nintendo Switch', exes: ['ryujinx.exe'], attached: true, gameArgs: '--fullscreen "{rom}"', romExtensions: ['nsp', 'xci', 'nsz', 'nca', 'nro'], hotkeys: { pause: 'F5', screenshot: 'F8' } },
-  { name: 'Eden', system: 'Nintendo Switch', pattern: /^(eden|suyu|sudachi|citron|yuzu)\.exe$/i, gameArgs: '-f -g "{rom}"', romExtensions: ['nsp', 'xci', 'nca', 'nro'] },
+  { name: 'Eden', system: 'Nintendo Switch', pattern: /^(eden|suyu|sudachi|citron|yuzu)\.exe$/i, gameArgs: '-f -g "{rom}"', romExtensions: ['nsp', 'xci', 'nca', 'nro'], hotkeys: { options: 'F11', pause: 'F4', screenshot: 'Ctrl+P' } },
   { name: 'ePSXe', system: 'PlayStation', exes: ['epsxe.exe'], gameArgs: '-nogui -loadbin "{rom}"', romExtensions: ['cue', 'bin', 'iso', 'img', 'mdf', 'pbp', 'ccd'] },
   { name: 'DuckStation', system: 'PlayStation', pattern: /^duckstation-qt.*\.exe$/i, gameArgs: '-batch -fullscreen "{rom}"', romExtensions: ['cue', 'bin', 'chd', 'iso', 'pbp', 'm3u', 'ecm', 'mds'], hotkeys: { options: 'Escape', saveState: 'F2', loadState: 'F1', pause: 'Space', screenshot: 'F10' } },
   // MAME32 (0.3x) stops before every game until "OK" is typed (its disclaimer, and its "doesn't work perfectly" note)
