@@ -931,7 +931,9 @@ const Home = (() => {
       { label: 'Game folders', icon: 'folder', value: 'folders' },
       { label: 'Scan for new games', icon: 'refresh', value: 'scan' },
       { label: cfg().settings.showEmptyConsoles ? 'Hide consoles without games' : 'Show consoles without games', icon: 'eye', value: 'empty' },
+      { label: `Remove ${emuName(c)} from MediaDeck…`, icon: 'trash', value: 'remove', danger: true },
     ] });
+    if (choice === 'remove') return removeEmulator(c);
     if (choice === 'scan') return scanGames();
     if (choice === 'empty') {
       const s = cfg().settings;
@@ -945,6 +947,20 @@ const Home = (() => {
     if (choice === 'emu') { await chooseEmulator(c); }
     if (choice === 'open' && t) open(t);
     if (choice === 'folders') { await RomFolders.edit(c.emulator); await loadConsoles(); renderPage(); Nav.focus(consoleCard(c.id) || activeTabEl()); }
+  }
+
+  // A console's emulator off the consoles ("hidden": true in its emu-module.json - one added by hand, one not wanted):
+  // its folder stays; Settings → Emulators → Hidden emulators shows it again. The console goes too when it was its only one.
+  async function removeEmulator(c) {
+    const name = emuName(c), others = c.emulators.filter((e) => e.moduleId !== c.emulator);
+    const ok = await UI.confirm(`Remove ${name}?`, `${name} leaves ${c.name}${others.length ? ` (${others.map((e) => e.name).join(', ')} stays)` : ' - and the console goes with it'}. `
+      + 'Nothing is deleted: its folder stays in Emu_modules, and Settings → Emulators → Hidden emulators brings it back.', 'Remove', true);
+    if (!ok) return;
+    App.state.config = (await api.hideEmulator(c.emulator)).config;
+    if (emuDetail === c.id && !others.length) emuDetail = null;
+    await refreshConsoles();
+    if (emuDetail === c.id) { await loadConsoles(); renderPage(); Nav.focus(pageEl.querySelector('.emu-pick') || activeTabEl()); }
+    UI.toast(`${name} removed from ${c.name}`, { icon: 'trash' });
   }
 
   // ---------- Focus: the side panel is open while you're in it, folded otherwise ----------

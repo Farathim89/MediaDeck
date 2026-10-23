@@ -2414,7 +2414,22 @@ function registerIpc() {
     }
     return [...count.entries()].sort((a, b) => b[1] - a[1]).map((x) => x[0])[0] || '';
   };
-  ipcMain.handle('emu-install-catalog', async () => emuInstaller.catalog(await emuModules.scan(emuDir())));
+  ipcMain.handle('emu-install-catalog', async () => {
+    const cat = emuInstaller.catalog(await emuModules.scan(emuDir()));
+    // the consoles each installed one is on (one that is installed but on none: the install list says why)
+    const where = new Map();
+    for (const c of await consoleList(true)) for (const e of c.emulators) where.set(e.moduleId, [...(where.get(e.moduleId) || []), c.name]);
+    for (const c of cat) for (const e of c.emulators) e.consoles = where.get(e.moduleId) || [];
+    return cat;
+  });
+  ipcMain.handle('emu-hidden', async () => (await emuModules.scan(emuDir())).filter((m) => m.hidden).map((m) => ({ id: m.id, name: m.name, system: m.system })));
+  // a hidden emulator ("hidden": true in its emu-module.json) shown again
+  ipcMain.handle('emu-show', async (e, moduleId) => {
+    const m = (await emuModules.scan(emuDir())).find((x) => x.id === moduleId);
+    if (m) emuModules.setHidden(m, false);
+    await syncEmulators();
+    return { config };
+  });
   // (installing: module level, shared with the test switch)
   ipcMain.handle('emu-install', async (e, picks) => {
     if (installing) return { error: 'An install is already running' };

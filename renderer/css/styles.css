@@ -393,6 +393,7 @@ svg { display: block; }
 }
 .modal {
   width: 30rem; max-height: 80vh; overflow: hidden;
+  display: flex; flex-direction: column;   /* the list scrolls inside it (the mouse wheel too), the title stays */
   background: var(--panel); border: 1px solid var(--line);
   border-radius: 1rem; padding: 1.6rem 1.4rem 1.2rem;
   box-shadow: 0 2rem 5rem rgba(0, 0, 0, 0.6);
@@ -400,7 +401,10 @@ svg { display: block; }
 }
 .modal h2 { margin: 0 0.4rem 0.3rem; font-size: calc(1.5rem * var(--text-scale)); font-weight: 650; }
 .modal p { margin: 0 0.4rem 1rem; color: var(--muted); font-size: calc(1rem * var(--text-scale)); line-height: 1.4; white-space: pre-line; }
-.modal .menu-list { display: flex; flex-direction: column; gap: 0.3rem; margin-top: 0.8rem; }
+.modal .menu-list { display: flex; flex-direction: column; gap: 0.3rem; margin-top: 0.8rem; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
+.modal .menu-list > * { flex-shrink: 0; }
+.modal > h2, .modal > input, .modal > .swatches { flex: 0 0 auto; }
+.modal > p { flex: 0 0 auto; max-height: 35vh; overflow-y: auto; scrollbar-width: thin; scrollbar-color: rgba(255, 255, 255, 0.2) transparent; }
 .menu-item {
   display: flex; align-items: center; gap: 0.9rem;
   padding: 0.85rem 1rem; border-radius: 0.6rem;

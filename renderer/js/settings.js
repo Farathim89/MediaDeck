@@ -251,6 +251,8 @@ const Settings = (() => {
           run: () => downloadAllCovers() },
         { label: 'Scan for new games', desc: 'Reads every game folder again - for games added while MediaDeck runs (it also looks by itself when it comes back to the front)', type: 'action', run: () => Home.scanGames() },
         { label: 'Look for new emulators', type: 'action', value: () => (info && info.emuCount != null ? `${info.emuCount} found` : ''), run: () => rescan(true) },
+        { label: 'Hidden emulators', desc: 'Emulators taken off the consoles (a console\'s Y menu → Remove): their folders are still in Emu_modules. Choose one to show it again.', type: 'action',
+          run: () => hiddenEmulators() },
         ...gameFolderRows(),
       ],
     },
@@ -740,10 +742,16 @@ const Settings = (() => {
   }
 
   // ---------- Install emulators: consoles → tick the emulators → install ----------
-  async function installEmulators(consoleFocus) {
+  // (an installed one says where it is: on which consoles, or why it is on none - its program missing, hidden)
+  const installedLabel = (e) => (e.missing ? `⚠  ${e.name}  (installed, its program is missing)`
+    : e.hidden ? `⚠  ${e.name}  (installed, hidden)`
+      : !(e.consoles || []).length ? `⚠  ${e.name}  (installed, on no console)`
+        : `✓  ${e.name}  (installed${e.consoles.length ? ` · ${e.consoles.join(', ')}` : ''}) — ${e.desc}`);
+  // openConsole: straight to that console's emulators (back from one of them)
+  async function installEmulators(consoleFocus, openConsole) {
     let cat;
     try { cat = await api.installCatalog(); } catch { UI.toast('Could not read the emulator list', { icon: 'alert', error: true }); return; }
-    const pick = await UI.menu({
+    const pick = openConsole && cat.some((x) => x.id === consoleFocus) ? consoleFocus : await UI.menu({
       title: 'Install emulators', message: 'Pick a console. Emulators come from their official download pages (latest version).',
       focus: consoleFocus,
       items: [
@@ -760,11 +768,11 @@ const Settings = (() => {
     let focus;
     for (;;) {
       const v = await UI.menu({
-        title: `${c.name}: emulators`, message: 'A ticks / unticks. Installed ones are already set up.', focus,
+        title: `${c.name}: emulators`, message: 'A ticks / unticks. Choose an installed one to install it again or see why it isn\'t on a console.', focus,
         items: [
           ...c.emulators.map((e) => ({
-            label: e.installed ? `✓  ${e.name}  (installed) — ${e.desc}` : `${chosen.has(e.id) ? '☑' : '☐'}  ${e.name} — ${e.desc}`,
-            value: 'emu:' + e.id, icon: e.installed ? 'check' : undefined,
+            label: e.installed ? installedLabel(e) : `${chosen.has(e.id) ? '☑' : '☐'}  ${e.name} — ${e.desc}`,
+            value: 'emu:' + e.id, icon: e.installed ? (e.missing || e.hidden || !(e.consoles || []).length ? 'alert' : 'check') : undefined,
           })),
           { label: chosen.size ? `Install selected (${chosen.size})` : 'Install selected', value: 'go', icon: 'plus' },
           { label: 'Back', value: 'back', icon: 'close' },
@@ -773,7 +781,9 @@ const Settings = (() => {
       if (!v || v === 'back') return installEmulators(pick);
       if (v === 'go') { if (chosen.size) break; UI.toast('Tick at least one emulator first', { icon: 'alert' }); focus = v; continue; }
       const id = v.slice(4);
-      if (!c.emulators.find((e) => e.id === id).installed) { if (chosen.has(id)) chosen.delete(id); else chosen.add(id); }
+      const emu = c.emulators.find((e) => e.id === id);
+      if (emu.installed) { if (await installedEmulator(emu)) return installEmulators(pick, true); focus = v; continue; }
+      if (chosen.has(id)) chosen.delete(id); else chosen.add(id);
       focus = v;
     }
     const t = UI.toast('Starting…', { spinner: true, duration: 0 });
@@ -787,6 +797,58 @@ const Settings = (() => {
     }
     await rescan(false);
     return installEmulators(pick);
+  }
+  // The emulators taken off the consoles, to bring one back
+  async function hiddenEmulators() {
+    for (;;) {
+      const list = await api.hiddenEmulators();
+      if (!list.length) { UI.toast('No hidden emulators', { icon: 'eye' }); return; }
+      const id = await UI.menu({ title: 'Hidden emulators', message: 'Choose one to put it back on its console.', items: [
+        ...list.map((m) => ({ label: `${m.name}${m.system ? `  ·  ${m.system}` : ''}`, value: m.id, icon: 'eye' })),
+        { label: 'Back', value: '', icon: 'back' },
+      ] });
+      if (!id) return;
+      const r = await api.showEmulator(id);
+      App.state.config = r.config;
+      await Home.refreshConsoles();
+      await rescan(false);
+      UI.toast(`${(list.find((m) => m.id === id) || {}).name || id} is back on the consoles`, { icon: 'eye' });
+    }
+  }
+  // An installed emulator: what MediaDeck sees of it, and putting it right. Returns whether something changed.
+  async function installedEmulator(e) {
+    const why = e.missing ? `Its program (${e.exe.split(/[\\/]/).pop()}) isn't in its folder, so MediaDeck leaves it out of the consoles. On another PC antivirus may have taken it (Windows Security → Protection history), or the copy left it out.`
+      : e.hidden ? 'It is hidden ("hidden": true in its emu-module.json), so MediaDeck leaves it out of the consoles.'
+        : !(e.consoles || []).length ? 'MediaDeck has it, but on no console: check its game folders (a console\'s page → Game folders).'
+          : `On the consoles: ${e.consoles.join(', ')}.`;
+    const c = await UI.menu({ title: e.name, message: `${why}\n${e.dir}`, items: [
+      { label: 'Install it again (the latest version - settings, saves and keys stay)', icon: 'refresh', value: 'again' },
+      ...(e.hidden ? [{ label: 'Show it in MediaDeck again', icon: 'eye', value: 'show' }] : []),
+      { label: 'Open its folder', icon: 'folder', value: 'open' },
+      { label: 'Back', icon: 'back', value: '' },
+    ] });
+    if (c === 'open') api.openPath(e.dir);
+    if (c === 'show') {
+      const r = await api.showEmulator(e.moduleId);
+      App.state.config = r.config;
+      await Home.refreshConsoles();
+      UI.toast(`${e.name} is on the consoles again`, { icon: 'eye' });
+    }
+    if (c === 'again') {
+      const t = UI.toast(`${e.name}: installing again…`, { spinner: true, duration: 0 });
+      const r = await api.updateEmulators([e.moduleId]);
+      t.remove();
+      const x = (r.results || [])[0];
+      if (r.error || !x || !x.ok) { UI.menu({ title: `${e.name}: not installed again`, message: r.error || (x && x.error) || 'Unknown error', items: [{ label: 'OK', icon: 'check' }] }); return false; }
+      App.state.config = r.config;
+      await rescan(false);
+      await Home.refreshConsoles();
+      // its program gone again right away: antivirus took it (it says so in Windows Security)
+      const now = (await api.installCatalog()).flatMap((k) => k.emulators).find((y) => y.moduleId === e.moduleId);
+      if (now && now.missing) UI.menu({ title: `${e.name}: its program went again`, message: 'Windows Security (or another antivirus) probably removed it. Open Windows Security → Virus & threat protection → Protection history, allow it, then install it again here.', items: [{ label: 'OK', icon: 'check' }] });
+      else UI.toast(`${e.name} ${x.version || ''} installed again`, { icon: 'check', duration: 5000 });
+    }
+    return c === 'show' || c === 'again';
   }
   // updates found by the daily check at start (Streamlink already updated itself)
   if (api.onAppUpdates) api.onAppUpdates((list) => { apps = null; UI.toast(`App updates: ${list.map((x) => x.name).join(', ')}. Settings → Apps`, { icon: 'refresh', duration: 9000 }); });

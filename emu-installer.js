@@ -198,13 +198,21 @@ function targetDir(emuDir, emuId, consoleId) {
 }
 
 // What the catalog looks like right now: per console, its emulators and whether each is installed
+// Why an installed one may not be on the consoles: missing = its folder is there but its program isn't (on another PC
+// antivirus may have taken it, or the copy left it out), hidden = "hidden": true in its emu-module.json (Remove on
+// Home). moduleId: the one to install again / show again; dir: its folder.
 function catalog(installedModules) {
-  const have = new Set(installedModules.map((m) => String(m.name || '').toLowerCase()));
+  const mine = (id) => installedModules.filter((m) => String(m.name || '').toLowerCase() === EMULATORS[id].name.toLowerCase());
   return CONSOLES.map((c) => ({
     id: c.id, name: c.name, maker: c.maker,
     // the ones that play with the controller straight away first (the setup suggests the first one)
     emulators: [...c.emus].sort((a, b) => Number(READY.has(b)) - Number(READY.has(a)))
-      .map((id) => ({ id, name: EMULATORS[id].name, desc: EMULATORS[id].desc, pad: READY.has(id), installed: have.has(EMULATORS[id].name.toLowerCase()) })),
+      .map((id) => {
+        const mods = mine(id), use = mods.find((m) => m.ok && !m.hidden) || mods.find((m) => m.ok) || mods[0] || {};
+        return { id, name: EMULATORS[id].name, desc: EMULATORS[id].desc, pad: READY.has(id), installed: mods.length > 0,
+          missing: mods.length > 0 && !mods.some((m) => m.ok), hidden: mods.length > 0 && mods.every((m) => m.hidden),
+          moduleId: use.id || '', dir: use.dir || '', exe: use.exe || '' };
+      }),
   }));
 }
 

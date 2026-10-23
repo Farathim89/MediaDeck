@@ -44,6 +44,8 @@ contextBridge.exposeInMainWorld('api', {
   installEmulators: invoke('emu-install'),
   checkEmulatorUpdates: invoke('emu-check-updates'),
   updateEmulators: invoke('emu-update'),
+  showEmulator: invoke('emu-show'),
+  hiddenEmulators: invoke('emu-hidden'),
   onCoversAuto: (fn) => ipcRenderer.on('covers-auto', (e, p) => fn(p)),
   onEmulatorUpdates: (fn) => ipcRenderer.on('emu-updates', (e, p) => fn(p)),
   onInstallProgress: (fn) => ipcRenderer.on('emu-install-progress', (e, p) => fn(p)),
