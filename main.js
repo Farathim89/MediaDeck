@@ -293,9 +293,14 @@ function createWindow() {
     },
   });
   full = startFull;
+  if (!startFull && bounds.x !== undefined) win.once('ready-to-show', () => { restored = { asked: { ...bounds }, got: win.getBounds() }; });
   if (startFull) { coverScreenAgain(); win.once('ready-to-show', coverScreenAgain); win.webContents.once('did-finish-load', coverScreenAgain); }
   if (saved.maximized && !startFull) win.maximize();
   win.webContents.on('did-finish-load', () => win.webContents.send('win-full', full));
+  // the title bar's maximize / restore button
+  const tellMax = () => { if (!win.isDestroyed()) win.webContents.send('win-max', win.isMaximized()); };
+  win.webContents.on('did-finish-load', tellMax);
+  for (const ev of ['maximize', 'unmaximize']) win.on(ev, tellMax);
   win.setMenu(null);
   win.loadFile(path.join(__dirname, 'renderer', 'index.html'));
   win.webContents.on('before-input-event', (e, input) => onShortcut(e, input));
@@ -357,11 +362,17 @@ let windowTimer = null;
 // A screen change (resolution, another monitor) while full: it covers the screen again.
 let full = false;
 let windowedBounds = null;
+// Opened or put back as a window, at a scale like 180 % (Windows' 150 % × its text size 120 %) it comes out a few
+// points bigger than asked - and grew with every F11 and every start. Not moved or resized since: the place and size
+// it was asked for are the ones it keeps.
+let restored = null;
+const sameBounds = (a, b) => a.x === b.x && a.y === b.y && a.width === b.width && a.height === b.height;
+const windowBounds = () => { const now = win.getBounds(); return restored && sameBounds(now, restored.got) ? { ...restored.asked } : now; };
 function setFull(on) {
   if (!win || win.isDestroyed() || on === full) return;
   if (on) {
     if (win.isMaximized()) win.unmaximize();
-    windowedBounds = win.getBounds();
+    windowedBounds = windowBounds();
     full = true;
     win.setResizable(false);   // no resize edge: the window is exactly the screen
     win.setBounds(screen.getDisplayMatching(windowedBounds).bounds);
@@ -372,6 +383,7 @@ function setFull(on) {
     const b = windowedBounds && windowedBounds.width < area.width ? windowedBounds
       : { width: 1280, height: 720, x: area.x + Math.round((area.width - 1280) / 2), y: area.y + Math.round((area.height - 720) / 2) };
     win.setBounds(b);
+    restored = { asked: { ...b }, got: win.getBounds() };
   }
   win.webContents.send('win-full', full);
   rememberWindow();
@@ -388,7 +400,7 @@ function rememberWindow() {
     s.fullscreen = full;
     const prev = s.window || {};
     s.window = { ...prev, maximized: win.isMaximized() };
-    if (!s.fullscreen && !win.isMaximized()) Object.assign(s.window, win.getBounds());
+    if (!s.fullscreen && !win.isMaximized()) Object.assign(s.window, windowBounds());
     try { writeJson(CONFIG_FILE, config); } catch (e) { console.error('[config]', e.message); }   // (held by antivirus a moment)
   }, 600);
 }
@@ -2694,6 +2706,14 @@ function registerIpc() {
     return server.cacheStats();
   });
   ipcMain.handle('toggle-fullscreen', () => { setFull(!full); return full; });
+  // MediaDeck as a window: its title bar's buttons
+  ipcMain.handle('win-control', (e, what) => {
+    if (!win || win.isDestroyed()) return;
+    if (what === 'minimize') win.minimize();
+    else if (what === 'maximize') { if (win.isMaximized()) win.unmaximize(); else win.maximize(); }
+    else if (what === 'full') setFull(true);
+    else if (what === 'close') app.quit();
+  });
   ipcMain.handle('quit', () => app.quit());
   // Restart MediaDeck (the Exit menu): a new copy starts as this one closes
   ipcMain.handle('restart-app', () => { app.relaunch({ args: process.argv.slice(1).filter((a) => a !== '--test') }); app.quit(); });

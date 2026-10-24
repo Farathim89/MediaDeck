@@ -117,7 +117,7 @@ const Settings = (() => {
       items: [
         { label: 'Check this PC', desc: 'What this PC lacks for your emulators, apps and PC games - Visual C++, DirectX and .NET runtimes, the controller driver, programs that are missing - and installing it. Runs by itself when MediaDeck starts on another PC.',
           type: 'action', run: () => App.pcCheck(null, false) },
-        { label: 'Display mode', desc: 'Borderless window (full screen) covers the whole screen, as games do today; Window is a normal window you can move and resize. F11 switches between them, and MediaDeck remembers it.',
+        { label: 'Display mode', desc: 'Borderless window (full screen) covers the whole screen, as games do today; Window is a normal window: move it by its title bar, resize it at its edges. F11 switches between them, and MediaDeck remembers it.',
           type: 'action', value: () => (s().fullscreen ? 'Borderless window (full screen)' : 'Window'),
           run: async () => {
             const full = !!s().fullscreen;

@@ -9,6 +9,17 @@
   <link rel="stylesheet" href="css/media.css">
 </head>
 <body>
+  <!-- MediaDeck as a window (F11): its own title bar - drag it to move the window, double-click it to maximize -->
+  <div id="titlebar">
+    <span class="titlebar-mark"></span><span class="titlebar-name">MediaDeck</span>
+    <div class="titlebar-btns">
+      <button data-win="minimize" title="Minimize"><svg viewBox="0 0 10 10"><path d="M0 5.5h10"/></svg></button>
+      <button data-win="maximize" title="Maximize"><svg class="tb-max" viewBox="0 0 10 10"><rect x="0.5" y="0.5" width="9" height="9"/></svg><svg class="tb-restore" viewBox="0 0 10 10"><rect x="0.5" y="2.5" width="7" height="7"/><path d="M2.5 2.5v-2h7v7h-2"/></svg></button>
+      <button data-win="full" title="Full screen (F11)"><svg viewBox="0 0 10 10"><path d="M0.5 3.5v-3h3M6.5 0.5h3v3M9.5 6.5v3h-3M3.5 9.5h-3v-3"/></svg></button>
+      <button data-win="close" title="Exit MediaDeck"><svg viewBox="0 0 10 10"><path d="M0.5 0.5l9 9M9.5 0.5l-9 9"/></svg></button>
+    </div>
+  </div>
+
   <div id="backdrop">
     <div class="glow" id="glow-a"></div>
     <div class="glow" id="glow-b"></div>

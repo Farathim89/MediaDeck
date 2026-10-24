@@ -779,5 +779,24 @@ svg { display: block; }
 .menu-item .menu-swatch { margin-left: auto; display: flex; gap: 0.3rem; }
 .menu-item .menu-swatch i { width: 1rem; height: 1rem; border-radius: 50%; box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.25); }
 
-/* MediaDeck as a window (F11): it has no title bar, a thin strip along the top moves it (double-click: maximize) */
-html.windowed body::before { content: ""; position: fixed; top: 0; left: 0; right: 0; height: 0.7rem; z-index: 10000; -webkit-app-region: drag; background: rgba(255, 255, 255, 0.04); }
+/* MediaDeck as a window (F11): its own title bar (the window has no Windows frame, for the TV's full screen). Drag it
+   to move the window, double-click it to maximize; the screens, menus and messages start below it. Fixed pixels like
+   Windows' own, not the screen-wide rem. */
+#titlebar { display: none; }
+html.windowed #titlebar {
+  position: fixed; top: 0; left: 0; right: 0; z-index: 10000; height: 32px;
+  display: flex; align-items: center; gap: 8px; padding-left: 12px;
+  background: var(--bg); border-bottom: 1px solid var(--line);
+  font: 12px "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif; color: var(--muted);
+  -webkit-app-region: drag;
+}
+.titlebar-mark { width: 14px; height: 14px; border-radius: 4px; background: conic-gradient(from 210deg, var(--accent), #3b82f6, #8b5cf6, var(--accent)); }
+.titlebar-btns { margin-left: auto; display: flex; height: 100%; -webkit-app-region: no-drag; }
+.titlebar-btns button { width: 46px; height: 100%; display: grid; place-items: center; color: var(--muted); }
+.titlebar-btns button:hover { background: var(--focus-bg); color: var(--text); }
+.titlebar-btns button[data-win="close"]:hover { background: #c42b1c; color: #fff; }
+.titlebar-btns svg { width: 10px; height: 10px; fill: none; stroke: currentColor; stroke-width: 1; }
+.titlebar-btns .tb-restore, html.maximized .titlebar-btns .tb-max { display: none; }
+html.maximized .titlebar-btns .tb-restore { display: block; }
+html.windowed .screen, html.windowed #modal-root { top: 32px; }
+html.windowed #toast-root { top: calc(2rem + 32px); }

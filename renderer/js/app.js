@@ -15,8 +15,14 @@ const App = {
     for (const s of [Home, MediaHome, Browser, Photos, Settings, Setup, PadSetup, Help]) s.init();
     Input.setMaps(this.state.config.controllers);
     Input.setHandler((action) => this.dispatch(action));
-    // MediaDeck as a window (F11): no title bar, so a strip along the top to move it by
+    // MediaDeck as a window (F11): its own title bar (drag it to move the window) with minimize, maximize, full screen
+    // and exit - the mouse only, the controller has F11 / the menus
     api.onWinFull((on) => document.documentElement.classList.toggle('windowed', !on));
+    api.onWinMax((on) => document.documentElement.classList.toggle('maximized', on));
+    document.getElementById('titlebar').addEventListener('click', (e) => {
+      const b = e.target.closest('[data-win]');
+      if (b) api.winControl(b.dataset.win);
+    });
     // changed in the player (sound output …): our copy follows, so saving Settings doesn't put the old value back
     api.onSettingsPatch((patch) => {
       Object.assign(this.state.config.settings, patch);

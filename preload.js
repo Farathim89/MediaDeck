@@ -102,6 +102,8 @@ contextBridge.exposeInMainWorld('api', {
   onAppFocus: (fn) => ipcRenderer.on('app-focus', () => fn()),
   onWinActive: (fn) => ipcRenderer.on('win-active', (e, on) => fn(on)),
   onWinFull: (fn) => ipcRenderer.on('win-full', (e, on) => fn(on)),
+  onWinMax: (fn) => ipcRenderer.on('win-max', (e, on) => fn(on)),
+  winControl: invoke('win-control'),
   audioDevices: invoke('audio-devices'),
   rtxCard: invoke('rtx-card'),
   displayModes: invoke('display-modes'),
