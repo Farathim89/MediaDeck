@@ -6,6 +6,7 @@
 //  - sign-in is YouTube's TV sign-in (a code on yt.be/activate), kept in its own session
 //  - TizenTube's script is kept in data\youtube\tizentube.js and refreshed weekly from npm
 //  - the controller is read in the page (youtube-preload.js) and sent back here as real key presses
+//  - the search keyboard is laid out like the PC's own keyboard (youtube-preload.js)
 const { BrowserWindow, session, ipcMain, screen, net } = require('electron');
 const fs = require('fs');
 const path = require('path');
@@ -22,6 +23,8 @@ const READY = `new Promise((res) => { const k = 'yt.leanback.default::recurring_
 // text line; "overflow: clip" with a margin keeps their "…" shortening and lets the line show.)
 // The selected video: a thick red ring with a red glow instead of a thin white border; the grey
 // border the mouse pointer leaves on another video is hidden, so only the selection shows.
+// Search: the selected key of the on-screen keyboard, suggestion and search box see-through red with a red ring
+// instead of solid white (YouTube's own rule for the key is !important with two classes: these need more).
 const CSS = `
 html { forced-color-adjust: none !important; }
 ytlr-guide-entry-renderer.zylon-focus div { background-color: transparent !important; }
@@ -30,6 +33,9 @@ ytlr-guide-entry-renderer.zylon-focus yt-formatted-string, ytlr-guide-entry-rend
 ytlr-guide-entry-renderer.zylon-focus yt-formatted-string { text-decoration: underline solid #ff0033; text-decoration-thickness: 0.25rem; text-underline-offset: 0.4rem; text-decoration-skip-ink: none; }
 ytlr-app ytlr-tile-renderer.zylon-focus.zylon-focus.zylon-focus.zylon-focus.zylon-focus[class][class] ytlr-tile-header-renderer[class][class][class][class]::after { border-color: #ff0033 !important; border-top-color: #ff0033 !important; border-right-color: #ff0033 !important; border-bottom-color: #ff0033 !important; border-left-color: #ff0033 !important; border-width: 0.5rem !important; box-shadow: 0 0 2rem 0.4rem rgba(255, 0, 51, 0.55) !important; }
 ytlr-tile-renderer:not(.zylon-focus) ytlr-tile-header-renderer::after { border-color: transparent !important; box-shadow: none !important; }
+ytlr-search-keyboard yt-keyboard-key.zylon-focus[class][class], ytlr-search-suggestions-chip yt-button-container.zylon-focus[class][class], ytlr-search-text-box ytlr-text-box.zylon-focus[class][class] { background-color: rgba(255, 0, 51, 0.28) !important; color: #fff !important; box-shadow: inset 0 0 0 0.2rem #ff0033, 0 0 1.2rem 0.2rem rgba(255, 0, 51, 0.5) !important; }
+ytlr-search-keyboard yt-keyboard-key.zylon-focus[class][class] *, ytlr-search-suggestions-chip yt-button-container.zylon-focus[class][class] *, ytlr-search-text-box ytlr-text-box.zylon-focus[class][class] * { color: #fff !important; }
+ytlr-search-keyboard yt-keyboard-key.zylon-focus[class][class] { border-radius: 0.4rem !important; }
 `;
 // key names Electron's sendInputEvent knows, per controller action
 const KEYS = { up: 'Up', down: 'Down', left: 'Left', right: 'Right', ok: 'Return', back: 'Escape', play: 'MediaPlayPause' };
@@ -78,18 +84,24 @@ async function tizenTube() {
   return have;
 }
 
+// MediaDeck's whole screen (taskbar included)
+const screenOf = (parent) => (parent && !parent.isDestroyed() ? screen.getDisplayMatching(parent.getBounds()).bounds : screen.getPrimaryDisplay().bounds);
+
 // Opens YouTube (or shows it again where it was), full screen on MediaDeck's screen
 function open(parent) {
   if (win && !win.isDestroyed()) {
+    win.setBounds(screenOf(parent));   // (the screen may have changed meanwhile)
     win.show();
     win.focus();
     return;
   }
   const ses = session.fromPartition('persist:youtube');
   ses.setUserAgent(UA);
-  const area = parent && !parent.isDestroyed() ? screen.getDisplayMatching(parent.getBounds()).bounds : screen.getPrimaryDisplay().bounds;
+  const area = screenOf(parent);
   win = new BrowserWindow({
-    ...area, frame: false, fullscreenable: false,   // covers the screen without Chromium full screen (see main.js setFull)
+    // covers the screen without Chromium full screen (see main.js setFull). Not resizable: with a resize edge Windows
+    // kept it above the taskbar (1332 of 1440 pixels high, the taskbar showing)
+    ...area, frame: false, fullscreenable: false, resizable: false, movable: false,
     show: false, backgroundColor: '#000000', title: 'YouTube',
     webPreferences: { session: ses, preload: path.join(__dirname, 'youtube-preload.js'), contextIsolation: true, sandbox: true },
   });
@@ -105,7 +117,7 @@ function open(parent) {
       await win.webContents.executeJavaScript(script);
     } catch (e) { console.error('[youtube] TizenTube:', e.message); }
   });
-  win.once('ready-to-show', () => { win.show(); win.focus(); });
+  win.once('ready-to-show', () => { win.setBounds(area); win.show(); win.focus(); });
   win.on('closed', () => { win = null; opts.onClosed && opts.onClosed(); });
   win.loadURL('https://www.youtube.com/tv');
 }

@@ -17,6 +17,7 @@ const BLOCK = ['*://embed.twitch.tv/*', '*://player.twitch.tv/*', '*://www.googl
 
 // What's selected, clearer than SmartTwitchTV's own (a changed background only): a Twitch-purple
 // ring with a glow on the selected card, the same purple on menus, settings and dialog buttons.
+// The search box dark with white text (not a light grey box with a white rim), purple while typing in it.
 // Also keeps the page's colours under a Windows contrast theme.
 const PURPLE = '#9146FF';
 const CSS = `
@@ -34,6 +35,9 @@ html { forced-color-adjust: none !important; }
   box-shadow: 0 0 0 0.2em ${PURPLE}, 0 0 1.2em rgba(145, 70, 255, 0.55) !important;
 }
 .side_panel_feed_img_focus, .progress_bar_holder_focus { box-shadow: 0 0 0 0.25em ${PURPLE}, 0 0 1em rgba(145, 70, 255, 0.6) !important; }
+.input_class { background-color: rgba(255, 255, 255, 0.08) !important; color: #fff !important; caret-color: ${PURPLE}; border-color: rgba(255, 255, 255, 0.25) !important; box-shadow: none !important; }
+.input_class:focus { border-color: ${PURPLE} !important; background-color: rgba(145, 70, 255, 0.18) !important; box-shadow: 0 0 1.2em rgba(145, 70, 255, 0.55) !important; }
+.input_class::placeholder { color: rgba(255, 255, 255, 0.5) !important; }
 `;
 
 let win = null;
@@ -55,25 +59,31 @@ function key(action) {
   win.webContents.sendInputEvent({ type: 'keyUp', keyCode });
 }
 
+// MediaDeck's whole screen (taskbar included)
+const screenOf = (parent) => (parent && !parent.isDestroyed() ? screen.getDisplayMatching(parent.getBounds()).bounds : screen.getPrimaryDisplay().bounds);
+
 // Opens Twitch (or shows it again where it was), full screen on MediaDeck's screen
 function open(parent) {
   if (win && !win.isDestroyed()) {
+    win.setBounds(screenOf(parent));   // (the screen may have changed meanwhile)
     win.show();
     win.focus();
     return;
   }
   const ses = session.fromPartition('persist:twitch');
   ses.webRequest.onBeforeRequest({ urls: BLOCK }, (d, cb) => cb({ cancel: true }));
-  const area = parent && !parent.isDestroyed() ? screen.getDisplayMatching(parent.getBounds()).bounds : screen.getPrimaryDisplay().bounds;
+  const area = screenOf(parent);
   win = new BrowserWindow({
-    ...area, frame: false, fullscreenable: false,   // covers the screen without Chromium full screen (see main.js setFull)
+    // covers the screen without Chromium full screen (see main.js setFull). Not resizable: with a resize edge Windows
+    // kept it above the taskbar (1332 of 1440 pixels high, the taskbar showing)
+    ...area, frame: false, fullscreenable: false, resizable: false, movable: false,
     show: false, backgroundColor: '#000000', title: 'Twitch',
     webPreferences: { session: ses, preload: path.join(__dirname, 'twitch-preload.js'), contextIsolation: true, sandbox: true },
   });
   win.setMenu(null);
   win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
   win.webContents.on('dom-ready', () => { win.webContents.insertCSS(CSS).catch(() => {}); });
-  win.once('ready-to-show', () => { win.show(); win.focus(); });
+  win.once('ready-to-show', () => { win.setBounds(area); win.show(); win.focus(); });
   win.on('closed', () => { win = null; opts.onClosed && opts.onClosed(); });
   win.loadURL(URL);
 }
