@@ -1625,6 +1625,7 @@ async function launchGame(moduleId, rom) {
   }
   let args;
   try { args = games.launchArgs(mod, startRom); } catch (e) { return { ok: false, error: e.message }; }
+  edenOwnFolders(mod);
   await padsFollowPc(mod).catch(() => {});      // player 1 on the controller that is here (Eden, DuckStation …)
   // Mednafen keeps its settings in %HOME%\.mednafen when HOME is set (Git Bash, MSYS): always its own folder
   const env = emuInstaller.emuIdOf(mod) === 'mednafen' ? { MEDNAFEN_HOME: path.dirname(mod.exe) } : null;
@@ -2146,6 +2147,15 @@ async function padsToEmulators() {
 // xemu binding it by itself on a PC without DS4Windows. At the start, and before a game of one of them starts (the
 // controller may have been switched on since). only: that emulator's module.
 const padPc = require('./pad-pc');
+// Eden / the yuzu forks: their NAND, SD card … folders in their own user folder again when they point into another
+// copy's (Eden writes full paths on every close - relocate.js). At the start and before each of their games.
+function edenOwnFolders(m) {
+  if (!/^(eden|suyu|sudachi|citron|yuzu)\.exe$/i.test(path.basename(m.exe || ''))) return;
+  try {
+    const fixed = require('./relocate').edenFolders(path.dirname(m.exe));
+    if (fixed.length) console.log(`[${m.name}] its own folders again: ${fixed.join('; ')}`);
+  } catch (e) { console.error(`[${m.name}]`, e.message); }
+}
 const PADS_PC = path.join(DATA, 'pads-pc.json');      // what Eden / xemu had, per controller / per PC
 const padStore = (k) => ({ get: () => (readJson(PADS_PC, {}) || {})[k], set: (v) => { const j = readJson(PADS_PC, {}) || {}; j[k] = v; writeJson(PADS_PC, j); } });
 async function padsFollowPc(only) {
@@ -2749,13 +2759,14 @@ if (!app.requestSingleInstanceLock()) {
     setTimeout(() => pcCheckAtStart().catch((e) => console.error('[pc]', e.message)), 15000);
     forgetXboxSetups().catch((e) => console.error('[controllers]', e.message));
     setTimeout(() => padsFollowPc().catch((e) => console.error('[pads]', e.message)), 10000);
-    // PCSX2 folders on a drive that is gone → its own sub folders (relocate.js)
+    // PCSX2 folders on a drive that is gone → its own sub folders; Eden's in another copy → its own (relocate.js)
     try {
       for (const m of await emuModules.scan(emuDir())) {
         if (m.ok && emuInstaller.emuIdOf(m) === 'pcsx2') {
           const fixed = require('./relocate').pcsx2Folders(path.dirname(m.exe));
           if (fixed.length) console.log(`[pcsx2] folders fixed: ${fixed.join('; ')}`);
         }
+        if (m.ok) edenOwnFolders(m);
       }
     } catch (e) { console.error('[pcsx2]', e.message); }
     server = new MediaServer({ dataDir: DATA, getSettings: () => config.settings, cacheKey: cacheKey() });

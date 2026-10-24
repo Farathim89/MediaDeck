@@ -79,4 +79,33 @@ function pcsx2Folders(dir) {
   return changed;
 }
 
-module.exports = { relocate, pcsx2Folders, styles, files };
+// Eden (and the other yuzu forks) keeps its folders (the NAND: saves, firmware, installed updates; the SD card …) as full
+// paths, and uses them as long as they are there: a copy of it on another drive kept using the first one's NAND. It
+// writes them again on every close, so before each start: a folder in another copy's user folder, or one that is gone,
+// goes back to its own user folder (portable). A folder chosen elsewhere stays. Returns the keys changed.
+const EDEN_FOLDERS = [['Data%20Storage', 'nand_directory', 'nand'], ['Data%20Storage', 'sdmc_directory', 'sdmc'],
+  ['Data%20Storage', 'load_directory', 'load'], ['Data%20Storage', 'dump_directory', 'dump'], ['Data%20Storage', 'tas_directory', 'tas'],
+  ['UI', 'Screenshots\\screenshot_path', 'screenshots']];
+function edenFolders(dir) {
+  const pads = require('./pad-defaults');
+  const file = path.join(dir, 'user', 'config', 'qt-config.ini');
+  if (!fs.existsSync(file)) return [];
+  const ini = pads.readIni(file);
+  const same = (a, b) => path.resolve(a).toLowerCase() === path.resolve(b).toLowerCase();
+  const changed = [];
+  for (const [sec, key, sub] of EDEN_FOLDERS) {
+    const raw = (pads.iniGet(ini, sec, key) || '').trim();
+    const v = raw.replace(/^"(.*)"$/, '$1');
+    if (!v || !path.isAbsolute(v)) continue;
+    const m = /^(.*)[\\/]user[\\/]([^\\/]+)[\\/]?$/.exec(v);
+    const otherCopy = m && m[2].toLowerCase() === sub && !same(m[1], dir);
+    if (!otherCopy && (fs.existsSync(v) || !fs.existsSync(path.join(dir, 'user', sub)))) continue;
+    const to = path.join(dir, 'user', sub).replace(/\\/g, '/');
+    pads.iniSet(ini, sec, key, raw.startsWith('"') || /[\s,;=#"]/.test(to) ? `"${to}"` : to, '=');
+    changed.push(`${key}: ${v} -> ${to}`);
+  }
+  if (changed.length) pads.writeIni(file, ini);
+  return changed;
+}
+
+module.exports = { relocate, pcsx2Folders, edenFolders, styles, files };
