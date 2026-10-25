@@ -309,9 +309,10 @@ function createWindow() {
   win.webContents.on('will-navigate', (e) => e.preventDefault());
   win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
   win.on('closed', () => { win = null; app.quit(); });
-  for (const ev of ['display-metrics-changed', 'display-added', 'display-removed']) screen.on(ev, coverScreenAgain);
+  for (const ev of ['display-metrics-changed', 'display-added', 'display-removed']) screen.on(ev, () => { padLog(`screen: ${ev}`); coverScreenAgain(); });
   // Leaving the PS menu any other way (back to the game, save state, Alt+Tab): stop being on top
   win.on('blur', () => {
+    padLog(`window lost the focus${Date.now() < claimUntil ? ' (taking it back)' : ''}${menuOnTop ? ', PS menu open' : ''}`);
     // just came to the front (PS menu, back from a program) and Windows or the program behind took the focus:
     // focusSelf takes it back - no stepping aside now
     if (Date.now() < claimUntil) { tellActive(false); return; }
@@ -328,7 +329,7 @@ function createWindow() {
   });
   // The controller only works in MediaDeck while its window really is the active one (Chromium can
   // keep thinking it has focus after a game or another program came to the front)
-  win.on('focus', () => tellActive(true));
+  win.on('focus', () => { padLog('window got the focus'); tellActive(true); });
   win.webContents.on('did-finish-load', () => { toldActive = null; });
   for (const ev of ['resize', 'move', 'maximize', 'unmaximize', 'enter-full-screen', 'leave-full-screen']) win.on(ev, rememberWindow);
 }
@@ -433,7 +434,25 @@ function tellActive(on) {
   }
   if (toldActive === on) return;
   toldActive = on;
+  padLog(on ? 'controller on in MediaDeck' : 'controller off in MediaDeck');
   win.webContents.send('win-active', on);
+}
+
+// The controller log, data\controller-log.txt: focus changes, PS presses, controllers connecting, the buttons MediaDeck
+// got - so a controller that "did nothing" can be followed afterwards. No game, app or file names. The last ~2000 lines.
+const PAD_LOG = path.join(DATA, 'controller-log.txt');
+let padLogTrimmed = false;
+function padLog(text) {
+  try {
+    if (!padLogTrimmed) {
+      padLogTrimmed = true;
+      const old = fs.existsSync(PAD_LOG) ? fs.readFileSync(PAD_LOG, 'utf8').split('\n') : [];
+      if (old.length > 2000) fs.writeFileSync(PAD_LOG, old.slice(-1500).join('\n'));
+    }
+    const d = new Date();
+    const stamp = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')} ${d.toTimeString().slice(0, 8)}.${String(d.getMilliseconds()).padStart(3, '0')}`;
+    fs.appendFileSync(PAD_LOG, `${stamp}  ${String(text).slice(0, 200)}\n`);
+  } catch {}
 }
 
 function bringToFront() {
@@ -455,9 +474,11 @@ let claimUntil = 0, claiming = false;
 function focusSelf() {
   if (!win || win.isDestroyed()) return;
   claimUntil = Date.now() + 2000;
+  padLog('taking the focus (2 s)');
   bringToFront();
   if (claiming) return;
   claiming = true;
+  let lastFront = null;
   const step = async () => {
     if (!win || win.isDestroyed() || Date.now() > claimUntil) { claiming = false; return; }
     // Windows' own answer, not Chromium's: Chromium can think MediaDeck still has the focus while Windows gave it to
@@ -466,6 +487,7 @@ function focusSelf() {
     const other = BrowserWindow.getFocusedWindow();
     if (!other || other === win) {
       const front = await keysExe(['focus', hwndOf(win)]);
+      if (front !== lastFront) { lastFront = front; padLog(front ? 'Windows: MediaDeck in front' : 'Windows refused to put MediaDeck in front'); }
       if (front) tellActive(true);
       else if (win && !win.isDestroyed() && Date.now() <= claimUntil) bringToFront();
     }
@@ -777,8 +799,10 @@ function startPadWatch() {
   // (one that can't start - blocked a moment - is tried again like one that stopped; before, the PS button
   // stayed dead for the whole session, and a throw here stopped the rest of the start)
   try { padwatch = spawn(exe, pads.padwatchArgs(config.controllers), { windowsHide: true }); } catch (e) { console.error('[padwatch]', e.message); padwatch = null; return; }
+  padLog('PS watcher started');
   padwatch.on('error', (e) => {
     console.error('[padwatch]', e.message);
+    padLog(`PS watcher error: ${e.message}`);
     if (padwatch !== me) return;
     padwatch = null;
     if (!quitting) setTimeout(() => { if (!quitting) startPadWatch(); }, 5000);
@@ -792,6 +816,7 @@ function startPadWatch() {
   const me = padwatch;
   padwatch.on('exit', () => {
     if (padwatch !== me) return;
+    padLog('PS watcher stopped by itself (starting it again)');
     padwatch = null;
     if (!quitting) setTimeout(() => { if (!quitting) startPadWatch(); }, 1000);   // stopped by itself: again
   });
@@ -804,12 +829,13 @@ function homeReleased() { clearTimeout(holdTimer); holdTimer = null; }
 // PS / Guide / Back+Start (from padwatch, or from the test switch)
 function homePressed() {
   if (!win || win.isDestroyed()) return;
+  const alive = running && isAlive(running.pid);
+  padLog(`PS pressed: ${alive ? 'a program runs' : 'nothing runs'}, MediaDeck ${win.isMinimized() ? 'minimized' : win.isVisible() ? 'shown' : 'hidden'}${win.isFocused() ? ', focused' : ''}${menuOnTop ? ', PS menu open' : ''}`);
   if (overlay.isOpen()) { overlay.refocus(); return; }
   if (youtube.isShown()) { youtubeHome(); return; }
   if (twitch.isShown()) { twitchHome(); return; }
   // a Twitch stream in MediaDeck's player: B / Back there goes back to Twitch
   if (twitchPlay) return;
-  const alive = running && isAlive(running.pid);
   if (alive && running.holdToClose) {
     // Nothing may come to the front while it runs: only a long hold closes it, then MediaDeck returns
     const held = running.pid;
@@ -875,6 +901,8 @@ function startTestSwitch() {
     if (u.searchParams.get('k') !== key) { res.writeHead(403); return res.end(); }
     try {
       if (u.pathname === '/home') { homePressed(); return send({ ok: true }); }
+      // the page told MediaDeck isn't the active window (as when Chromium missed the focus coming back)
+      if (u.pathname === '/tell-inactive') { tellActive(false); return send({ ok: true }); }
       if (u.pathname === '/release') { homeReleased(); return send({ ok: true }); }
       // Removes games a test started from Recently played (their names match "match")
       if (u.pathname === '/recent-forget') {
@@ -1314,6 +1342,7 @@ async function startProgram(exe, args, cwd, name, meta = {}) {
       letGoOfFocus();
       holdOnTop(false);
       running = { pid: child.pid, name: name || path.basename(exe, '.exe'), exe, ...meta };
+      padLog('a program started');
       startPadWatch();
       // Bring the game's window forward once it exists (Windows doesn't always let it come
       // to the front by itself); tried a few times during the first seconds only - not while the PS menu is up
@@ -1351,7 +1380,7 @@ async function startProgram(exe, args, cwd, name, meta = {}) {
       // game started) must not switch off the PS button for the new one - nor come over it (MAME32 crashes when
       // anything comes in front of it)
       const was = running && running.pid === child.pid ? running : null;
-      if (was) running = null;
+      if (was) { running = null; padLog('the program ended'); }
       if (running && isAlive(running.pid)) return;
       stopPadWatch();
       focusSelf();
@@ -1379,6 +1408,7 @@ function watchTrayHide(pid) {
     if (++gone < 2) return;
     clearInterval(t);
     console.log(`[apps] ${running.name} went to the tray: quit, back to MediaDeck`);
+    padLog('the program went to the tray: back to MediaDeck');
     if (running.exe && running.quitArgs) { try { spawn(running.exe, running.quitArgs, { detached: true, stdio: 'ignore', windowsHide: true }).unref(); } catch {} }
     running = null;
     stopPadWatch();
@@ -1401,6 +1431,7 @@ function followPid(rec) {
     clearInterval(watch);
     const was = running;
     running = null;
+    padLog('the program ended');
     stopPadWatch();
     focusSelf();
     followRestart(was, pid);
@@ -2377,8 +2408,19 @@ function registerIpc() {
     }));
   });
   ipcMain.handle('game-launch', (e, moduleId, rom) => launchGame(moduleId, rom));
-  ipcMain.handle('running-close', (e, force) => closeRunning(!!force));
-  ipcMain.handle('running-resume', () => resumeRunning());
+  ipcMain.handle('running-close', (e, force) => { padLog(`menu: close the program${force ? ' (force)' : ''}`); return closeRunning(!!force); });
+  ipcMain.handle('running-resume', () => { padLog('menu: back to the program'); return resumeRunning(); });
+  // The page has the focus but was told MediaDeck isn't the active window (see input.js): Windows decides
+  let lastCheck = null;
+  ipcMain.handle('check-active', async () => {
+    if (!win || win.isDestroyed() || toldActive !== false || !win.isVisible() || win.isMinimized()) return false;
+    const front = await keysExe(['front', hwndOf(win)]);
+    if (front || lastCheck !== front) padLog(`the page has the focus, the controller was off: ${front ? 'MediaDeck is in front - controller on' : 'another window is in front - left off'}`);
+    lastCheck = front;
+    if (front && win && !win.isDestroyed()) tellActive(true);
+    return front;
+  });
+  ipcMain.handle('pad-log', (e, text) => { if (win && !win.isDestroyed() && e.sender === win.webContents) padLog(text); });
   // Save / load state, pause, screenshot from the menu: back to the game, then tell the emulator
   ipcMain.handle('running-action', (e, action) => (['saveState', 'loadState', 'pause', 'screenshot', 'options'].includes(action) ? overlayAction(action) : null));
   ipcMain.handle('running-info', () => (running && isAlive(running.pid) ? { name: running.name } : null));
@@ -2743,6 +2785,7 @@ if (!app.requestSingleInstanceLock()) {
 } else {
   app.on('second-instance', bringToFront);
   app.whenReady().then(async () => {
+    padLog(`MediaDeck ${app.getVersion()} started`);
     loadConfig();
     // The browser cache would keep thumbnail links, which contain file paths: empty it
     await session.defaultSession.clearCache().catch(() => {});

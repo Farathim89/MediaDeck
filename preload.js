@@ -101,6 +101,8 @@ contextBridge.exposeInMainWorld('api', {
   onToast: (fn) => ipcRenderer.on('toast', (e, text) => fn(text)),
   onAppFocus: (fn) => ipcRenderer.on('app-focus', () => fn()),
   onWinActive: (fn) => ipcRenderer.on('win-active', (e, on) => fn(on)),
+  checkActive: invoke('check-active'),
+  padLog: invoke('pad-log'),
   onWinFull: (fn) => ipcRenderer.on('win-full', (e, on) => fn(on)),
   onWinMax: (fn) => ipcRenderer.on('win-max', (e, on) => fn(on)),
   winControl: invoke('win-control'),

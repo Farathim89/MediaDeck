@@ -1,6 +1,7 @@
 ﻿// Small helper for the in-game overlay.
 //   keys.exe focus <hwnd>          bring a window to the front (Windows normally blocks this
 //                                  for programs in the background); exit 0 = it is in front, 3 = Windows refused
+//   keys.exe front <hwnd>          exit 0 when that window is the one in front (Windows' own answer), 3 when not - changes nothing
 //   keys.exe visible <pid>         exit 0 when the program shows a window (minimized counts), 1 when not (in the tray)
 //   keys.exe confirm <pid> [secs]  press Yes/OK in that program's own "confirm shutdown/exit" dialog
 //                                  (secs: keep looking that long, until it shows or the program is gone)
@@ -401,6 +402,7 @@ static class Keys
                 return r == 0 ? 0 : 3;
             }
             if (a.Length >= 2 && a[0] == "focus") return Focus(new IntPtr(long.Parse(a[1]))) ? 0 : 3;
+            if (a.Length >= 2 && a[0] == "front") return GetForegroundWindow() == new IntPtr(long.Parse(a[1])) ? 0 : 3;
             if (a.Length >= 2 && a[0] == "game") { var h = WindowOf(int.Parse(a[1])); if (h == IntPtr.Zero) return 2; return Focus(h) ? 0 : 3; }
             if (a.Length >= 2 && a[0] == "visible") return Visible(int.Parse(a[1])) ? 0 : 1;
             if (a.Length >= 4 && a[0] == "click")

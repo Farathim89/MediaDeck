@@ -3,6 +3,8 @@
 const Input = (() => {
   let handler = () => {};
   let lastSource = 'keyboard';
+  // a line in MediaDeck's controller log (data\controller-log.txt, see main.js padLog)
+  const plog = (text) => { try { if (window.api && api.padLog) api.padLog(text); } catch {} };
 
   const KEYS = {
     ArrowUp: 'up', ArrowDown: 'down', ArrowLeft: 'left', ArrowRight: 'right',
@@ -14,6 +16,7 @@ const Input = (() => {
   };
 
   function emit(action, source) {
+    if (source !== 'mouse') plog(`${action} (${source})`);
     lastSource = source;
     document.body.classList.toggle('hide-cursor', source !== 'mouse');
     handler(action);
@@ -62,7 +65,7 @@ const Input = (() => {
   const FIRST_DELAY = 380;
   const REPEAT_EVERY = 115;
   const held = new Map(); // action -> { since, last, ignored }
-  let ignoreUntil = 0;
+  let ignoreUntil = 0, ignoreHomeUntil = 0;
 
   // Pads set up in Settings → Controllers (not Xbox / PlayStation): their own buttons, read as the Xbox ones
   let maps = {};
@@ -105,8 +108,18 @@ const Input = (() => {
   let winActive = true;
   if (window.api && api.onWinActive) api.onWinActive((on) => { winActive = on; if (on) ignoreHeld(); });
 
+  // Chromium said MediaDeck lost the focus and never that it came back, while MediaDeck was the window in front: keys
+  // worked, the controller didn't (switching the TV / monitor brought it back). The page still has the focus then:
+  // main asks Windows itself (see main.js 'check-active').
+  let offSince = 0, lastCheck = 0, lastGate = '';
   function poll(now) {
     requestAnimationFrame(poll);
+    const gate = `${winActive ? 'active' : 'not active'}, ${document.hasFocus() ? 'focus' : 'no focus'}${document.hidden ? ', hidden' : ''}`;
+    if (gate !== lastGate) { lastGate = gate; plog(`page: ${gate}`); }
+    if (!winActive && document.hasFocus() && !document.hidden && window.api && api.checkActive) {
+      if (!offSince) offSince = now;
+      else if (now - offSince > 600 && now - lastCheck > 2000) { lastCheck = now; api.checkActive(); }
+    } else offSince = 0;
     if (!winActive || !document.hasFocus() || document.hidden) { held.clear(); return; }
     const pads = navigator.getGamepads ? navigator.getGamepads() : [];
     const active = new Set();
@@ -116,7 +129,11 @@ const Input = (() => {
     for (const a of active) {
       const h = held.get(a);
       if (h && h.ignored) continue;                 // still the press from before: wait for release
-      if (!h && now < ignoreUntil) { held.set(a, { since: now, last: now, ignored: true }); continue; }
+      if (!h && (now < ignoreUntil || (a === 'home' && now < ignoreHomeUntil))) {
+        held.set(a, { since: now, last: now, ignored: true });
+        plog(`${a} ignored (held from before)`);
+        continue;
+      }
       if (!h) {
         held.set(a, { since: now, last: now });
         emit(a, 'gamepad');
@@ -129,16 +146,21 @@ const Input = (() => {
   requestAnimationFrame(poll);
 
   window.addEventListener('gamepadconnected', (e) => {
+    plog(`controller ${e.gamepad.index} connected: ${e.gamepad.id.slice(0, 60)}`);
     if (window.UI) UI.toast(`Controller connected`, { icon: 'check', duration: 2500 });
   });
+  window.addEventListener('gamepaddisconnected', (e) => plog(`controller ${e.gamepad.index} disconnected`));
 
   // Buttons held right now are ignored until they are let go (e.g. the PS button that just
-  // opened the overlay must not also press something in it)
+  // opened the overlay must not also press something in it). What shows up in the next moment counts as held too
+  // (the page can see the pad a frame or two later) - PS / Guide, often held a while, for longer. A new press after
+  // that counts: for 0.9 s every button was ignored, a quick Down after PS did nothing.
   function ignoreHeld() {
     const pads = navigator.getGamepads ? navigator.getGamepads() : [];
     const now = performance.now();
     for (const pad of pads) if (pad && pad.connected) for (const a of pressedActions(pad)) held.set(a, { since: now, last: now, ignored: true });
-    ignoreUntil = now + 900;
+    ignoreUntil = now + 250;
+    ignoreHomeUntil = now + 900;
   }
 
   return {
