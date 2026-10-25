@@ -807,19 +807,34 @@ function startPadWatch() {
     padwatch = null;
     if (!quitting) setTimeout(() => { if (!quitting) startPadWatch(); }, 5000);
   });
+  // (whole lines only: with the menu buttons there is more output, and a line can come in two parts)
+  let rest = '';
   padwatch.stdout.on('data', (d) => {
-    for (const line of String(d).split(/\r?\n/)) {
-      if (line.trim() === 'home') homePressed();
-      if (line.trim() === 'release') homeReleased();
+    const lines = (rest + String(d)).split(/\r?\n/);
+    rest = lines.pop();
+    for (const raw of lines) {
+      const line = raw.trim();
+      if (line === 'home') homePressed();
+      else if (line === 'release') homeReleased();
+      else if (/^[+-][a-z]+$/.test(line)) padNav(line.slice(1), line[0] === '+');
     }
   });
   const me = padwatch;
   padwatch.on('exit', () => {
     if (padwatch !== me) return;
     padLog('PS watcher stopped by itself (starting it again)');
+    padNav(null);
     padwatch = null;
     if (!quitting) setTimeout(() => { if (!quitting) startPadWatch(); }, 1000);   // stopped by itself: again
   });
+}
+
+// The menu buttons as padwatch reads them (outside Chromium), for the page while MediaDeck is the active window: it
+// uses them when Chromium's own controller list missed the controller (input.js). null: forget what was held.
+function padNav(a, on) {
+  if (!win || win.isDestroyed()) return;
+  if (a !== null && (toldActive !== true || win.isMinimized() || !win.isVisible())) return;
+  win.webContents.send('pad-nav', a === null ? null : { a, on });
 }
 
 // Emulators that crash when anything comes over them (MAME32) close after holding PS a while
@@ -1089,7 +1104,7 @@ function stopCursorHide() {
 let quitting = false;
 function stopPadWatch(force = false) {
   if (!force) return;
-  if (padwatch) { const p = padwatch; padwatch = null; try { p.kill(); } catch {} }
+  if (padwatch) { const p = padwatch; padwatch = null; try { p.kill(); } catch {} padNav(null); }
 }
 
 // (EPERM: running, only with more rights than ours - a game started as admin or kept by its anti-cheat)
@@ -2175,7 +2190,7 @@ async function padsToEmulators() {
   } catch (err) { console.log('[controllers]', err.message); return ''; }
 }
 // Player 1 on this PC (pad-pc.js): DuckStation / PCSX2 on the first controller, Eden on the controller that is here,
-// xemu binding it by itself on a PC without DS4Windows. At the start, and before a game of one of them starts (the
+// xemu binding it by itself on a PC without DS4Windows, Mesen on every Xbox slot. At the start, and before a game of one of them starts (the
 // controller may have been switched on since). only: that emulator's module.
 const padPc = require('./pad-pc');
 // Eden / the yuzu forks: their NAND, SD card … folders in their own user folder again when they point into another
@@ -2197,6 +2212,7 @@ async function padsFollowPc(only) {
     try {
       if (id === 'duckstation' && padPc.sdlFirst(path.join(dir, 'settings.ini'))) done.push(m.name);
       if (id === 'pcsx2' && padPc.sdlFirst(path.join(dir, 'inis', 'PCSX2.ini'))) done.push(m.name);
+      if (id === 'mesen' && padPc.mesenAnySlot(path.join(dir, 'settings.json'))) done.push(m.name);
       const exe = path.basename(m.exe);
       if (/^(eden|suyu|sudachi|citron|yuzu|ryujinx)\.exe$/i.test(exe) || id === 'mgba') {
         here = here || await padPc.connectedPads(KEYS_EXE);

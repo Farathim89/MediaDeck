@@ -15,8 +15,8 @@ const Input = (() => {
     MediaPlayPause: 'playpause', MediaTrackNext: 'next', MediaTrackPrevious: 'prev', MediaStop: 'back',
   };
 
-  function emit(action, source) {
-    if (source !== 'mouse') plog(`${action} (${source})`);
+  function emit(action, source, watched) {
+    if (source !== 'mouse') plog(`${action} (${source}${watched ? ', read by MediaDeck' : ''})`);
     lastSource = source;
     document.body.classList.toggle('hide-cursor', source !== 'mouse');
     handler(action);
@@ -104,6 +104,20 @@ const Input = (() => {
     return set;
   }
 
+  // MediaDeck's own controller watcher (padwatch.exe, outside Chromium) reads the menu buttons of the Xbox / PlayStation
+  // pads too. Chromium's controller list can miss a controller that reconnected while a game ran (its "controller
+  // added" from Windows came at the wrong moment): the PS menu showed and the controller did nothing in it until
+  // another device change - the TV switched - made Chromium look again. So a press padwatch saw that Chromium didn't
+  // show within 0.35 s: its buttons count too, until Chromium shows a press again.
+  const watched = new Set();
+  let viaWatch = false, seen = null, chromeChangeAt = -1e9, chromePrev = new Set();
+  if (window.api && api.onPadNav) api.onPadNav((n) => {
+    if (!n) { watched.clear(); return; }
+    if (!n.on) { watched.delete(n.a); return; }
+    watched.add(n.a);
+    if (!viaWatch && !seen) seen = { a: n.a, at: performance.now() };
+  });
+
   // the window's real focus, from the main process (see main.js 'win-active')
   let winActive = true;
   if (window.api && api.onWinActive) api.onWinActive((on) => { winActive = on; if (on) ignoreHeld(); });
@@ -120,10 +134,26 @@ const Input = (() => {
       if (!offSince) offSince = now;
       else if (now - offSince > 600 && now - lastCheck > 2000) { lastCheck = now; api.checkActive(); }
     } else offSince = 0;
-    if (!winActive || !document.hasFocus() || document.hidden) { held.clear(); return; }
+    if (!winActive || !document.hasFocus() || document.hidden) { held.clear(); watched.clear(); seen = null; return; }
     const pads = navigator.getGamepads ? navigator.getGamepads() : [];
-    const active = new Set();
-    for (const pad of pads) if (pad && pad.connected) for (const a of pressedActions(pad)) active.add(a);
+    const chrome = new Set();
+    let count = 0;
+    for (const pad of pads) if (pad && pad.connected) { count++; for (const a of pressedActions(pad)) chrome.add(a); }
+    const fresh = [...chrome].some((a) => !chromePrev.has(a));
+    if (fresh || chrome.size !== chromePrev.size) chromeChangeAt = now;
+    chromePrev = chrome;
+    if (fresh && viaWatch) { viaWatch = false; plog('Chromium sees the controller again'); }
+    if (seen && now - seen.at > 350) {
+      const s = seen;
+      seen = null;
+      if (chromeChangeAt < s.at - 300) {
+        viaWatch = true;
+        plog(`${s.a} pressed, Chromium didn't show it (${count} controller${count === 1 ? '' : 's'} there): MediaDeck reads the controller itself`);
+        if (s.at < ignoreUntil) { if (watched.has(s.a)) held.set(s.a, { since: now, last: now, ignored: true }); }
+        else if (!watched.has(s.a)) emit(s.a, 'gamepad', true);   // a quick press, already let go: it still counts
+      }
+    }
+    const active = viaWatch ? new Set([...chrome, ...watched]) : chrome;
 
     for (const a of [...held.keys()]) if (!active.has(a)) held.delete(a);
     for (const a of active) {
@@ -136,10 +166,10 @@ const Input = (() => {
       }
       if (!h) {
         held.set(a, { since: now, last: now });
-        emit(a, 'gamepad');
+        emit(a, 'gamepad', !chrome.has(a));
       } else if (REPEATS.has(a) && now - h.since > FIRST_DELAY && now - h.last > REPEAT_EVERY) {
         h.last = now;
-        emit(a, 'gamepad');
+        emit(a, 'gamepad', !chrome.has(a));
       }
     }
   }
@@ -159,6 +189,8 @@ const Input = (() => {
     const pads = navigator.getGamepads ? navigator.getGamepads() : [];
     const now = performance.now();
     for (const pad of pads) if (pad && pad.connected) for (const a of pressedActions(pad)) held.set(a, { since: now, last: now, ignored: true });
+    watched.clear();
+    seen = null;
     ignoreUntil = now + 250;
     ignoreHomeUntil = now + 900;
   }

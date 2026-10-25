@@ -3,6 +3,8 @@
 //   Xbox (XInput):             Guide button, or Back + Start held 1 s
 //   PlayStation (DS4/DualSense, USB or Bluetooth, read as HID): PS button, or Share + Options held 1 s
 // It only reads (shared access), so the game keeps getting the controller as normal.
+// It also prints the menu buttons as they go down / up ("+down", "-down"), from every Xbox slot and every PlayStation
+// pad (no controller ids): MediaDeck's page uses them when Chromium's own controller list missed the controller.
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -47,6 +49,44 @@ static class PadWatch
     static string lastRaw = "";
     static readonly HashSet<string> open = new HashSet<string>();
     static readonly object gate = new object();
+
+    // ---------- The menu buttons (MediaDeck's actions; D-pad or left stick for the directions) ----------
+    static readonly string[] NavNames = { "up", "down", "left", "right", "ok", "back", "x", "menu", "lb", "rb", "start", "select" };
+    // XInput's bit for each of them: D-pad, A, B, X, Y, LB, RB, Start, Back
+    static readonly int[] XboxBits = { 0x0001, 0x0002, 0x0004, 0x0008, 0x1000, 0x2000, 0x4000, 0x8000, 0x0100, 0x0200, 0x0010, 0x0020 };
+    // per PlayStation pad: { past 0.55 on the stick, past 0.45 } - a stick direction goes on at 0.55 and off below 0.45
+    static readonly Dictionary<string, int[]> sonyNav = new Dictionary<string, int[]>();
+
+    static int StickNav(double x, double y, double t)
+    {
+        return (y < -t ? 1 : 0) | (y > t ? 2 : 0) | (x < -t ? 4 : 0) | (x > t ? 8 : 0);
+    }
+
+    static int XboxNav(XPad p, double t)
+    {
+        int n = 0;
+        for (int k = 0; k < XboxBits.Length; k++) if ((p.Buttons & XboxBits[k]) != 0) n |= 1 << k;
+        return n | StickNav(p.LX / 32767.0, -p.LY / 32767.0, t);
+    }
+
+    // DS4 / DualSense: the D-pad is a hat in the low half of the face-button byte (0 = up, clockwise, 8 = none)
+    static int SonyNav(int face, int b6, int lx, int ly, double t)
+    {
+        int n = 0, hat = face & 0x0F;
+        if (hat == 0 || hat == 1 || hat == 7) n |= 1;
+        if (hat >= 3 && hat <= 5) n |= 2;
+        if (hat >= 5 && hat <= 7) n |= 4;
+        if (hat >= 1 && hat <= 3) n |= 8;
+        if ((face & 0x20) != 0) n |= 16;    // cross: ok
+        if ((face & 0x40) != 0) n |= 32;    // circle: back
+        if ((face & 0x10) != 0) n |= 64;    // square: x
+        if ((face & 0x80) != 0) n |= 128;   // triangle: menu
+        if ((b6 & 0x01) != 0) n |= 256;     // L1
+        if ((b6 & 0x02) != 0) n |= 512;     // R1
+        if ((b6 & 0x20) != 0) n |= 1024;    // Options: start
+        if ((b6 & 0x10) != 0) n |= 2048;    // Share / Create: select
+        return n | StickNav((lx - 128) / 127.5, (ly - 128) / 127.5, t);
+    }
 
     static List<string> HidPaths()
     {
@@ -104,26 +144,29 @@ static class PadWatch
             using (var fs = new FileStream(h, FileAccess.Read, len, false))
             {
                 var r = new byte[len];
+                int lastOn = -1, lastHold = -1;
                 while (true)
                 {
                     int n = fs.Read(r, 0, len);
                     if (n <= 0) break;
-                    int b6, b7;                           // byte with Share/Options, byte with PS
+                    int face, b6, b7, lx, ly;             // D-pad + face buttons, byte with Share/Options, byte with PS, left stick
                     if (!dualSense)
                     {
                         // DS4: 0x01 = USB or Bluetooth "simple" report, 0x11 = Bluetooth full report (2 bytes further)
                         int o = r[0] == 0x11 ? 2 : 0;
                         if (r[0] != 0x01 && r[0] != 0x11) continue;
-                        b6 = r[6 + o]; b7 = r[7 + o];
+                        lx = r[1 + o]; ly = r[2 + o]; face = r[5 + o]; b6 = r[6 + o]; b7 = r[7 + o];
                     }
                     else
                     {
                         // DualSense: 0x01 over USB (buttons at 8..10), 0x01 over Bluetooth simple (DS4 layout), 0x31 Bluetooth full
-                        if (r[0] == 0x31) { b6 = r[10]; b7 = r[11]; }
-                        else if (r[0] == 0x01 && n >= 64) { b6 = r[9]; b7 = r[10]; }
-                        else if (r[0] == 0x01) { b6 = r[6]; b7 = r[7]; }
+                        if (r[0] == 0x31) { lx = r[2]; ly = r[3]; face = r[9]; b6 = r[10]; b7 = r[11]; }
+                        else if (r[0] == 0x01 && n >= 64) { lx = r[1]; ly = r[2]; face = r[8]; b6 = r[9]; b7 = r[10]; }
+                        else if (r[0] == 0x01) { lx = r[1]; ly = r[2]; face = r[5]; b6 = r[6]; b7 = r[7]; }
                         else continue;
                     }
+                    int on = SonyNav(face, b6, lx, ly, 0.55), hold = SonyNav(face, b6, lx, ly, 0.45);
+                    if (on != lastOn || hold != lastHold) { lastOn = on; lastHold = hold; lock (gate) sonyNav[path] = new[] { on, hold }; }
                     if (Debug)
                     {
                         // report type + the button bytes only (sticks would flood the output)
@@ -137,15 +180,15 @@ static class PadWatch
         }
         catch { }
         psHome = false; psCombo = false;
-        lock (gate) open.Remove(path);                            // unplugged: found again later
+        lock (gate) { open.Remove(path); sonyNav.Remove(path); }  // unplugged: found again later
     }
 
-    static ushort ReadXbox(int i)
+    static bool ReadXbox(int i, out XState s)
     {
-        var s = new XState();
-        try { if (XGetEx(i, ref s) == 0) return s.Pad.Buttons; } catch { }
-        try { if (XGet(i, ref s) == 0) return s.Pad.Buttons; } catch { }
-        return 0;
+        s = new XState();
+        try { if (XGetEx(i, ref s) == 0) return true; } catch { }
+        try { if (XGet(i, ref s) == 0) return true; } catch { }
+        return false;
     }
 
     // ---------- Other pads (set up in MediaDeck's Settings → Controllers), read with Windows' joystick API ----------
@@ -210,11 +253,28 @@ static class PadWatch
         }
         DateTime comboSince = DateTime.MaxValue, lastScan = DateTime.MinValue;
         bool fired = false;
+        int lastNav = 0;
         while (true)
         {
             if ((DateTime.Now - lastScan).TotalSeconds > 3) { lastScan = DateTime.Now; try { FindSonyPads(); } catch { } try { FindOtherPads(); } catch { } }
             ushort x = 0;
-            for (int i = 0; i < 4; i++) x |= ReadXbox(i);
+            int navOn = 0, navHold = 0;
+            for (int i = 0; i < 4; i++)
+            {
+                XState s;
+                if (!ReadXbox(i, out s)) continue;
+                x |= s.Pad.Buttons;
+                navOn |= XboxNav(s.Pad, 0.55); navHold |= XboxNav(s.Pad, 0.45);
+            }
+            lock (gate) foreach (var v in sonyNav.Values) { navOn |= v[0]; navHold |= v[1]; }
+            int nav = navOn | (lastNav & navHold);
+            if (nav != lastNav)
+            {
+                for (int k = 0; k < NavNames.Length; k++)
+                    if (((nav ^ lastNav) & (1 << k)) != 0) Console.WriteLine(((nav & (1 << k)) != 0 ? "+" : "-") + NavNames[k]);
+                Console.Out.Flush();
+                lastNav = nav;
+            }
             bool other = false;
             try { other = OtherCombo(); } catch { }
             bool combo = ((x & 0x0020) != 0 && (x & 0x0010) != 0) || psCombo || other;   // Back+Start / Share+Options / a set-up pad's Start+Back

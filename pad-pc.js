@@ -9,6 +9,8 @@
 //    buttons are by name, mGBA's by number (its own for an Xbox / a PlayStation pad, what it had kept per pad)
 //  - xemu: on a PC without DS4Windows it binds the controller that is there by itself (auto_bind); with DS4Windows
 //    its own setting comes back (auto_bind there would bind the PS4 controller and its Xbox pad both)
+//  - Mesen 2: player 1 on every Xbox slot (it knows the slots, not the controllers: an Xbox controller on the second
+//    slot did nothing)
 const path = require('path');
 const fs = require('fs');
 const { execFile } = require('child_process');
@@ -218,4 +220,59 @@ function xemuFollow(dir, ds4windows, store) {
   return true;
 }
 
-module.exports = { connectedPads, padsFrom, sdlFirst, edenBinds, edenFollow, ryujinxFollow, mgbaFollow, xemuFollow, dotnetGuid };
+// ---------- Mesen 2 ----------
+// Its Xbox pads are the XInput slots themselves (Pad1 = the first slot, Pad2 the second …, code 0x1000 + slot * 0x100
+// + button): player 1 on Pad1 did nothing with an Xbox controller that got the second slot (the PS4 controller through
+// DS4Windows had the first). Player 1's Xbox layout also goes on the other slots, in its mappings 3 and 4 while they
+// are empty (or this copy) - slots another player of that console uses left out. No controller ids.
+const MESEN_PLAYER1 = { Nes: 'Port1', Snes: 'Port1', Sms: 'Port1', PcEngine: 'Port1', Cv: 'Port1', Gameboy: 'Controller', Gba: 'Controller', Ws: 'ControllerHorizontal' };
+const mesenCodes = (m) => Object.keys(m || {}).filter((k) => typeof m[k] === 'number' && m[k]).map((k) => m[k]);
+// the slot of a mapping that is one Xbox pad only; -1 none (empty), -2 something else (keys, DirectInput, mixed)
+function mesenSlot(m) {
+  const codes = mesenCodes(m);
+  if (!codes.length) return -1;
+  const slots = new Set(codes.map((c) => (c >= 0x1000 && c < 0x1400 ? (c - 0x1000) >> 8 : -2)));
+  return slots.size === 1 ? [...slots][0] : -2;
+}
+const mesenOnSlot = (from, slot, m) => {
+  const out = { ...m };
+  for (const k of Object.keys(from)) if (typeof from[k] === 'number') out[k] = from[k] ? 0x1000 + slot * 0x100 + (from[k] & 0xff) : 0;
+  return out;
+};
+const mesenSame = (a, b) => Object.keys(a).every((k) => typeof a[k] !== 'number' || (a[k] & 0xff) === (b[k] & 0xff));
+function mesenAnySlot(file) {
+  if (!fs.existsSync(file)) return false;
+  const text = fs.readFileSync(file, 'utf8').replace(/^﻿/, '');
+  if (/(?<![\d.])\d{16,}/.test(text)) return false;               // a number JavaScript can't keep exactly: left alone
+  let j;
+  try { j = JSON.parse(text); } catch { return false; }
+  let changed = false;
+  for (const [con, p1] of Object.entries(MESEN_PLAYER1)) {
+    const sec = j[con], me = sec && sec[p1];
+    if (!me || !me.Mapping1) continue;
+    const slot = mesenSlot(me.Mapping1);
+    if (slot < 0) continue;                                         // player 1 isn't on one Xbox pad: the player's own
+    const used = new Set([slot]);
+    for (const [name, port] of Object.entries(sec)) {
+      if (name === p1 || !port || typeof port !== 'object') continue;
+      for (const k of ['Mapping1', 'Mapping2', 'Mapping3', 'Mapping4']) { const s = mesenSlot(port[k]); if (s >= 0) used.add(s); }
+    }
+    const free = [0, 1, 2, 3].filter((s) => !used.has(s));
+    for (const k of ['Mapping3', 'Mapping4']) {
+      const m = me[k];
+      if (!m) continue;
+      const s = mesenSlot(m);
+      if (!(s === -1 || (s >= 0 && s !== slot && mesenSame(me.Mapping1, m)))) continue;   // the player's own
+      // (no slot left for it: emptied - a copy on a slot another player took since)
+      const to = free.shift();
+      const next = to === undefined ? Object.fromEntries(Object.entries(m).map(([x, v]) => [x, typeof v === 'number' ? 0 : v])) : mesenOnSlot(me.Mapping1, to, m);
+      if (JSON.stringify(next) !== JSON.stringify(m)) { me[k] = next; changed = true; }
+    }
+  }
+  if (!changed) return false;
+  if (!fs.existsSync(file + '.before-pads')) fs.copyFileSync(file, file + '.before-pads');
+  fs.writeFileSync(file, '﻿' + JSON.stringify(j, null, 2).replace(/\n/g, '\r\n'));
+  return true;
+}
+
+module.exports = { connectedPads, padsFrom, sdlFirst, edenBinds, edenFollow, ryujinxFollow, mgbaFollow, xemuFollow, mesenAnySlot, dotnetGuid };
