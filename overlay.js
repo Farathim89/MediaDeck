@@ -10,7 +10,7 @@ let d = null;        // from main.js: focusWindow(hwnd), onAction(action)
 
 function create() {
   ov = new BrowserWindow({
-    frame: false, backgroundColor: '#000000', hasShadow: false,   // solid: see-through windows turn black over other programs here
+    frame: false, thickFrame: false, backgroundColor: '#000000', hasShadow: false,   // solid: see-through windows turn black over other programs here; no grey frame bar (main.js)
     alwaysOnTop: true, skipTaskbar: true, resizable: false, movable: false, minimizable: false,
     maximizable: false, fullscreenable: false, show: false,
     webPreferences: { preload: path.join(__dirname, 'preload-overlay.js'), contextIsolation: true, nodeIntegration: false, backgroundThrottling: false },

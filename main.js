@@ -280,8 +280,10 @@ function createWindow() {
     minWidth: 960, minHeight: 540,
     // always borderless: "full screen" is the window covering the screen (setFull), never Chromium's full-screen
     // mode - with disable-direct-composition (for mpv) that leaves duplicate / ghost MediaDeck entries in Windows
-    // 11's Alt+Tab. fullscreenable: false keeps pages from switching it on.
-    frame: false, fullscreenable: false, resizable: !startFull,
+    // 11's Alt+Tab. fullscreenable: false keeps pages from switching it on. thickFrame: false - the standard Windows frame
+    // Electron keeps on frameless windows (for resizing) showed as a grey bar along the bottom (and sides): in full
+    // screen at the bottom of the screen, under the player too. Resizing by the edges works without it.
+    frame: false, thickFrame: false, fullscreenable: false, resizable: !startFull,
     backgroundColor: '#000000',
     autoHideMenuBar: true,
     title: 'MediaDeck',

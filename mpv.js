@@ -44,12 +44,13 @@ const LAYOUT_EVENTS = ['move', 'resize', 'maximize', 'unmaximize', 'enter-full-s
 
 function createLayers() {
   const win = d.win();
+  // (thickFrame: false: no grey Windows frame bar along the bottom - see main.js)
   host = new BrowserWindow({
-    parent: win, frame: false, show: false, skipTaskbar: true, resizable: false, movable: false,
+    parent: win, frame: false, thickFrame: false, show: false, skipTaskbar: true, resizable: false, movable: false,
     minimizable: false, maximizable: false, focusable: false, backgroundColor: '#000000', hasShadow: false,
   });
   osd = new BrowserWindow({
-    parent: host, frame: false, show: false, skipTaskbar: true, resizable: false, movable: false,
+    parent: host, frame: false, thickFrame: false, show: false, skipTaskbar: true, resizable: false, movable: false,
     minimizable: false, maximizable: false, transparent: true, backgroundColor: '#00000000', hasShadow: false,
     webPreferences: {
       preload: path.join(__dirname, 'preload-player.js'),

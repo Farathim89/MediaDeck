@@ -101,7 +101,8 @@ function open(parent) {
   win = new BrowserWindow({
     // covers the screen without Chromium full screen (see main.js setFull). Not resizable: with a resize edge Windows
     // kept it above the taskbar (1332 of 1440 pixels high, the taskbar showing)
-    ...area, frame: false, fullscreenable: false, resizable: false, movable: false,
+    // thickFrame: false - no grey Windows frame bar along the bottom (see main.js)
+    ...area, frame: false, thickFrame: false, fullscreenable: false, resizable: false, movable: false,
     show: false, backgroundColor: '#000000', title: 'YouTube',
     webPreferences: { session: ses, preload: path.join(__dirname, 'youtube-preload.js'), contextIsolation: true, sandbox: true },
   });

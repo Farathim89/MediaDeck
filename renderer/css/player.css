@@ -12,7 +12,7 @@ body { cursor: default; }
   background: linear-gradient(180deg, rgba(0, 0, 0, 0.78), rgba(0, 0, 0, 0.35) 60%, transparent);
 }
 #bottom {
-  bottom: 0; padding: 7rem 4rem 2.4rem;
+  bottom: 0; padding: 5.5rem 4rem 1.6rem;
   background: linear-gradient(0deg, rgba(0, 0, 0, 0.88), rgba(0, 0, 0, 0.55) 55%, transparent);
 }
 body:not(.osd-visible) #top { opacity: 0; transform: translateY(-1.5rem); pointer-events: none; }
@@ -28,7 +28,7 @@ body.is-live #time-pos { color: #ff4d5e; font-weight: 700; letter-spacing: 0.08e
 #subtitle { font-size: calc(1.05rem * var(--text-scale)); color: var(--muted); margin-top: 0.3rem; max-width: 70vw; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
 /* ---------- Seek bar ---------- */
-#seek { position: relative; padding: 0.9rem 0; border-radius: 1rem; }
+#seek { position: relative; padding: 0.7rem 0; border-radius: 1rem; }
 .seek-track { position: relative; height: 0.35rem; border-radius: 1rem; background: rgba(255, 255, 255, 0.28); transition: height 0.15s; }
 .seek-fill { position: absolute; left: 0; top: 0; bottom: 0; width: 0; border-radius: 1rem; background: var(--progress); }   /* Player settings → Progress bar colour */
 .seek-knob {
@@ -51,26 +51,26 @@ body.is-live #time-pos { color: #ff4d5e; font-weight: 700; letter-spacing: 0.08e
 /* ---------- Buttons ---------- */
 /* three columns: the main buttons in the middle, the pills on the right - with a big Screen / Text size the pills
    take the room they need and the middle moves over instead of being covered */
-.controls { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 1rem; margin-top: 1rem; min-height: 4.4rem; }
-.controls-main { grid-column: 2; display: flex; align-items: center; gap: 1.2rem; }
+.controls { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 1rem; margin-top: 0.5rem; min-height: 3.4rem; }
+.controls-main { grid-column: 2; display: flex; align-items: center; gap: 0.9rem; }
 .controls-side { grid-column: 3; justify-self: end; display: flex; gap: 0.7rem; }
 .ctl-pill { white-space: nowrap; }
 .ctl {
-  width: 3.4rem; height: 3.4rem; border-radius: 50%;
+  width: 2.8rem; height: 2.8rem; border-radius: 50%;
   display: grid; place-items: center; color: #e5e7eb;
   transition: transform 0.15s var(--ease), background 0.15s, color 0.15s;
 }
-.ctl svg { width: 1.6rem; height: 1.6rem; }
-.ctl-big { width: 4.4rem; height: 4.4rem; background: rgba(255, 255, 255, 0.12); }
-.ctl-big svg { width: 2rem; height: 2rem; }
+.ctl svg { width: 1.35rem; height: 1.35rem; }
+.ctl-big { width: 3.4rem; height: 3.4rem; background: rgba(255, 255, 255, 0.12); }
+.ctl-big svg { width: 1.55rem; height: 1.55rem; }
 .ctl.focused { background: var(--focus-bg); color: var(--focus-ink); transform: scale(1.12); box-shadow: 0 0 0 0.16rem var(--focus-ring); }
 .ctl.disabled { opacity: 0.3; }
 .ctl-pill {
   display: flex; align-items: center; gap: 0.5rem;
-  padding: 0.6rem 1rem; border-radius: 2rem; font-size: calc(0.95rem * var(--text-scale)); color: #e5e7eb;
+  padding: 0.45rem 0.85rem; border-radius: 2rem; font-size: calc(0.88rem * var(--text-scale)); color: #e5e7eb;
   background: rgba(255, 255, 255, 0.08); transition: background 0.15s, color 0.15s, transform 0.15s var(--ease);
 }
-.ctl-pill .pi svg { width: 1.25rem; height: 1.25rem; }
+.ctl-pill .pi svg { width: 1.1rem; height: 1.1rem; }
 .ctl-pill.focused { background: var(--focus-bg); color: var(--focus-ink); transform: scale(1.06); box-shadow: 0 0 0 0.16rem var(--focus-ring); }
 
 /* ---------- Centre: pause icon flash, buffering ---------- */

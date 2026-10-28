@@ -586,6 +586,8 @@
 
     scheduleHide();
     if (action === 'back') { if (isMusic) close(); else hideOsd(); return; }
+    // Down on the buttons (the bottom row): the controls go away, like Back (Up / Down brings them back)
+    if (action === 'down' && !isMusic && Nav.current && Nav.current.dataset.group === 'ctl') { hideOsd(); return; }
     if (Nav.current === seekEl && (action === 'left' || action === 'right')) { seekBy(action === 'left' ? -skipBack() : skipFwd()); return; }
     if (action === 'ok') {
       if (Nav.current === seekEl) { if (pendingSeek !== null) { clearTimeout(seekTimer); commitSeek(); } else togglePause(); return; }
