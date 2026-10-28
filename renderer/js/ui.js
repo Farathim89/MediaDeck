@@ -97,12 +97,13 @@ const UI = (() => {
 
   const COLORS = ['#e5a00d', '#e11d48', '#db2777', '#9333ea', '#7c3aed', '#5b5fc7', '#2563eb', '#1e3a8a', '#0891b2', '#2f8f83', '#ca8a04', '#b45309', '#ea580c', '#64748b', '#334155', '#111827'];
 
-  function colors({ title, current }) {
+  // list: other colours than these (the Custom theme's background adds black)
+  function colors({ title, current, list = COLORS }) {
     return show((box, done) => {
       box.innerHTML = `<h2>${esc(title)}</h2><div class="swatches"></div><div class="menu-list"></div>`;
       const wrap = box.querySelector('.swatches');
       let first = null;
-      COLORS.forEach((c) => {
+      list.forEach((c) => {
         const s = document.createElement('button');
         s.className = 'swatch focusable' + (c === current ? ' current' : '');
         s.style.setProperty('--c', c);
@@ -174,14 +175,23 @@ const UI = (() => {
     else if (left < track.scrollLeft + pad) track.scrollLeft = Math.max(0, left - pad);
   }
 
-  // Button hints along the bottom: [['a', 'Open'], ['y', 'Options']]
+  // Button hints along the bottom: [['a', 'Open'], ['y', 'Options']] - in a solid box (nothing shows through), with the
+  // buttons of the controller in use: PlayStation's ✕ ○ □ △ in their colours, or A / B / X / Y (Input.padKind)
+  const PS_GLYPHS = {
+    a: '<path d="M2.3 2.3l5.4 5.4M7.7 2.3l-5.4 5.4" stroke="#8fb8ff" stroke-width="1.5" stroke-linecap="round"/>',
+    b: '<circle cx="5" cy="5" r="3" fill="none" stroke="#ff7b7b" stroke-width="1.35"/>',
+    x: '<rect x="2.2" y="2.2" width="5.6" height="5.6" fill="none" stroke="#f39ad6" stroke-width="1.35"/>',
+    y: '<path d="M5 1.9 8.3 7.7H1.7Z" fill="none" stroke="#4fe0c0" stroke-width="1.3" stroke-linejoin="round"/>',
+  };
+  const glyph = (b) => (Input.padKind === 'playstation' && PS_GLYPHS[b] ? `<svg viewBox="0 0 10 10">${PS_GLYPHS[b]}</svg>` : b.toUpperCase());
   function hints(list) {
     const h = document.createElement('div');
     h.className = 'hints';
-    h.innerHTML = list.map(([b, label]) => `<span class="hint"><span class="btn-glyph ${b}">${b.toUpperCase()}</span>${esc(label)}</span>`).join('');
+    h.innerHTML = `<div class="hints-box">${list.map(([b, label]) => `<span class="hint"><span class="btn-glyph ${b}" data-b="${b}">${glyph(b)}</span>${esc(label)}</span>`).join('')}</div>`;
     return h;
   }
+  document.addEventListener('padkind', () => { for (const g of document.querySelectorAll('.btn-glyph[data-b]')) g.innerHTML = glyph(g.dataset.b); });
 
-  return { menu, confirm, prompt, colors, toast, handle, esc, glow, hints, scrollRow, get isOpen() { return !!open; },
+  return { menu, confirm, prompt, colors, COLORS, toast, handle, esc, glow, hints, scrollRow, get isOpen() { return !!open; },
     dismiss: () => close(null) };
 })();

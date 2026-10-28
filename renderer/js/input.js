@@ -118,6 +118,19 @@ const Input = (() => {
     if (!viaWatch && !seen) seen = { a: n.a, at: performance.now() };
   });
 
+  // The controller the button hints show (UI.hints): a PlayStation pad's ✕ ○ □ △ or the A / B / X / Y of the others.
+  // The one pressed last counts; DS4Windows' Xbox pad presses along with the PS4 controller, so when a PlayStation pad
+  // presses too, it wins. Remembered for the next start (Chromium shows no controller before a button is pressed).
+  const isSony = (p) => /Vendor:\s*054c\b|\b054c-/i.test(p.id);
+  let padKind = 'xbox';
+  try { if (localStorage.getItem('padKind') === 'playstation') padKind = 'playstation'; } catch {}
+  function setPadKind(k) {
+    if (k === padKind) return;
+    padKind = k;
+    try { localStorage.setItem('padKind', k); } catch {}
+    document.dispatchEvent(new CustomEvent('padkind', { detail: k }));
+  }
+
   // the window's real focus, from the main process (see main.js 'win-active')
   let winActive = true;
   if (window.api && api.onWinActive) api.onWinActive((on) => { winActive = on; if (on) ignoreHeld(); });
@@ -137,8 +150,15 @@ const Input = (() => {
     if (!winActive || !document.hasFocus() || document.hidden) { held.clear(); watched.clear(); seen = null; return; }
     const pads = navigator.getGamepads ? navigator.getGamepads() : [];
     const chrome = new Set();
-    let count = 0;
-    for (const pad of pads) if (pad && pad.connected) { count++; for (const a of pressedActions(pad)) chrome.add(a); }
+    let count = 0, sony = false, other = false;
+    for (const pad of pads) {
+      if (!pad || !pad.connected) continue;
+      count++;
+      const acts = pressedActions(pad);
+      if (acts.size) { if (isSony(pad)) sony = true; else other = true; }
+      for (const a of acts) chrome.add(a);
+    }
+    if (sony || other) setPadKind(sony ? 'playstation' : 'xbox');
     const fresh = [...chrome].some((a) => !chromePrev.has(a));
     if (fresh || chrome.size !== chromePrev.size) chromeChangeAt = now;
     chromePrev = chrome;
@@ -200,5 +220,6 @@ const Input = (() => {
     setMaps(m) { maps = m || {}; },
     setHandler(fn) { handler = fn; },
     get source() { return lastSource; },
+    get padKind() { return padKind; },
   };
 })();

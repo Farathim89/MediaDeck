@@ -25,6 +25,12 @@ function defaultConfig() {
     favorites: [],
     settings: {
       theme: 'oled',
+      customTheme: { bg: '#000000', card: '#000000', accent: '#2563eb' },   // the Custom theme's colours (Appearance)
+      bgStyle: 'theme',          // … → Background: 'theme' (the theme's own), 'none', a console's ('waves' …), 'picture'
+      bgPicture: '',             // … your own picture for 'picture'
+      bgMotion: true,            // … the background moves slowly (it stops while a game, a video or another window is in front)
+      bgPerConsole: true,        // a console's page gets that console's background; consoleBg: { <console id>: another one }
+      consoleBg: {},
       uiScale: 1,                // Settings → Appearance → Screen size: everything × this (0.8 … 1.5)
       textScale: 1,              // … → Text size: only text × this (0.9 … 1.5)
       fullscreen: false,

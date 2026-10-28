@@ -2757,6 +2757,16 @@ function registerIpc() {
   ipcMain.handle('image-data', async (e, file) => {
     try { return nativeImage.createFromPath(P.resolve(file)).toDataURL(); } catch { return null; }
   });
+  // Settings → Appearance → Background picture: at most 2560 wide, as a JPEG (a photo straight from a camera as a PNG
+  // data URL was tens of MB)
+  ipcMain.handle('bg-image', async (e, file) => {
+    try {
+      let img = nativeImage.createFromPath(P.resolve(file));
+      if (img.isEmpty()) return null;
+      if (img.getSize().width > 2560) img = img.resize({ width: 2560, quality: 'good' });
+      return `data:image/jpeg;base64,${img.toJPEG(88).toString('base64')}`;
+    } catch { return null; }
+  });
   ipcMain.handle('open-external-player', (e, file) => {
     const vlc = config.settings.vlcPath;
     if (vlc && fs.existsSync(vlc)) { try { spawn(vlc, ['--fullscreen', file], { detached: true, stdio: 'ignore' }).on('error', (e) => console.error('[vlc]', e.message)).unref(); return true; } catch { return false; } }

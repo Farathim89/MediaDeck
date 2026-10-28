@@ -140,8 +140,19 @@ const Settings = (() => {
     {
       id: 'appearance', title: 'Appearance', icon: 'palette', desc: 'Theme and colours',
       items: [
-        { label: 'Theme', type: 'choice', key: 'theme', options: () => App.THEMES.map((t) => ({ value: t.id, label: t.name, swatch: t.swatch })), preview: (v) => App.applyTheme(v),
+        { label: 'Theme', type: 'choice', key: 'theme', options: () => App.themeList().map((t) => ({ value: t.id, label: t.name, swatch: t.swatch })), preview: (v) => App.applyTheme(v),
           after: (v) => App.applyTheme(v) },
+        { label: 'Custom theme colours', desc: 'The Custom theme\'s background, cards and accent colour. Choosing a colour switches to it.',
+          type: 'action', value: () => (s().theme === 'custom' ? 'In use' : 'Not in use'), run: () => editCustomTheme() },
+        { label: 'Background', desc: 'Behind every screen. The theme\'s own: the console themes have a slowly moving background in their console\'s style, the others none. Your picture: Background picture below.',
+          type: 'choice', key: 'bgStyle', options: () => BACKGROUNDS(), preview: (v) => ThemeBg.preview(v === s().bgStyle ? undefined : v),
+          after: async (v) => { ThemeBg.preview(undefined); if (v === 'picture' && !s().bgPicture) await pickBackground(); } },
+        { label: 'Background picture', desc: 'A picture from the PC as the background, a little darker so the text on it stays easy to read',
+          type: 'action', value: () => (s().bgPicture ? s().bgPicture.split(/[\\/]/).pop() : 'Not set'), run: () => pickBackground() },
+        { label: 'Moving background', desc: 'The background moves slowly. It stands still while a game, a video, YouTube or Twitch is in front.',
+          type: 'toggle', key: 'bgMotion', after: () => ThemeBg.apply() },
+        { label: 'Background per console', desc: 'A console\'s page gets its console\'s background: PlayStation waves on Sony\'s consoles, Nintendo dots, Game Boy screen, … The console\'s Y menu → Background picks another one.',
+          type: 'toggle', key: 'bgPerConsole', after: () => ThemeBg.apply() },
         { label: 'Screen size', desc: 'Makes everything bigger or smaller: menus, cards, text and the player\'s controls. Bigger for a TV across the room, smaller for more on the screen.',
           type: 'choice', key: 'uiScale', options: () => App.UI_SCALES.map((x) => ({ value: x.v, label: x.l })),
           preview: (v) => App.applyScale(v), after: () => App.applyScale() },
@@ -614,6 +625,42 @@ const Settings = (() => {
       const item = items[b.dataset.index];
       if (item && item.value) b.querySelector('.setting-value').innerHTML = valueHtml(item);
     });
+  }
+
+  // ---------- Appearance: backgrounds and the Custom theme ----------
+  const BACKGROUNDS = () => [
+    { value: 'theme', label: 'The theme\'s own' },
+    { value: 'none', label: 'None' },
+    ...ThemeBg.STYLES.map((x) => ({ value: x.id, label: x.name })),
+    { value: 'picture', label: 'Your picture' },
+  ];
+
+  async function pickBackground() {
+    const file = await api.pickFile({ title: 'Choose a background picture', filters: [{ name: 'Pictures', extensions: ['jpg', 'jpeg', 'png', 'webp', 'bmp', 'gif'] }] });
+    if (!file) return;
+    Object.assign(s(), { bgPicture: file, bgStyle: 'picture' });
+    await save();
+    ThemeBg.apply();
+    renderList();
+  }
+
+  // Background, cards and accent from the colour swatches (black for the background / cards: OLED Black's look)
+  async function editCustomTheme() {
+    const WHAT = { bg: 'Background colour', card: 'Card colour', accent: 'Accent colour' };
+    let focus = 'bg';
+    for (;;) {
+      const c = App.customColors();
+      const v = await UI.menu({ title: 'Custom theme', message: 'Choosing a colour switches to the Custom theme', focus,
+        items: [...Object.entries(WHAT).map(([k, label]) => ({ label, value: k, icon: 'palette', swatch: [c[k]] })), { label: 'Done', value: 'done', icon: 'check' }] });
+      if (!v || v === 'done') break;
+      focus = v;
+      const picked = await UI.colors({ title: WHAT[v], current: c[v], list: v === 'accent' ? undefined : ['#000000', ...UI.COLORS] });
+      if (!picked) continue;
+      Object.assign(s(), { customTheme: { ...c, [v]: picked }, theme: 'custom' });
+      App.applyTheme('custom');
+      await save();
+    }
+    renderList();
   }
 
   // A path saved relative to MediaDeck's folder (Games) as a full one

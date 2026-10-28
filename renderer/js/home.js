@@ -210,10 +210,14 @@ const Home = (() => {
   }
 
   // ---------- Pages ----------
+  // the page whose background shows (Settings → Appearance → Background per console): a console's, a maker's, or none
+  const pageContext = () => (activeTab === 'emus' && emuDetail ? consoleById(emuDetail) : activeTab === 'emus' && emuMaker ? { maker: emuMaker } : null);
+
   function renderPage() {
     pageEl.innerHTML = '';
     if (emuDetail && !consoleById(emuDetail)) emuDetail = null;
     if (emuMaker && !consoles.some((c) => c.maker === emuMaker)) emuMaker = null;
+    ThemeBg.setContext(pageContext());
     if (activeTab === 'home') renderGridPage(SECTIONS, { kicker: 'MediaDeck', title: 'Home', sub: 'All your apps and consoles' });
     else if (activeTab === 'emus' && emuDetail) renderConsolePage(consoleById(emuDetail));
     else if (activeTab === 'emus' && emuMaker) {
@@ -931,8 +935,10 @@ const Home = (() => {
       { label: 'Game folders', icon: 'folder', value: 'folders' },
       { label: 'Scan for new games', icon: 'refresh', value: 'scan' },
       { label: cfg().settings.showEmptyConsoles ? 'Hide consoles without games' : 'Show consoles without games', icon: 'eye', value: 'empty' },
+      { label: 'Background', icon: 'image', value: 'bg' },
       { label: `Remove ${emuName(c)} from MediaDeck…`, icon: 'trash', value: 'remove', danger: true },
     ] });
+    if (choice === 'bg') return consoleBackground(c);
     if (choice === 'remove') return removeEmulator(c);
     if (choice === 'scan') return scanGames();
     if (choice === 'empty') {
@@ -947,6 +953,32 @@ const Home = (() => {
     if (choice === 'emu') { await chooseEmulator(c); }
     if (choice === 'open' && t) open(t);
     if (choice === 'folders') { await RomFolders.edit(c.emulator); await loadConsoles(); renderPage(); Nav.focus(consoleCard(c.id) || activeTabEl()); }
+  }
+
+  // This console's page background (Settings → Appearance → Background per console): its own by default, or another -
+  // shown while moving through the list
+  async function consoleBackground(c) {
+    const s = cfg().settings;
+    const all = s.consoleBg || (s.consoleBg = {});
+    const before = all[c.id], current = before || 'auto';
+    const own = ThemeBg.STYLES.find((x) => x.id === ThemeBg.styleOfConsole(c));
+    ThemeBg.setContext(c);
+    const v = await UI.menu({ title: `${c.name}: background`, focus: current,
+      message: s.bgPerConsole === false ? 'Background per console is off (Settings → Appearance): the theme\'s background shows' : '',
+      onFocus: (id) => { all[c.id] = id; ThemeBg.apply(); },
+      items: [
+        { label: own ? `Its own (${own.name})` : 'Its own (none: the theme\'s)', value: 'auto' },
+        { label: 'The theme\'s background', value: 'theme' },
+        { label: 'None', value: 'none' },
+        ...ThemeBg.STYLES.map((x) => ({ label: x.name, value: x.id })),
+      ].map((i) => ({ ...i, icon: i.value === current ? 'check' : 'image' })) });
+    if (v === null || v === undefined) { if (before === undefined) delete all[c.id]; else all[c.id] = before; }
+    else {
+      if (v === 'auto') delete all[c.id]; else all[c.id] = v;
+      await api.saveConfig(cfg());
+    }
+    ThemeBg.setContext(pageContext());
+    ThemeBg.apply();
   }
 
   // A console's emulator off the consoles ("hidden": true in its emu-module.json - one added by hand, one not wanted):

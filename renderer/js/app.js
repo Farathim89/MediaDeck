@@ -55,18 +55,53 @@ const App = {
     { id: 'ocean', name: 'Ocean', swatch: ['#030a14', '#16283d', '#38bdf8'] },
     { id: 'amethyst', name: 'Amethyst', swatch: ['#07050c', '#251d35', '#a78bfa'] },
     { id: 'ember', name: 'Ember', swatch: ['#0b0605', '#2b1e18', '#f59e0b'] },
-    // console themes: dark like the rest, the console's colour as the accent
-    { id: 'playstation', name: 'PlayStation', swatch: ['#030b20', '#16305e', '#3d7bff'] },
-    { id: 'xbox', name: 'Xbox', swatch: ['#031003', '#1b3a1b', '#4cc94c'] },
-    { id: 'nintendo', name: 'Nintendo', swatch: ['#140405', '#3a1719', '#ff3b44'] },
-    { id: 'gamecube', name: 'GameCube', swatch: ['#0b0720', '#2b2360', '#8c7cff'] },
-    { id: 'gameboy', name: 'Game Boy', swatch: ['#0a1405', '#2b3d18', '#9bbc0f'] },
-    { id: 'dreamcast', name: 'Dreamcast', swatch: ['#140904', '#3b2615', '#ff7a1a'] },
-    { id: 'megadrive', name: 'Mega Drive', swatch: ['#000000', '#26181a', '#e8202a'] },
+    // console themes: dark like the rest, the console's colour as the accent, and a moving background in its style
+    { id: 'playstation', name: 'PlayStation', swatch: ['#030b20', '#16305e', '#3d7bff'], bg: 'waves' },
+    { id: 'xbox', name: 'Xbox', swatch: ['#031003', '#1b3a1b', '#4cc94c'], bg: 'glow' },
+    { id: 'nintendo', name: 'Nintendo', swatch: ['#140405', '#3a1719', '#ff3b44'], bg: 'dots' },
+    { id: 'gamecube', name: 'GameCube', swatch: ['#0b0720', '#2b2360', '#8c7cff'], bg: 'cubes' },
+    { id: 'gameboy', name: 'Game Boy', swatch: ['#0a1405', '#2b3d18', '#9bbc0f'], bg: 'lcd' },
+    { id: 'dreamcast', name: 'Dreamcast', swatch: ['#140904', '#3b2615', '#ff7a1a'], bg: 'swirl' },
+    { id: 'megadrive', name: 'Mega Drive', swatch: ['#000000', '#26181a', '#e8202a'], bg: 'stripes' },
   ],
 
+  // The themes with the Custom one (its colours: Settings → Appearance → Custom theme colours)
+  themeList() {
+    const c = this.customColors();
+    return [...this.THEMES, { id: 'custom', name: 'Custom', swatch: [this.customVars(c)['--bg'], this.customVars(c)['--surface-1'], c.accent] }];
+  },
+  customColors() {
+    return { bg: '#000000', card: '#000000', accent: '#2563eb', ...(this.state.config.settings.customTheme || {}) };
+  },
+  // From three colours, all the theme's colours: the background and cards are very dark shades of theirs (black
+  // stays black: cards then are OLED Black's greys), the rest like the other themes
+  customVars({ bg, card, accent }) {
+    const rgb = (h) => { const n = parseInt(String(h).slice(1), 16) || 0; return [n >> 16, (n >> 8) & 255, n & 255]; };
+    const hex = (c) => '#' + c.map((v) => Math.round(v).toString(16).padStart(2, '0')).join('');
+    const dark = (h, k) => rgb(h).map((v) => v * k);
+    const black = (h) => rgb(h).every((v) => v < 24);
+    const b = black(bg) ? [0, 0, 0] : dark(bg, 0.1);
+    const s1 = black(card) ? [23, 23, 23] : dark(card, 0.3);
+    const s2 = black(card) ? [16, 16, 16] : dark(card, 0.21);
+    const s3 = black(card) ? [9, 9, 9] : dark(card, 0.14);
+    return {
+      '--bg': hex(b), '--bg-rgb': b.map(Math.round).join(', '),
+      '--surface-1': hex(s1), '--surface-2': hex(s2), '--surface-3': hex(s3), '--surface-line': 'rgba(255, 255, 255, 0.07)',
+      '--sidebar': `rgba(${b.map(Math.round).join(', ')}, 0.85)`,
+      '--panel': `color-mix(in srgb, ${hex(s2)} 96%, transparent)`, '--panel-solid': hex(s2), '--line': 'rgba(255, 255, 255, 0.1)',
+      '--text': '#f5f5f5', '--muted': '#a8a8a8', '--dim': '#707070',
+      '--accent': accent, '--accent-ink': hex(dark(accent, 0.12)),
+      '--focus-bg': 'rgba(255, 255, 255, 0.11)', '--focus-ink': '#ffffff', '--focus-ring': accent, '--glow-opacity': '0.85',
+    };
+  },
+
   applyTheme(id) {
-    document.documentElement.dataset.theme = this.THEMES.some((t) => t.id === id) ? id : 'oled';
+    const root = document.documentElement;
+    const vars = this.customVars(this.customColors());
+    for (const k of Object.keys(vars)) root.style.removeProperty(k);
+    if (id === 'custom') for (const [k, v] of Object.entries(vars)) root.style.setProperty(k, v);
+    root.dataset.theme = id === 'custom' || this.THEMES.some((t) => t.id === id) ? id : 'oled';
+    ThemeBg.apply();   // (its colours come from the theme)
   },
 
   // Settings → Appearance: Screen size makes everything bigger / smaller, Text size only the text (styles.css)
@@ -90,7 +125,7 @@ const App = {
     const current = s.theme || 'oled';
     const c = await UI.menu({
       title: 'Theme', focus: current, onFocus: (id) => this.applyTheme(id),   // live preview while moving
-      items: this.THEMES.map((t) => ({ label: t.name, value: t.id, icon: t.id === current ? 'check' : 'palette', swatch: t.swatch })),
+      items: this.themeList().map((t) => ({ label: t.name, value: t.id, icon: t.id === current ? 'check' : 'palette', swatch: t.swatch })),
     });
     if (!c) { this.applyTheme(current); return; }
     s.theme = c;
@@ -255,6 +290,7 @@ const App = {
     if (this.current) this.current.el.classList.remove('active');
     this.stack.push(screen);
     screen.el.classList.add('active');
+    ThemeBg.setScreen(screen === Home);   // console backgrounds only on Home's console pages
     screen.enter(params || {});
   },
 
@@ -265,6 +301,7 @@ const App = {
     top.el.classList.remove('active');
     if (top.leave) top.leave();
     this.current.el.classList.add('active');
+    ThemeBg.setScreen(this.current === Home);
     this.current.resume();
   },
 

@@ -17,6 +17,7 @@ contextBridge.exposeInMainWorld('api', {
   pickFile: invoke('pick-file'),
   fileIcon: invoke('file-icon'),
   imageData: invoke('image-data'),
+  bgImage: invoke('bg-image'),
   openExternalPlayer: invoke('open-external-player'),
   openDataFolder: invoke('open-data-folder'),
   clearCache: invoke('clear-cache'),
