@@ -1673,6 +1673,7 @@ async function launchGame(moduleId, rom) {
   }
   let args;
   try { args = games.launchArgs(mod, startRom); } catch (e) { return { ok: false, error: e.message }; }
+  ownSettings([path.dirname(mod.exe)]);
   edenOwnFolders(mod);
   await padsFollowPc(mod).catch(() => {});      // player 1 on the controller that is here (Eden, DuckStation …)
   // Mednafen keeps its settings in %HOME%\.mednafen when HOME is set (Git Bash, MSYS): always its own folder
@@ -2204,6 +2205,17 @@ function edenOwnFolders(m) {
     if (fixed.length) console.log(`[${m.name}] its own folders again: ${fixed.join('; ')}`);
   } catch (e) { console.error(`[${m.name}]`, e.message); }
 }
+// Emulator settings pointing into ANOTHER MediaDeck folder (this one was copied from it: D:\MediaDeck from E:) point at
+// this one, so it needs no other drive and never reads or saves in the other copy (relocate.otherCopies). At the start
+// and before each game (that emulator's folder).
+const isMediaDeckFolder = (r) => fs.existsSync(path.join(r, 'MediaDeck.exe')) || fs.existsSync(path.join(r, 'data', 'root.json'));
+function ownSettings(dirs = [P.EMU, P.APPS]) {
+  try {
+    const fixed = require('./relocate').otherCopies(P.ROOT, dirs, P.EMU_BACKUPS, isMediaDeckFolder);
+    if (fixed.length) console.log(`[copy] ${fixed.length} settings files pointed into another MediaDeck folder, now this one: ${fixed.slice(0, 8).map((f) => path.relative(P.ROOT, f)).join('; ')}`);
+    return fixed;
+  } catch (e) { console.error('[copy]', e.message); return []; }
+}
 const PADS_PC = path.join(DATA, 'pads-pc.json');      // what Eden / xemu had, per controller / per PC
 const padStore = (k) => ({ get: () => (readJson(PADS_PC, {}) || {})[k], set: (v) => { const j = readJson(PADS_PC, {}) || {}; j[k] = v; writeJson(PADS_PC, j); } });
 async function padsFollowPc(only) {
@@ -2367,6 +2379,50 @@ async function pcCheckAtStart() {
 }
 
 // ---------- IPC ----------
+// The games folder: where most emulators' game folders already are
+async function gamesRoot(mods) {
+  // set in Settings → Emulators → Games folder; else guessed from the emulators' game folders
+  const set = P.resolve(config.settings.gamesFolder || '');
+  if (set && fs.existsSync(set)) return set;
+  const count = new Map();
+  // (a console folder inside a maker folder counts for the folder above: <root>\Nintendo\Nintendo Snes)
+  const makers = new Set(emuInstaller.CONSOLES.map((c) => c.maker.toLowerCase()).concat(['microsoft', 'philips', 'coleco', 'snk', 'sony', 'sega', 'nintendo']));
+  for (const m of mods) for (const f of m.romFolders || []) {
+    let d = path.dirname(typeof f === 'string' ? f : f.path || '');
+    if (makers.has(path.basename(d).toLowerCase())) d = path.dirname(d);
+    if (d && d !== '.') count.set(d, (count.get(d) || 0) + 1);
+  }
+  return [...count.entries()].sort((a, b) => b[1] - a[1]).map((x) => x[0])[0] || '';
+}
+
+// An emulator MediaDeck installed before its console's game folder was there got no game folders, and its console never
+// showed (Eden: the Switch folder made after the install, the games copied in). That folder is linked once it holds the
+// emulator's kind of game files. At the start and with Scan for new games; only emulators MediaDeck installed that have
+// no folders at all (not RetroArch).
+async function linkGameFolders() {
+  const mods = await emuModules.scan(emuDir());
+  const root = await gamesRoot(mods);
+  if (!root) return [];
+  const linked = [];
+  for (const m of mods) {
+    if (!m.ok || !m.installer || (m.romFolders || []).length) continue;
+    const id = emuInstaller.emuIdOf(m);
+    if (!id || id === 'retroarch') continue;
+    const exts = new Set((m.romExtensions || []).map((x) => '.' + String(x).toLowerCase().replace(/^\./, '')));
+    const hasGames = (dir, depth = 0) => {
+      let es = [];
+      try { es = fs.readdirSync(dir, { withFileTypes: true }); } catch { return false; }
+      return es.some((e) => (e.isFile() ? exts.has(path.extname(e.name).toLowerCase()) : e.isDirectory() && depth < 3 && hasGames(path.join(dir, e.name), depth + 1)));
+    };
+    const found = emuInstaller.consoleGameFolders(id, root).filter((d) => hasGames(d));
+    if (!found.length) continue;
+    emuModules.setFolders(m, found);
+    linked.push(`${m.name}: ${found.map((f) => P.rel(f)).join(', ')}`);
+  }
+  if (linked.length) console.log(`[games] game folders linked: ${linked.join('; ')}`);
+  return linked;
+}
+
 function registerIpc() {
   ipcMain.handle('pc-check', () => pcCheck());
   ipcMain.handle('pc-fix', (e, key) => pcFix(key));
@@ -2379,6 +2435,7 @@ function registerIpc() {
     const known = new Set([...gameCache.values()].flatMap((v) => v.list.map((g) => g.rom.toLowerCase())));
     gameCache.clear();
     await relinkMovedFolders().catch(() => {});
+    await linkGameFolders().catch((e) => console.error('[games]', e.message));
     const mods = await syncEmulators();
     const now = new Set();
     for (const m of mods.filter((x) => !x.hidden && x.ok)) for (const g of await gamesFor(m, true)) now.add(g.rom.toLowerCase());
@@ -2481,21 +2538,6 @@ function registerIpc() {
     return { cores: games.availableCores(mod), auto: (mod.romFolders || []).map((f) => games.pickCore({ ...mod }, games.folderPath(f) + '\\x', typeof f === 'string' ? f : { path: f.path })) };
   });
   // ---- installing emulators (Settings → Emulators → Install emulators) ----
-  // The games folder: where most emulators' game folders already are
-  const gamesRoot = async (mods) => {
-    // set in Settings → Emulators → Games folder; else guessed from the emulators' game folders
-    const set = P.resolve(config.settings.gamesFolder || '');
-    if (set && fs.existsSync(set)) return set;
-    const count = new Map();
-    // (a console folder inside a maker folder counts for the folder above: <root>\Nintendo\Nintendo Snes)
-    const makers = new Set(emuInstaller.CONSOLES.map((c) => c.maker.toLowerCase()).concat(['microsoft', 'philips', 'coleco', 'snk', 'sony', 'sega', 'nintendo']));
-    for (const m of mods) for (const f of m.romFolders || []) {
-      let d = path.dirname(typeof f === 'string' ? f : f.path || '');
-      if (makers.has(path.basename(d).toLowerCase())) d = path.dirname(d);
-      if (d && d !== '.') count.set(d, (count.get(d) || 0) + 1);
-    }
-    return [...count.entries()].sort((a, b) => b[1] - a[1]).map((x) => x[0])[0] || '';
-  };
   ipcMain.handle('emu-install-catalog', async () => {
     const cat = emuInstaller.catalog(await emuModules.scan(emuDir()));
     // the consoles each installed one is on (one that is installed but on none: the install list says why)
@@ -2817,6 +2859,7 @@ if (!app.requestSingleInstanceLock()) {
     loadConfig();
     // The browser cache would keep thumbnail links, which contain file paths: empty it
     await session.defaultSession.clearCache().catch(() => {});
+    await linkGameFolders().catch((e) => console.error('[games]', e.message));
     await syncEmulators();
     // BIOS files added to BIOS\<console> by hand go to the emulators that need them (only missing ones; in the background)
     setTimeout(async () => {
@@ -2830,7 +2873,9 @@ if (!app.requestSingleInstanceLock()) {
     setTimeout(() => pcCheckAtStart().catch((e) => console.error('[pc]', e.message)), 15000);
     forgetXboxSetups().catch((e) => console.error('[controllers]', e.message));
     setTimeout(() => padsFollowPc().catch((e) => console.error('[pads]', e.message)), 10000);
-    // PCSX2 folders on a drive that is gone → its own sub folders; Eden's in another copy → its own (relocate.js)
+    // settings pointing into another MediaDeck folder → this one; PCSX2 folders on a drive that is gone → its own sub
+    // folders; Eden's in another copy → its own (relocate.js)
+    ownSettings();
     try {
       for (const m of await emuModules.scan(emuDir())) {
         if (m.ok && emuInstaller.emuIdOf(m) === 'pcsx2') {

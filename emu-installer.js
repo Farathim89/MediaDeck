@@ -456,6 +456,17 @@ function gameFolders(root, name) {
   return out;
 }
 
+// The game folders there are for the consoles an emulator plays (a multi-system one: all of its consoles; else the one
+// it was installed for, or every console it is listed for)
+function consoleGameFolders(emuId, root, consoleId) {
+  const e = EMULATORS[emuId];
+  if (!e) return [];
+  const list = !e.multi && consoleId ? CONSOLES.filter((x) => x.id === consoleId) : CONSOLES.filter((x) => x.emus.includes(emuId));
+  const out = [];
+  for (const cc of list) for (const g of cc.games || []) out.push(...gameFolders(root, g));
+  return [...new Set(out)];
+}
+
 // ---- install ---------------------------------------------------------------------------------
 // opts: { emuDir, gamesRoot, biosDir, tempDir, sevenZip, net, progress(text, pct) }
 async function install(emuId, consoleId, opts) {
@@ -503,13 +514,15 @@ async function install(emuId, consoleId, opts) {
     const firmware = c && c.bios && opts.biosDir ? await copyFirmware(e, dest, path.join(opts.biosDir, c.bios), opts.sevenZip, fwMax) : '';
     // player 1 = the first controller, ready to play (pad-defaults.js; after the BIOS: PCSX2 needs to know it's there)
     const padSet = require('./pad-defaults').apply(emuId, dest, { installed: true });
-    // the console's game folders (those that exist)
-    const romFolders = [];
-    for (const cc of e.multi ? CONSOLES.filter((x) => x.emus.includes(emuId)) : [c]) {
-      for (const g of cc.games || []) romFolders.push(...gameFolders(opts.gamesRoot, g));
+    // the console's game folders (those that exist). None yet: its own is made, Games\<maker>\<console> - with no
+    // folder the emulator had none, and the games copied into a folder made afterwards never showed (Eden, the Switch)
+    const romFolders = consoleGameFolders(emuId, opts.gamesRoot, consoleId);
+    if (!romFolders.length && c && opts.gamesRoot && (c.games || []).length) {
+      const dir = path.join(opts.gamesRoot, c.maker, c.games[0]);
+      try { await fsp.mkdir(dir, { recursive: true }); romFolders.push(dir); } catch {}
     }
     say(`${e.name} ${version} installed`, 1);
-    return { name: e.name, version, stamp, emuId, dir: dest, biosCopied, firmware, ...(fwMax ? { firmwareMax: fwMax } : {}), padSet, romFolders: [...new Set(romFolders)] };
+    return { name: e.name, version, stamp, emuId, dir: dest, biosCopied, firmware, ...(fwMax ? { firmwareMax: fwMax } : {}), padSet, romFolders };
   } finally {
     fsp.rm(work, { recursive: true, force: true }).catch(() => {});
   }
@@ -586,4 +599,4 @@ async function update(mod, opts) {
   }
 }
 
-module.exports = { CONSOLES, EMULATORS, STARTER, makeStarterFolders, catalog, install, targetDir, resolveUrl, checkUpdates, update, emuIdOf, githubLatest, githubWith, download, checkDigest, unpack, findExeDir, firmwareOffers, installFirmware };
+module.exports = { CONSOLES, EMULATORS, STARTER, makeStarterFolders, consoleGameFolders, catalog, install, targetDir, resolveUrl, checkUpdates, update, emuIdOf, githubLatest, githubWith, download, checkDigest, unpack, findExeDir, firmwareOffers, installFirmware };

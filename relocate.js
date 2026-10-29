@@ -31,28 +31,67 @@ function files(dir, depth = 0, out = []) {
   return out;
 }
 
+const stampFor = (oldRoot) => `${new Date().toISOString().slice(0, 10)} (moved from ${path.resolve(oldRoot).replace(/[\\/:]+/g, ' ').trim()})`;
+const readText = (f) => { try { return fs.statSync(f).size > 4e6 ? null : fs.readFileSync(f, 'latin1'); } catch { return null; } };
+// the file as it was goes to <backupDir>\<stamp>\<its path> first (the first time only)
+function writeKept(f, text, newRoot, backupDir, stamp) {
+  try {
+    if (backupDir) {
+      const b = path.join(backupDir, stamp, path.relative(path.resolve(newRoot), f));
+      fs.mkdirSync(path.dirname(b), { recursive: true });
+      if (!fs.existsSync(b)) fs.copyFileSync(f, b);
+    }
+    fs.writeFileSync(f, text, 'latin1');
+    return true;
+  } catch { return false; }
+}
+
 // dirs: the folders to look in (Emu_modules, Apps); returns the files changed
 function relocate(oldRoot, newRoot, dirs, backupDir) {
   if (!oldRoot || path.resolve(oldRoot).toLowerCase() === path.resolve(newRoot).toLowerCase()) return [];
   const rules = styles(oldRoot, newRoot);
-  const stamp = `${new Date().toISOString().slice(0, 10)} (moved from ${path.resolve(oldRoot).replace(/[\\/:]+/g, ' ').trim()})`;
+  const stamp = stampFor(oldRoot);
   const changed = [];
   for (const dir of dirs) {
     for (const f of files(dir)) {
-      let text;
-      try { if (fs.statSync(f).size > 4e6) continue; text = fs.readFileSync(f, 'latin1'); } catch { continue; }
+      const text = readText(f);
+      if (text === null) continue;
       let next = text;
       for (const r of rules) next = next.replace(r.re, r.to);
+      if (next !== text && writeKept(f, next, newRoot, backupDir, stamp)) changed.push(f);
+    }
+  }
+  return changed;
+}
+
+// Paths into ANOTHER MediaDeck folder: a copy made from it (D:\MediaDeck from E:\-=MediaDeck=-) kept its emulators'
+// settings, so they read and saved in the other copy - its BIOS, memory cards, saves, game folders - and needed that
+// drive. They are pointed at this folder, as if it had moved here. Only a folder that is a MediaDeck (isCopy: its
+// MediaDeck.exe or data\root.json is there) counts: a games folder of your own elsewhere stays. Returns the files
+// changed; dry: only says which, with the other folders found.
+const ROOT_PART = /([A-Za-z]:(?:\\\\|\\|\/)(?:[^\\/"'\r\n<>|*?:]+(?:\\\\|\\|\/))*?)(?:Emu_modules|BIOS|Games|Apps|Emulator backups)(?=[\\/"'\s,;\]}<>]|$)/gim;
+function otherCopies(newRoot, dirs, backupDir, isCopy, dry = false) {
+  const own = path.resolve(newRoot).toLowerCase();
+  const known = new Map();   // a folder (lower case) → whether it is another MediaDeck
+  const changed = [];
+  for (const dir of dirs) {
+    for (const f of files(dir)) {
+      const text = readText(f);
+      if (text === null) continue;
+      const roots = new Set();
+      for (const m of text.matchAll(ROOT_PART)) {
+        const r = path.resolve(m[1].replace(/\\\\/g, '\\').replace(/\//g, '\\'));
+        const k = r.toLowerCase();
+        if (k === own) continue;
+        if (!known.has(k)) known.set(k, !!isCopy(r));
+        if (known.get(k)) roots.add(r);
+      }
+      if (!roots.size) continue;
+      let next = text;
+      for (const r of roots) for (const rule of styles(r, newRoot)) next = next.replace(rule.re, rule.to);
       if (next === text) continue;
-      try {
-        if (backupDir) {
-          const b = path.join(backupDir, stamp, path.relative(path.resolve(newRoot), f));
-          fs.mkdirSync(path.dirname(b), { recursive: true });
-          if (!fs.existsSync(b)) fs.copyFileSync(f, b);
-        }
-        fs.writeFileSync(f, next, 'latin1');
-        changed.push(f);
-      } catch {}
+      if (dry) changed.push({ file: f, from: [...roots] });
+      else if (writeKept(f, next, newRoot, backupDir, stampFor([...roots][0]))) changed.push(f);
     }
   }
   return changed;
@@ -108,4 +147,4 @@ function edenFolders(dir) {
   return changed;
 }
 
-module.exports = { relocate, pcsx2Folders, edenFolders, styles, files };
+module.exports = { relocate, otherCopies, pcsx2Folders, edenFolders, styles, files };
