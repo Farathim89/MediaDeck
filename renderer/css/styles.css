@@ -544,7 +544,6 @@ svg { display: block; }
 .app-info { min-width: 0; }
 .app-name { margin: 0.4rem 0 0.4rem; font-size: calc(3.8rem * var(--text-scale)); font-weight: 750; letter-spacing: -0.02em; line-height: 1.05; }
 .app-sub { font-size: calc(1.25rem * var(--text-scale)); color: var(--muted); }
-.app-path { margin-top: 0.7rem; font-size: calc(0.85rem * var(--text-scale)); color: var(--dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 60rem; }
 .app-actions { display: flex; gap: 1rem; margin-top: 2.6rem; }
 .btn {
   display: inline-flex; align-items: center; gap: 0.65rem;

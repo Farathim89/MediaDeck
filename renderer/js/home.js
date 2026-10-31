@@ -5,7 +5,7 @@ const Home = (() => {
   const el = document.getElementById('home');
   const tabsEl = el.querySelector('.tabs');
   const pageEl = el.querySelector('.page');
-  let activeTab = 'home';      // 'home' | 'emus' (Consoles) | 't:<tile id>'
+  let activeTab = 'home';      // 'home' | 'emus' (Consoles)
   let emuDetail = null;        // on the Consoles tab: the console whose page is open
   let emuMaker = null;         // on the Consoles tab: the maker whose consoles are shown (Nintendo, Sony, …)
   let emuFromHome = false;     // that maker was opened from the Home tab: Back returns there
@@ -101,25 +101,24 @@ const Home = (() => {
   }
 
   // ---------- Tabs ----------
+  // Home and Consoles. (The apps had a tab each too, with a page of only Open and Options: their Home cards open them
+  // at once.)
   function renderTabs() {
     tabsEl.innerHTML = '';
     tabsEl.appendChild(tabEl('home', 'Home', Icons.home));
-    for (const t of inSection('apps')) tabsEl.appendChild(tabEl('t:' + t.id, t.name, '', t));
     // Consoles: one tab; the consoles are cards on its page
-    tabsEl.appendChild(tabEl('emus', 'Consoles', Icons.gamepad, null, consoles.length));
+    tabsEl.appendChild(tabEl('emus', 'Consoles', Icons.gamepad, consoles.length));
     markActive();
   }
 
-  function tabEl(key, label, icon, t, count) {
+  function tabEl(key, label, icon, count) {
     const b = document.createElement('button');
     b.className = 'tab focusable';
     b.dataset.group = 'tabs';
     b.dataset.tab = key;
     b.innerHTML = `<span class="tab-icon">${icon}</span><span class="tab-label">${UI.esc(label)}</span>${count ? `<span class="tab-count">${count}</span>` : ''}`;
-    if (t) fillLogo(t, b.querySelector('.tab-icon'));
     // A tab opens only when chosen (A / Enter / click), then the panel folds away
     b.addEventListener('click', () => { selectTab(key); focusPage(); });
-    b.addEventListener('contextmenu', (e) => { e.preventDefault(); if (t) options(t); });
     return b;
   }
 
@@ -224,10 +223,7 @@ const Home = (() => {
       const m = makers().find((x) => x.name === emuMaker);
       renderGridPage([{ id: 'maker', maker: m }], { kicker: 'Consoles', title: m.name, sub: makerSub(m) });
     } else if (activeTab === 'emus') renderGridPage([SECTIONS[1]], { kicker: 'Consoles', title: 'Consoles', sub: `${consoles.length} consoles` }, true);
-    else {
-      const t = tileById(activeTab.slice(2));
-      if (t) renderAppPage(t); else { activeTab = 'home'; markActive(); renderPage(); }
-    }
+    else { activeTab = 'home'; markActive(); renderPage(); }
   }
 
   // Home and Emulators: hero for the focused card, then card grids that grow downward
@@ -388,7 +384,7 @@ const Home = (() => {
       const now = await api.toggleFav(g);
       UI.toast(now ? `${g.title} added to favourites` : 'Removed from favourites', { icon: 'star' });
       document.querySelectorAll(`.game-card`).forEach((b) => { if (b.dataset.rom === g.rom) b.classList.toggle('is-fav', now); });
-      if (!emuDetail && activeTab !== 't:') {
+      if (!emuDetail) {
         const focusRom = g.rom;
         renderPage();
         Nav.focus([...pageEl.querySelectorAll('.game-card')].find((b) => b.dataset.rom === focusRom) || pageEl.querySelector('.tile'));
@@ -563,11 +559,7 @@ const Home = (() => {
     if (clear) clear.addEventListener('click', async () => { await renderGameCards(t, sec, ''); Nav.focus(sec.querySelector('.search-chip')); });
     sec.querySelectorAll('.letters-rail button.letter').forEach((b) => b.addEventListener('click', () => {
       const first = [...sec.querySelectorAll('.game-card')].find((c) => c.dataset.letter === b.dataset.letter);
-      if (!first) return;
-      // The letter's first game at the top of the view, not just somewhere on screen
-      // (instant: a long smooth scroll gets cut short while covers load on the way)
-      Nav.focus(first, { scroll: false });
-      first.scrollIntoView({ block: 'start', behavior: 'instant' });
+      if (first) showJumped(first);
     }));
 
     const grid = sec.querySelector('.game-grid');
@@ -601,7 +593,15 @@ const Home = (() => {
     toast.remove();
     if (!r) return;
     UI.toast(r.total ? `${r.found} of ${r.total} covers found` : 'All games already have a cover', { icon: 'image', duration: 4000 });
-    if ((t.console && emuDetail === t.console.id) || activeTab === 't:' + t.id) showGameGrid(t);
+    if (t.console && emuDetail === t.console.id) showGameGrid(t);
+  }
+
+  // A game reached by letter (the A-Z rail, LB / RB): in the middle of the screen like every other move - at the top,
+  // the next Up / Down pulled the page back to the middle with a jolt. Instant: a long smooth scroll gets cut short
+  // while covers load on the way.
+  function showJumped(card) {
+    Nav.focus(card, { scroll: false });
+    card.scrollIntoView({ block: 'center', behavior: 'instant' });
   }
 
   // LB / RB on a game: jump to the previous / next letter
@@ -620,8 +620,7 @@ const Home = (() => {
       const start = groupStart(i);
       j = i > start ? start : groupStart(Math.max(0, start - 1));   // start of this letter, else the one before
     }
-    Nav.focus(cards[j], { scroll: false });
-    cards[j].scrollIntoView({ block: 'start', behavior: 'instant' });
+    showJumped(cards[j]);
     return true;
   }
 
@@ -676,52 +675,6 @@ const Home = (() => {
     img.src = url;
     card.prepend(img);
     card.classList.add('has-img');
-  }
-
-  // One app: big logo, name, Open button; emulators also get their Games section
-  function renderAppPage(t) {
-    const emulator = t.section === 'emulators';
-    const kicker = t.builtin ? 'Built in' : emulator ? 'Emulator' : 'App';
-    pageEl.innerHTML = `
-      <div class="app-page">
-        <div class="app-hero">
-          <div class="app-logo"></div>
-          <div class="app-info">
-            <div class="hero-kicker">${kicker}</div>
-            <h1 class="app-name">${UI.esc(t.name)}</h1>
-            <div class="app-sub">${UI.esc(t.subtitle || '')}</div>
-            ${t.path ? `<div class="app-path">${UI.esc(t.path)}</div>` : ''}
-          </div>
-        </div>
-        <div class="app-actions">
-          <button class="btn primary focusable" data-group="actions" data-act="open">${Icons.play}<span>Open ${UI.esc(t.name)}</span></button>
-          ${emulator && t.moduleId ? `<button class="btn focusable" data-group="actions" data-act="folders">${Icons.folder}<span>Game folders</span></button>
-          <button class="btn focusable" data-group="actions" data-act="covers">${Icons.image}<span>Covers</span></button>` : ''}
-          <button class="btn focusable" data-group="actions" data-act="options">${Icons.edit}<span>Options</span></button>
-        </div>
-        ${emulator ? `
-        <section class="app-section games-section">
-          <h2>Games <small class="games-count"></small></h2>
-          <div class="empty-box games-box">${Icons.gamepad}<div><b>Looking for games…</b><span></span></div></div>
-          <div class="game-grid"></div>
-        </section>` : ''}
-      </div>`;
-    if (emulator && t.moduleId) {
-      showGameGrid(t);
-      pageEl.querySelector('[data-act="folders"]').addEventListener('click', async () => { await RomFolders.edit(t.moduleId); showGameGrid(t, true); });
-      pageEl.querySelector('[data-act="covers"]').addEventListener('click', () => getCovers(t));
-    }
-    const logo = pageEl.querySelector('.app-logo');
-    fillLogo(t, logo).then(() => {
-      if (activeTab === 't:' + t.id || emuDetail === t.id) UI.glow(glowColor(t));
-      if (t.style === 'app' && logoColors.get(t.id)) {
-        logo.classList.add('app-style');
-        logo.style.setProperty('--logo-light', shade(logoColors.get(t.id), 0.4));
-        logo.style.setProperty('--logo-dark', shade(logoColors.get(t.id), 0.13));
-      }
-    });
-    pageEl.querySelector('[data-act="open"]').addEventListener('click', () => open(t));
-    pageEl.querySelector('[data-act="options"]').addEventListener('click', () => options(t));
   }
 
   // ---------- Consoles ----------
@@ -1067,12 +1020,10 @@ const Home = (() => {
   async function save(focusId) {
     await api.saveConfig(cfg());
     const onTab = isTab(Nav.current);
-    if (activeTab.startsWith('t:') && !tileById(activeTab.slice(2))) activeTab = 'home';
     renderTabs();
     renderPage();
     const target = (!onTab && focusId && pageEl.querySelector(`[data-id="${focusId}"]`)) ||
-      (!onTab && (activeTab === 't:' + focusId || emuDetail === focusId) && pageEl.querySelector('.btn.primary')) ||
-      (focusId && tabsEl.querySelector(`[data-tab="t:${focusId}"]`)) || activeTabEl();
+      (!onTab && emuDetail === focusId && pageEl.querySelector('.btn.primary')) || activeTabEl();
     Nav.focus(target);
   }
 
@@ -1225,7 +1176,7 @@ const Home = (() => {
     if (action === 'menu' && cur && cur.dataset.console) { const c = consoleById(cur.dataset.console); if (c) consoleOptions(c); return true; }
     if (action === 'menu' && emuDetail && !inSidebar) { const c = consoleById(emuDetail); if (c) consoleOptions(c); return true; }
     if (action === 'menu') {
-      const id = cur && (cur.dataset.id || (cur.dataset.tab || '').replace(/^t:/, '') || (activeTab.startsWith('t:') && !inSidebar ? activeTab.slice(2) : ''));
+      const id = cur && cur.dataset.id;
       const t = id && tileById(id);
       if (t) options(t);
       return true;
@@ -1254,6 +1205,10 @@ const Home = (() => {
     if (line && (action === 'up' || action === 'down')) { moveLine(action, line); return true; }
     if (line && action === 'right') {
       Nav.move('right', (n) => n.closest(LINES) === line || (line.closest('.games-section') && !!n.closest('.letters-rail')));
+      // into the A-Z rail: on the game's own letter, not the one that happens to be level with it (an A game landed on F)
+      const rail = Nav.current !== cur && Nav.current.closest('.letters-rail');
+      const own = rail && cur.dataset.letter && rail.querySelector(`button.letter[data-letter="${CSS.escape(cur.dataset.letter)}"]`);
+      if (own) Nav.focus(own);
       return true;
     }
     if (line && action === 'left') {

@@ -149,6 +149,7 @@
       UI.toast(`Can't play ${name(file)}`, { icon: 'alert', error: true, duration: 4000 });
       if (index < data.list.length - 1) load(index + 1, { fromStart: true }); else setTimeout(close, 1500);
     } else if (m.event === 'mpv-exit' && !closing) close();
+    else if (m.event === 'home') showOsd();      // PS: the player has the focus again (main.js homePressed)
     else if (m.event === 'passthrough-fallback') {     // mpv.js: the output refused that format, now it plays
       flashText(m.to ? 'This output takes only Dolby Digital and DTS' : 'No passthrough on this output: decoding the sound');
     }
@@ -568,6 +569,7 @@
 
     // Works the same whether the controls are showing or not
     if (action === 'playpause' || action === 'start') { togglePause(); showOsd(); return; }
+    if (action === 'home') { showOsd(); return; }
     if (action === 'next' || action === 'rb') { next(); return; }
     if (action === 'prev' || action === 'lb') { prev(); return; }
     if (action === 'lt') { seekBy(-skipBig()); return; }

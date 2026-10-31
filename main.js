@@ -46,6 +46,29 @@ function readJson(file, fallback) {
   try { return JSON.parse(fs.readFileSync(file, 'utf8').replace(/^﻿/, '')); } catch { return fallback; }
 }
 
+// Text saved from the wrong code page: UTF-8 read as Windows-1252 and saved again - "TV app Â· no ads" on E: since
+// 2026-10-17, twice over in a copy of it ("Ã‚Â·"). Read back right; other text stays as it is (as Windows-1252 bytes
+// it isn't valid UTF-8: "Pokémon").
+const CP1252 = { 0x20ac: 0x80, 0x201a: 0x82, 0x0192: 0x83, 0x201e: 0x84, 0x2026: 0x85, 0x2020: 0x86, 0x2021: 0x87, 0x02c6: 0x88,
+  0x2030: 0x89, 0x0160: 0x8a, 0x2039: 0x8b, 0x0152: 0x8c, 0x017d: 0x8e, 0x2018: 0x91, 0x2019: 0x92, 0x201c: 0x93, 0x201d: 0x94,
+  0x2022: 0x95, 0x2013: 0x96, 0x2014: 0x97, 0x02dc: 0x98, 0x2122: 0x99, 0x0161: 0x9a, 0x203a: 0x9b, 0x0153: 0x9c, 0x017e: 0x9e, 0x0178: 0x9f };
+function unmangle(s) {
+  for (let i = 0; i < 3 && /[Â-ô]/.test(s); i++) {
+    const bytes = [];
+    for (const ch of s) {
+      const c = ch.codePointAt(0);
+      const b = c < 0x100 ? c : CP1252[c];
+      if (b === undefined) return s;
+      bytes.push(b);
+    }
+    let next;
+    try { next = new TextDecoder('utf-8', { fatal: true }).decode(Uint8Array.from(bytes)); } catch { return s; }
+    if (next === s) return s;
+    s = next;
+  }
+  return s;
+}
+
 function writeJson(file, data) {
   fs.mkdirSync(path.dirname(file), { recursive: true });
   const tmp = file + '.tmp';
@@ -119,6 +142,13 @@ function loadConfig() {
     config.tiles.splice(at, 0, { id: 'twitch', section: 'apps', builtin: 'twitch', name: 'Twitch', subtitle: 'TV app · no ads', path: '', args: '', image: '' });
     writeJson(CONFIG_FILE, config);
   }
+  // a card's name or subtitle a tool saved from the wrong code page is read back right
+  let unmangled = false;
+  for (const t of config.tiles) for (const k of ['name', 'subtitle']) {
+    const fixed = typeof t[k] === 'string' ? unmangle(t[k]) : t[k];
+    if (fixed !== t[k]) { t[k] = fixed; unmangled = true; }
+  }
+  if (unmangled) writeJson(CONFIG_FILE, config);
   relockAll();
   progress = readProgress();
   // Play history not kept (Settings → Media Player → Browsing): also what a crash left behind is forgotten
@@ -331,7 +361,13 @@ function createWindow() {
   });
   // The controller only works in MediaDeck while its window really is the active one (Chromium can
   // keep thinking it has focus after a game or another program came to the front)
-  win.on('focus', () => { padLog('window got the focus'); tellActive(true); });
+  // The media player open over it: the focus goes on to the player's controls (Alt+Tab or the taskbar pick this window,
+  // which the player covers - the player then got no button or key, and only a restart brought it back)
+  win.on('focus', () => {
+    padLog('window got the focus');
+    if (mpv.isOpen() && mpv.focus()) { padLog('passed on to the media player'); return; }
+    tellActive(true);
+  });
   win.webContents.on('did-finish-load', () => { toldActive = null; });
   for (const ev of ['resize', 'move', 'maximize', 'unmaximize', 'enter-full-screen', 'leave-full-screen']) win.on(ev, rememberWindow);
 }
@@ -831,12 +867,16 @@ function startPadWatch() {
   });
 }
 
-// The menu buttons as padwatch reads them (outside Chromium), for the page while MediaDeck is the active window: it
-// uses them when Chromium's own controller list missed the controller (input.js). null: forget what was held.
+// The menu buttons as padwatch reads them (outside Chromium), for the page while MediaDeck is the active window - or
+// the media player's controls while they have the focus: it uses them when Chromium's own controller list missed the
+// controller (input.js). null: forget what was held.
 function padNav(a, on) {
   if (!win || win.isDestroyed()) return;
-  if (a !== null && (toldActive !== true || win.isMinimized() || !win.isVisible())) return;
-  win.webContents.send('pad-nav', a === null ? null : { a, on });
+  const player = mpv.osdWindow();
+  if (a === null) { win.webContents.send('pad-nav', null); if (player) player.webContents.send('pad-nav', null); return; }
+  if (player && player.isFocused()) { player.webContents.send('pad-nav', { a, on }); return; }
+  if (toldActive !== true || win.isMinimized() || !win.isVisible()) return;
+  win.webContents.send('pad-nav', { a, on });
 }
 
 // Emulators that crash when anything comes over them (MAME32) close after holding PS a while
@@ -851,6 +891,14 @@ function homePressed() {
   if (overlay.isOpen()) { overlay.refocus(); return; }
   if (youtube.isShown()) { youtubeHome(); return; }
   if (twitch.isShown()) { twitchHome(); return; }
+  // The media player open: its controls show and get the focus. (PS brought MediaDeck's window to the front - under
+  // the player, which then got no button or key.) Another program in front: MediaDeck comes back first.
+  if (mpv.isOpen()) {
+    const p = mpv.osdWindow();
+    if (!win.isFocused() && !(p && p.isFocused())) bringToFront();
+    mpv.focus(true);
+    return;
+  }
   // a Twitch stream in MediaDeck's player: B / Back there goes back to Twitch
   if (twitchPlay) return;
   if (alive && running.holdToClose) {
@@ -1009,6 +1057,14 @@ function startTestSwitch() {
       if (u.pathname === '/bios-import') return send(await importBiosFiles([u.searchParams.get('path')]));
       // the media player (tests): play a file, read mpv properties, change a sound setting like Y → Options does
       if (u.pathname === '/play') return send(await mpv.open([u.searchParams.get('file')], 0, {}));
+      // which window has the focus with the player open; main: MediaDeck's window (under the player) is given it first,
+      // like Alt+Tab does
+      if (u.pathname === '/player-focus') {
+        if (u.searchParams.has('main')) { win.focus(); await new Promise((r) => setTimeout(r, 500)); }
+        const p = mpv.osdWindow();
+        return send({ open: mpv.isOpen(), player: !!(p && p.isFocused()), main: win.isFocused() });
+      }
+      if (u.pathname === '/player-eval') { const p = mpv.osdWindow(); return send({ result: p ? await p.webContents.executeJavaScript(u.searchParams.get('js') || 'null') : null }); }
       if (u.pathname === '/player-props') {
         const out = {};
         for (const p of (u.searchParams.get('p') || '').split(',').filter(Boolean)) out[p] = await mpv.get(p);
@@ -2495,7 +2551,11 @@ function registerIpc() {
     if (front && win && !win.isDestroyed()) tellActive(true);
     return front;
   });
-  ipcMain.handle('pad-log', (e, text) => { if (win && !win.isDestroyed() && e.sender === win.webContents) padLog(text); });
+  ipcMain.handle('pad-log', (e, text) => {
+    const player = mpv.osdWindow();
+    if (win && !win.isDestroyed() && e.sender === win.webContents) padLog(text);
+    else if (player && e.sender === player.webContents) padLog(`player: ${text}`);
+  });
   // Save / load state, pause, screenshot from the menu: back to the game, then tell the emulator
   ipcMain.handle('running-action', (e, action) => (['saveState', 'loadState', 'pause', 'screenshot', 'options'].includes(action) ? overlayAction(action) : null));
   ipcMain.handle('running-info', () => (running && isAlive(running.pid) ? { name: running.name } : null));

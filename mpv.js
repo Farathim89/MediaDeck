@@ -66,6 +66,17 @@ function createLayers() {
   win.on('restore', onRestore);
 }
 
+// The player's controls take the focus: they read the controller and the keys. MediaDeck's own window lies under the
+// player - whatever gave it the focus (PS, Alt+Tab, the taskbar) left the player deaf, its buttons and keys went to
+// the hidden window. home: PS was pressed, the controls show.
+function focus(home = false) {
+  if (!osd || osd.isDestroyed() || !osd.isVisible()) return false;
+  osd.focus();
+  if (home) toOsd({ event: 'home' });
+  return true;
+}
+const osdWindow = () => (osd && !osd.isDestroyed() ? osd : null);
+
 function destroyLayers() {
   const win = d.win();
   // On quit the main window is already gone
@@ -378,4 +389,4 @@ function init(deps) {
 const get = async (prop) => { const r = await send(['get_property', prop]); return r && r.error === 'success' ? r.data : null; };
 const set = async (prop, value) => { const r = await send(['set_property', prop, value]); return !!(r && r.error === 'success'); };
 
-module.exports = { init, open, stop, isOpen: () => !!host, available: () => !!(d && mpvPath()), audioDevices, setAudio, get, set };
+module.exports = { init, open, stop, focus, osdWindow, isOpen: () => !!host, available: () => !!(d && mpvPath()), audioDevices, setAudio, get, set };
