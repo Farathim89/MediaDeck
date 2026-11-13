@@ -144,6 +144,14 @@
   <div id="modal-root"></div>
   <div id="toast-root"></div>
 
+  <!-- Screensaver (Settings → Screensaver): your pictures, or a moving console background, and a clock -->
+  <div id="screensaver" aria-hidden="true">
+    <canvas class="ss-canvas"></canvas>
+    <div class="ss-slide"><div class="ss-blur"></div><img class="ss-pic" alt=""></div>
+    <div class="ss-slide"><div class="ss-blur"></div><img class="ss-pic" alt=""></div>
+    <div class="ss-clock"><div class="clock-time"></div><div class="clock-date"></div></div>
+  </div>
+
   <script src="js/icons.js"></script>
   <script src="js/input.js"></script>
   <script src="js/nav.js"></script>
@@ -160,6 +168,7 @@
   <script src="js/setup.js"></script>
   <script src="js/padsetup.js"></script>
   <script src="js/help.js"></script>
+  <script src="js/screensaver.js"></script>
   <script src="js/app.js"></script>
 </body>
 </html>

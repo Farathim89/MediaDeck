@@ -161,6 +161,24 @@ const Settings = (() => {
           preview: (v) => App.applyScale(undefined, v), after: () => App.applyScale() },
       ],
     },
+    {
+      id: 'screensaver', title: 'Screensaver', icon: 'moon', desc: 'What covers the screen when MediaDeck is left alone',
+      items: [
+        { label: 'Screensaver', desc: 'After a while without a button, key or mouse move while MediaDeck is in front - never over a game, a video, YouTube or Twitch. Any button ends it, and does nothing else. Your pictures: the pictures folder below (until it has pictures, the console backgrounds show).',
+          type: 'choice', key: 'screensaver', options: () => SCREENSAVERS(), after: (v) => (v === 'pictures' ? checkPictures() : null) },
+        { label: 'Start after', type: 'choice', key: 'screensaverAfter',
+          options: () => [1, 2, 5, 10, 15, 30, 60].map((m) => ({ value: m, label: m === 1 ? '1 minute' : `${m} minutes` })) },
+        { label: 'Pictures folder', desc: 'Put your pictures here: JPG, PNG, WebP, GIF, BMP, TIFF - folders inside it count too. MediaDeck\'s own Screensaver folder, unless you choose another.',
+          type: 'folder', key: 'screensaverFolder', value: () => fullPath(s().screensaverFolder) || (info && info.screensaverDir) || '' },
+        { label: 'Each picture or background stays', type: 'choice', key: 'screensaverSlide',
+          options: () => [[10, '10 seconds'], [20, '20 seconds'], [30, '30 seconds'], [60, '1 minute'], [120, '2 minutes'], [300, '5 minutes']].map(([value, label]) => ({ value, label })) },
+        { label: 'Shuffle the pictures', desc: 'Off: in the folder\'s order', type: 'toggle', key: 'screensaverShuffle' },
+        { label: 'Show the clock', desc: 'It moves to another place every minute, so nothing stays burnt into the screen', type: 'toggle', key: 'screensaverClock' },
+        { label: 'Clock outline', desc: 'A black border round the clock\'s numbers and date, so they stay easy to read on bright pictures', type: 'choice', key: 'screensaverClockOutline',
+          options: () => [{ value: 'off', label: 'Off' }, { value: 'thin', label: 'Thin' }, { value: 'thick', label: 'Thick' }] },
+        { label: 'Show it now', desc: 'Any button, key or mouse move ends it', type: 'action', run: () => Screensaver.start(true) },
+      ],
+    },
     // the media player's own defaults (shared with the player's Y → Options → Player settings)
     ...PlayerSettings.SECTIONS.map((x) => ({ ...x, group: 'player' })),
     {
@@ -642,6 +660,22 @@ const Settings = (() => {
     await save();
     ThemeBg.apply();
     renderList();
+  }
+
+  // Settings → Screensaver: off, your pictures, the console backgrounds in turn, or one of them
+  const SCREENSAVERS = () => [
+    { value: 'off', label: 'Off' },
+    { value: 'pictures', label: 'Your pictures' },
+    { value: 'backgrounds', label: 'Moving console backgrounds, in turn' },
+    ...ThemeBg.STYLES.map((x) => ({ value: x.id, label: x.name })),
+  ];
+  // Your pictures chosen while the folder has none yet: where they go
+  async function checkPictures() {
+    const r = await api.screensaverPictures();
+    if (r.files.length) { UI.toast(`${r.files.length} picture${r.files.length > 1 ? 's' : ''} for the screensaver`, { icon: 'image' }); return; }
+    const v = await UI.menu({ title: 'No pictures yet', message: `Put your pictures in ${r.folder} (folders inside it count too). Until then the moving console backgrounds show.`,
+      items: [{ label: 'Open the folder', value: 'open', icon: 'folder' }, { label: 'OK', value: '', icon: 'check' }] });
+    if (v === 'open') api.openPath(r.folder);
   }
 
   // Background, cards and accent from the colour swatches (black for the background / cards: OLED Black's look)

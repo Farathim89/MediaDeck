@@ -2,6 +2,7 @@
 // up / down / left / right / ok / back / menu / x / lb / rb / lt / rt / start / select / playpause / next / prev
 const Input = (() => {
   let handler = () => {};
+  let gate = null;          // sees every action first; true = it was used up there (the press that ends the screensaver)
   let lastSource = 'keyboard';
   // a line in MediaDeck's controller log (data\controller-log.txt, see main.js padLog)
   const plog = (text) => { try { if (window.api && api.padLog) api.padLog(text); } catch {} };
@@ -19,6 +20,7 @@ const Input = (() => {
     if (source !== 'mouse') plog(`${action} (${source}${watched ? ', read by MediaDeck' : ''})`);
     lastSource = source;
     document.body.classList.toggle('hide-cursor', source !== 'mouse');
+    if (gate && gate(action)) return;
     handler(action);
   }
 
@@ -219,6 +221,7 @@ const Input = (() => {
     ignoreHeld,
     setMaps(m) { maps = m || {}; },
     setHandler(fn) { handler = fn; },
+    setGate(fn) { gate = fn; },
     get source() { return lastSource; },
     get padKind() { return padKind; },
   };

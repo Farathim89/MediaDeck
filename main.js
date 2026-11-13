@@ -100,6 +100,8 @@ function loadConfig() {
     try { emuInstaller.makeStarterFolders(P.GAMES); config.settings.gamesFolder = P.rel(P.GAMES); writeJson(CONFIG_FILE, config); } catch {}
     try { setupScan.makeBiosFolders(P.BIOS); } catch {}
   }
+  // the screensaver's pictures folder (Settings → Screensaver), there to put pictures in - unless another one is chosen
+  if (!config.settings.screensaverFolder) try { fs.mkdirSync(P.SCREENSAVER, { recursive: true }); } catch {}
   // The MediaDeck folder moved (drive letter, USB stick): emulator settings pointing into the old folder follow it
   const ROOT_FILE = path.join(DATA, 'root.json');
   const was = (readJson(ROOT_FILE, {}) || {}).root;
@@ -119,10 +121,10 @@ function loadConfig() {
   const follow = (p) => (oldBase && /^[a-z]:[\\/]/i.test(p) && path.resolve(p).toLowerCase().startsWith(oldBase)
     ? path.join(P.ROOT, path.resolve(p).slice(oldBase.length)) : p);
   for (const t of config.tiles) { if (t.path) t.path = P.rel(follow(t.path)); if (t.image) t.image = P.rel(follow(t.image)); }
-  // the folders chosen in Settings too (Emu_modules, Games, FFmpeg) - a copy on another PC kept reading the full path
+  // the folders chosen in Settings too (Emu_modules, Games, FFmpeg, Screensaver) - a copy on another PC kept reading the full path
   // of the Emu_modules folder it came from, and missed the emulators added since (Eden)
   const settingsBefore = JSON.stringify(config.settings);
-  for (const k of ['emuModulesPath', 'gamesFolder', 'ffmpegPath']) if (config.settings[k]) config.settings[k] = P.rel(follow(config.settings[k]));
+  for (const k of ['emuModulesPath', 'gamesFolder', 'ffmpegPath', 'screensaverFolder']) if (config.settings[k]) config.settings[k] = P.rel(follow(config.settings[k]));
   if (JSON.stringify(config.tiles) !== before || JSON.stringify(config.settings) !== settingsBefore) writeJson(CONFIG_FILE, config);
   // a setup saved for an Xbox / PlayStation controller (the setup took any pad): forgotten before the page reads the
   // config - the emulators know that controller themselves (its maps leave RetroArch and Dolphin: forgetXboxSetups)
@@ -2758,7 +2760,7 @@ function registerIpc() {
   ipcMain.handle('pcgame-add', (e, exe, name) => { try { return { ok: true, file: addPcGame(exe, name) }; } catch (err) { return { ok: false, error: err.message }; } });
   ipcMain.handle('pcgame-folder', () => { fs.mkdirSync(PC_GAMES_DIR, { recursive: true }); return shell.openPath(PC_GAMES_DIR); });
   ipcMain.handle('bios-open', (e, sub) => { const d = path.join(P.BIOS, sub || ''); fs.mkdirSync(d, { recursive: true }); return shell.openPath(d); });
-  ipcMain.handle('app-info', () => ({ dataDir: DATA, emuDir: emuDir(), appsDir: P.APPS, appDir: P.ROOT, gamesDir: P.GAMES, version: app.getVersion(), electron: process.versions.electron,
+  ipcMain.handle('app-info', () => ({ dataDir: DATA, emuDir: emuDir(), appsDir: P.APPS, appDir: P.ROOT, gamesDir: P.GAMES, screensaverDir: P.SCREENSAVER, version: app.getVersion(), electron: process.versions.electron,
     thumbs: server ? server.cacheStats() : null, recentGames: loadRecent().length }));
   ipcMain.handle('pad-save', async (e, key, pad) => {
     config.controllers = { ...(config.controllers || {}), [String(key)]: { name: pad.name, type: pad.type || 'other', map: pad.map, saved: new Date().toISOString() } };
@@ -2803,7 +2805,8 @@ function registerIpc() {
     const { fullscreen, window } = config.settings;
     const hideBefore = config.settings.hideCursor, portableBefore = portableData(), ffmpegBefore = config.settings.ffmpegPath;
     // the games folder: relative when it is inside MediaDeck's folder (Games), so the folder can move
-    config = { ...next, settings: { ...next.settings, fullscreen, window, gamesFolder: P.rel(next.settings.gamesFolder || ''), emuModulesPath: P.rel(next.settings.emuModulesPath || '') },
+    config = { ...next, settings: { ...next.settings, fullscreen, window, gamesFolder: P.rel(next.settings.gamesFolder || ''), emuModulesPath: P.rel(next.settings.emuModulesPath || ''),
+      screensaverFolder: P.rel(next.settings.screensaverFolder || '') },
       tiles: (next.tiles || []).map((t) => ({ ...t, ...(t.path ? { path: P.rel(t.path) } : {}), ...(t.image ? { image: P.rel(t.image) } : {}) })) };
     writeJson(CONFIG_FILE, config);
     if (config.settings.hideCursor !== hideBefore) startCursorHide();
@@ -2868,6 +2871,26 @@ function registerIpc() {
       if (img.getSize().width > 2560) img = img.resize({ width: 2560, quality: 'good' });
       return `data:image/jpeg;base64,${img.toJPEG(88).toString('base64')}`;
     } catch { return null; }
+  });
+  // The screensaver's pictures: every picture in its folder and the folders in it (MediaDeck's own Screensaver folder
+  // unless Settings → Screensaver has another), made when it is the own one and missing
+  ipcMain.handle('screensaver-pictures', async () => {
+    const own = !config.settings.screensaverFolder;
+    const folder = own ? P.SCREENSAVER : P.resolve(config.settings.screensaverFolder);
+    if (own) try { fs.mkdirSync(folder, { recursive: true }); } catch {}
+    const files = [];
+    const walk = async (dir, depth) => {
+      let list = [];
+      try { list = await fs.promises.readdir(dir, { withFileTypes: true }); } catch { return; }
+      for (const e of list) {
+        if (files.length >= 5000) return;
+        const p = path.join(dir, e.name);
+        if (e.isDirectory()) { if (depth < 5 && !/^[.$]/.test(e.name)) await walk(p, depth + 1); }
+        else if (kindOf(e.name) === 'image') files.push(p);
+      }
+    };
+    await walk(folder, 0);
+    return { folder, files };
   });
   ipcMain.handle('open-external-player', (e, file) => {
     const vlc = config.settings.vlcPath;

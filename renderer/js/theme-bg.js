@@ -35,6 +35,7 @@ const ThemeBg = (() => {
   let style = null, palette = null, consoleMode = false;
   let picFile = '', picLoad = null;
   let active = true;         // MediaDeck is the window in front (main's 'win-active')
+  let held = false;          // the screensaver covers it
   let raf = 0, last = 0, w = 0, h = 0;
   const t0 = performance.now();
 
@@ -258,7 +259,7 @@ const ThemeBg = (() => {
   }
 
   // ---------- Moving: only while MediaDeck is the window in front ----------
-  const moving = () => S().bgMotion !== false && active && document.hasFocus() && !document.hidden;
+  const moving = () => S().bgMotion !== false && active && !held && document.hasFocus() && !document.hidden;
   function update() {
     const run = !!style && moving();
     pic.classList.toggle('moving', S().bgMotion !== false);
@@ -294,5 +295,15 @@ const ThemeBg = (() => {
     setScreen(home) { if (home !== onHome) { onHome = home; apply(); } },
     // Settings: a background while moving through the list (undefined: back to the saved one)
     preview(id) { preview = id; apply(); },
+    // the screensaver: one style over the whole screen in its console's colours, on that console's own dark colour
+    paint(c, id, cw, ch, t) {
+      const p = paletteFor({ id, console: true });
+      const g = c.createLinearGradient(0, 0, 0, ch);
+      g.addColorStop(0, rgba(p.bg, 1)); g.addColorStop(1, rgba(mix(p.bg, [0, 0, 0], 0.6), 1));
+      c.fillStyle = g;
+      c.fillRect(0, 0, cw, ch);
+      DRAW[id](c, cw, ch, t, p);
+    },
+    hold(on) { held = !!on; update(); },
   };
 })();

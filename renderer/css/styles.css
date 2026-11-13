@@ -819,3 +819,26 @@ html.windowed #titlebar {
 html.maximized .titlebar-btns .tb-restore { display: block; }
 html.windowed .screen, html.windowed #modal-root { top: 32px; }
 html.windowed #toast-root { top: calc(2rem + 32px); }
+
+/* Screensaver (Settings → Screensaver): over everything; your pictures whole on a blurred copy of themselves, slowly
+   zooming, or a console background over the whole screen; a clock that moves every minute */
+#screensaver {
+  position: fixed; inset: 0; z-index: 9000; overflow: hidden; background: #000; cursor: none; pointer-events: none;
+  opacity: 0; visibility: hidden; transition: opacity 0.6s ease, visibility 0s linear 0.6s;
+}
+#screensaver.show { opacity: 1; visibility: visible; pointer-events: auto; transition: opacity 1.4s ease; }
+#screensaver .ss-canvas { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; transition: opacity 1.2s ease; }
+#screensaver .ss-canvas.show { opacity: 1; }
+#screensaver .ss-slide { position: absolute; inset: 0; opacity: 0; transition: opacity 1.8s ease; }
+#screensaver .ss-slide.show { opacity: 1; }
+#screensaver .ss-blur { position: absolute; inset: -8%; background: center / cover no-repeat; filter: blur(40px) brightness(0.32) saturate(1.2); }
+#screensaver .ss-pic { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; transform-origin: var(--ss-ox, 50%) var(--ss-oy, 50%); }
+#screensaver .ss-slide.zoom .ss-pic { animation: ssZoom var(--ss-zoom, 30s) linear forwards; }
+@keyframes ssZoom { from { transform: scale(1); } to { transform: scale(1.07); } }
+#screensaver .ss-clock { position: absolute; opacity: 0; transition: opacity 1.4s ease; color: rgba(255, 255, 255, 0.86); text-shadow: 0 2px 14px rgba(0, 0, 0, 0.75); }
+#screensaver .ss-clock.show { opacity: 1; }
+#screensaver .ss-clock .clock-time { font-size: calc(5.5rem * var(--text-scale)); letter-spacing: -0.02em; }
+#screensaver .ss-clock .clock-date { font-size: calc(1.5rem * var(--text-scale)); margin-top: 0.6rem; color: rgba(255, 255, 255, 0.7); }
+/* … its outline (Clock outline): black, round all the way (a ring of shadows: a stroke gave the 1 a sharp spike) */
+#screensaver .ss-clock[data-outline="thin"] > div { text-shadow: 0.035em 0.000em 0 #000, 0.030em 0.017em 0 #000, 0.018em 0.030em 0 #000, 0.000em 0.035em 0 #000, -0.017em 0.030em 0 #000, -0.030em 0.017em 0 #000, -0.035em 0.000em 0 #000, -0.030em -0.017em 0 #000, -0.018em -0.030em 0 #000, -0.000em -0.035em 0 #000, 0.018em -0.030em 0 #000, 0.030em -0.018em 0 #000, 0 2px 14px rgba(0, 0, 0, 0.75); }
+#screensaver .ss-clock[data-outline="thick"] > div { letter-spacing: 0.03em; text-shadow: 0.075em 0.000em 0 #000, 0.071em 0.023em 0 #000, 0.061em 0.044em 0 #000, 0.044em 0.061em 0 #000, 0.023em 0.071em 0 #000, 0.000em 0.075em 0 #000, -0.023em 0.071em 0 #000, -0.044em 0.061em 0 #000, -0.061em 0.044em 0 #000, -0.071em 0.023em 0 #000, -0.075em 0.000em 0 #000, -0.071em -0.023em 0 #000, -0.061em -0.044em 0 #000, -0.044em -0.061em 0 #000, -0.023em -0.071em 0 #000, -0.000em -0.075em 0 #000, 0.023em -0.071em 0 #000, 0.044em -0.061em 0 #000, 0.061em -0.044em 0 #000, 0.071em -0.023em 0 #000, 0.040em 0.000em 0 #000, 0.035em 0.020em 0 #000, 0.020em 0.035em 0 #000, 0.000em 0.040em 0 #000, -0.020em 0.035em 0 #000, -0.035em 0.020em 0 #000, -0.040em 0.000em 0 #000, -0.035em -0.020em 0 #000, -0.020em -0.035em 0 #000, -0.000em -0.040em 0 #000, 0.020em -0.035em 0 #000, 0.035em -0.020em 0 #000, 0 2px 14px rgba(0, 0, 0, 0.75); }

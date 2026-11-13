@@ -31,6 +31,13 @@ function defaultConfig() {
       bgMotion: true,            // … the background moves slowly (it stops while a game, a video or another window is in front)
       bgPerConsole: true,        // a console's page gets that console's background; consoleBg: { <console id>: another one }
       consoleBg: {},
+      screensaver: 'backgrounds',    // Settings → Screensaver: 'off', 'pictures' (the pictures folder), 'backgrounds' (the console ones in turn) or one ('waves' …)
+      screensaverAfter: 10,          // … minutes without a button, key or mouse move while MediaDeck is in front
+      screensaverFolder: '',         // … your pictures; '' = MediaDeck's own Screensaver folder
+      screensaverSlide: 30,          // … seconds each picture / background stays
+      screensaverShuffle: true,
+      screensaverClock: true,        // … a clock that moves to another place every minute (no burn-in)
+      screensaverClockOutline: 'off',  // … a black border round its text: 'off', 'thin', 'thick' (easy to read on bright pictures)
       uiScale: 1,                // Settings → Appearance → Screen size: everything × this (0.8 … 1.5)
       textScale: 1,              // … → Text size: only text × this (0.9 … 1.5)
       fullscreen: false,
