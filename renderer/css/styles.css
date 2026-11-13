@@ -835,10 +835,10 @@ html.windowed #toast-root { top: calc(2rem + 32px); }
 #screensaver .ss-pic { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; transform-origin: var(--ss-ox, 50%) var(--ss-oy, 50%); }
 #screensaver .ss-slide.zoom .ss-pic { animation: ssZoom var(--ss-zoom, 30s) linear forwards; }
 @keyframes ssZoom { from { transform: scale(1); } to { transform: scale(1.07); } }
-#screensaver .ss-clock { position: absolute; opacity: 0; transition: opacity 1.4s ease; color: rgba(255, 255, 255, 0.86); text-shadow: 0 2px 14px rgba(0, 0, 0, 0.75); }
+#screensaver .ss-clock { position: absolute; opacity: 0; transition: opacity 1.4s ease; color: var(--ss-clock-color, #f2f2f2); text-shadow: 0 2px 14px rgba(0, 0, 0, 0.75); }
 #screensaver .ss-clock.show { opacity: 1; }
-#screensaver .ss-clock .clock-time { font-size: calc(5.5rem * var(--text-scale)); letter-spacing: -0.02em; }
-#screensaver .ss-clock .clock-date { font-size: calc(1.5rem * var(--text-scale)); margin-top: 0.6rem; color: rgba(255, 255, 255, 0.7); }
+#screensaver .ss-clock .clock-time { font-size: calc(5.5rem * var(--text-scale) * var(--ss-clock, 1)); letter-spacing: -0.02em; }
+#screensaver .ss-clock .clock-date { font-size: calc(1.5rem * var(--text-scale) * var(--ss-clock, 1)); margin-top: 0.6rem; color: inherit; opacity: 0.8; }
 /* … its outline (Clock outline): black, round all the way (a ring of shadows: a stroke gave the 1 a sharp spike) */
 #screensaver .ss-clock[data-outline="thin"] > div { text-shadow: 0.035em 0.000em 0 #000, 0.030em 0.017em 0 #000, 0.018em 0.030em 0 #000, 0.000em 0.035em 0 #000, -0.017em 0.030em 0 #000, -0.030em 0.017em 0 #000, -0.035em 0.000em 0 #000, -0.030em -0.017em 0 #000, -0.018em -0.030em 0 #000, -0.000em -0.035em 0 #000, 0.018em -0.030em 0 #000, 0.030em -0.018em 0 #000, 0 2px 14px rgba(0, 0, 0, 0.75); }
 #screensaver .ss-clock[data-outline="thick"] > div { letter-spacing: 0.03em; text-shadow: 0.075em 0.000em 0 #000, 0.071em 0.023em 0 #000, 0.061em 0.044em 0 #000, 0.044em 0.061em 0 #000, 0.023em 0.071em 0 #000, 0.000em 0.075em 0 #000, -0.023em 0.071em 0 #000, -0.044em 0.061em 0 #000, -0.061em 0.044em 0 #000, -0.071em 0.023em 0 #000, -0.075em 0.000em 0 #000, -0.071em -0.023em 0 #000, -0.061em -0.044em 0 #000, -0.044em -0.061em 0 #000, -0.023em -0.071em 0 #000, -0.000em -0.075em 0 #000, 0.023em -0.071em 0 #000, 0.044em -0.061em 0 #000, 0.061em -0.044em 0 #000, 0.071em -0.023em 0 #000, 0.040em 0.000em 0 #000, 0.035em 0.020em 0 #000, 0.020em 0.035em 0 #000, 0.000em 0.040em 0 #000, -0.020em 0.035em 0 #000, -0.035em 0.020em 0 #000, -0.040em 0.000em 0 #000, -0.035em -0.020em 0 #000, -0.020em -0.035em 0 #000, -0.000em -0.040em 0 #000, 0.020em -0.035em 0 #000, 0.035em -0.020em 0 #000, 0 2px 14px rgba(0, 0, 0, 0.75); }
@@ -869,3 +869,9 @@ html.windowed #toast-root { top: calc(2rem + 32px); }
 #screensaver .ss-slide.is-cover .ss-caption { display: block; position: relative; max-width: 80vw; text-align: center; color: #fff; text-shadow: 0 2px 12px rgba(0, 0, 0, 0.85); }
 #screensaver .ss-caption b { display: block; font-size: calc(2rem * var(--text-scale)); font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 #screensaver .ss-caption span { display: block; margin-top: 0.4rem; font-size: calc(1.2rem * var(--text-scale)); color: rgba(255, 255, 255, 0.72); }
+/* … the clock in the place chosen (Clock position) */
+#screensaver .ss-clock[data-place="top-left"] { left: 5%; top: 7%; }
+#screensaver .ss-clock[data-place="top-right"] { right: 5%; top: 7%; text-align: right; }
+#screensaver .ss-clock[data-place="bottom-left"] { left: 5%; bottom: 7%; }
+#screensaver .ss-clock[data-place="bottom-right"] { right: 5%; bottom: 7%; text-align: right; }
+#screensaver .ss-clock[data-place="middle"] { left: 50%; top: 50%; transform: translate(-50%, -50%); text-align: center; }

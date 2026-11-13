@@ -38,6 +38,9 @@ function defaultConfig() {
       screensaverShuffle: true,
       screensaverClock: true,        // … a clock that moves to another place every minute (no burn-in)
       screensaverClockOutline: 'off',  // … a black border round its text: 'off', 'thin', 'thick' (easy to read on bright pictures)
+      screensaverClockSize: 1,         // … how big: 0.7 small, 1 normal, 1.4 big, 1.9 huge
+      screensaverClockColor: 'white',  // … its colour: 'white', 'accent' (the theme's), 'blue', 'cyan', 'green', 'gold', 'orange', 'red', 'purple'
+      screensaverClockPlace: 'moving', // … where: 'moving' (another place every minute), 'top-left', 'top-right', 'bottom-left', 'bottom-right', 'middle'
       uiScale: 1,                // Settings → Appearance → Screen size: everything × this (0.8 … 1.5)
       textScale: 1,              // … → Text size: only text × this (0.9 … 1.5)
       fullscreen: false,

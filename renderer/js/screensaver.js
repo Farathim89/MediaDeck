@@ -17,6 +17,13 @@ const Screensaver = (() => {
   let styles = [], styleAt = 0;          // console backgrounds taking turns
   let slideTimer = 0, clockTimer = 0, raf = 0, last = 0, w = 0, h = 0, t0 = 0;
 
+  // Clock colour (Settings → Screensaver): accent = the theme's own colour
+  const CLOCK_COLORS = [
+    { id: 'white', name: 'White', color: '#f2f2f2' }, { id: 'accent', name: 'The theme\'s colour', color: 'var(--accent)' },
+    { id: 'blue', name: 'Blue', color: '#8fb8ff' }, { id: 'cyan', name: 'Cyan', color: '#5ee3e3' }, { id: 'green', name: 'Green', color: '#74e08f' },
+    { id: 'gold', name: 'Gold', color: '#f5c542' }, { id: 'orange', name: 'Orange', color: '#ff9f43' }, { id: 'red', name: 'Red', color: '#ff6b6b' },
+    { id: 'purple', name: 'Purple', color: '#c39bff' },
+  ];
   const secs = () => Math.max(5, Number(S().screensaverSlide) || 30);
   const shuffle = (a) => { for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; };
   // what Chromium shows itself; the rest (TIFF) as a picture made by MediaDeck's media server
@@ -35,6 +42,8 @@ const Screensaver = (() => {
     ThemeBg.hold(true);
     if (S().screensaverClock !== false) { clock.hidden = false; placeClock(true); clockTimer = setInterval(() => placeClock(), 60000); } else clock.hidden = true;
     clock.dataset.outline = S().screensaverClockOutline || 'off';
+    clock.style.setProperty('--ss-clock', Number(S().screensaverClockSize) || 1);
+    clock.style.setProperty('--ss-clock-color', (CLOCK_COLORS.find((x) => x.id === S().screensaverClockColor) || CLOCK_COLORS[0]).color);
     if (want === 'pictures') {
       const r = await api.screensaverPictures().catch(() => null);
       if (!showing) return;           // ended while the folder was read
@@ -201,15 +210,28 @@ const Screensaver = (() => {
     img.src = coverSrc(pool[poolAt++ % pool.length]);
   }
 
-  // ---------- The clock: another place every minute, so nothing stays burnt into the screen ----------
+  // ---------- The clock: another place every minute, so nothing stays burnt into the screen - or in the place
+  // chosen (Clock position: a corner or the middle), where it stays ----------
   function placeClock(first = false) {
+    const place = S().screensaverClockPlace || 'moving';
+    if (place !== 'moving') {
+      if (!first) return;
+      clock.style.left = clock.style.top = '';
+      clock.dataset.place = place;
+      setTimeout(() => { if (showing) clock.classList.add('show'); }, 400);
+      return;
+    }
+    delete clock.dataset.place;
     clock.classList.remove('show');
     setTimeout(() => {
       if (!showing) return;
       // (a cover in the middle, one at a time: the clock beside it, left or right, not over it)
       const beside = mode === 'pictures' && typeof order[0] !== 'string';
-      clock.style.left = `${beside ? (Math.random() < 0.5 ? 3 + Math.random() * 10 : 67 + Math.random() * 8) : 6 + Math.random() * 58}%`;
-      clock.style.top = `${8 + Math.random() * 66}%`;
+      const left = beside ? (Math.random() < 0.5 ? 3 + Math.random() * 10 : 67 + Math.random() * 8) : 6 + Math.random() * 58;
+      // (a big clock is kept inside the screen)
+      const room = (size, whole) => Math.max(2, 97 - (size / whole) * 100);
+      clock.style.left = `${Math.min(left, room(clock.offsetWidth, innerWidth))}%`;
+      clock.style.top = `${Math.min(8 + Math.random() * 66, room(clock.offsetHeight, innerHeight))}%`;
       clock.classList.add('show');
     }, first ? 400 : 1600);
   }
@@ -287,6 +309,7 @@ const Screensaver = (() => {
   }, 2000);
 
   return {
+    CLOCK_COLORS,
     start,
     stop,
     get showing() { return showing; },
