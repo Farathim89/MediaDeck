@@ -164,7 +164,7 @@ const Settings = (() => {
     {
       id: 'screensaver', title: 'Screensaver', icon: 'moon', desc: 'What covers the screen when MediaDeck is left alone',
       items: [
-        { label: 'Screensaver', desc: 'After a while without a button, key or mouse move while MediaDeck is in front - never over a game, a video, YouTube or Twitch. Any button ends it, and does nothing else. Your pictures: the pictures folder below (until it has pictures, the console backgrounds show).',
+        { label: 'Screensaver', desc: 'After a while without a button, key or mouse move while MediaDeck is in front - never over a game, a video, YouTube or Twitch. Any button ends it, and does nothing else. Your pictures: the pictures folder below (until it has pictures, the console backgrounds show). Your games\' covers: the box art of your consoles\' games, gliding by in rows, or one at a time with the game\'s name.',
           type: 'choice', key: 'screensaver', options: () => SCREENSAVERS(), after: (v) => (v === 'pictures' ? checkPictures() : null) },
         { label: 'Start after', type: 'choice', key: 'screensaverAfter',
           options: () => [1, 2, 5, 10, 15, 30, 60].map((m) => ({ value: m, label: m === 1 ? '1 minute' : `${m} minutes` })) },
@@ -662,10 +662,12 @@ const Settings = (() => {
     renderList();
   }
 
-  // Settings → Screensaver: off, your pictures, the console backgrounds in turn, or one of them
+  // Settings → Screensaver: off, your pictures, your games' covers, the console backgrounds in turn, or one of them
   const SCREENSAVERS = () => [
     { value: 'off', label: 'Off' },
     { value: 'pictures', label: 'Your pictures' },
+    { value: 'covers', label: 'Your games\' covers, a moving wall' },
+    { value: 'covers-one', label: 'Your games\' covers, one at a time' },
     { value: 'backgrounds', label: 'Moving console backgrounds, in turn' },
     ...ThemeBg.STYLES.map((x) => ({ value: x.id, label: x.name })),
   ];

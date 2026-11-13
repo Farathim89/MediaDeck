@@ -78,6 +78,7 @@ function writeJson(file, data) {
   fs.renameSync(tmp, file);
 }
 
+let justUpdated = null;   // this start is a new version's first (loadConfig): its version, for the "updated" message
 function loadConfig() {
   const defaults = defaultConfig();
   config = readJson(CONFIG_FILE, null);
@@ -95,6 +96,12 @@ function loadConfig() {
   config.settings = { ...defaults.settings, ...(config.settings || {}) };
   if (!fresh && !setupKnown) config.settings.setupDone = true;
   if (broken) config.settings.setupDone = true;
+  // the first start of a new version (after an update): the page says so once it is up
+  if (config.settings.lastVersion !== app.getVersion()) {
+    if (!fresh) justUpdated = app.getVersion();
+    config.settings.lastVersion = app.getVersion();
+    writeJson(CONFIG_FILE, config);
+  }
   // A new MediaDeck keeps its games in its own folder: Games\<maker>\<console>, one folder per console, made now
   if (fresh) {
     try { emuInstaller.makeStarterFolders(P.GAMES); config.settings.gamesFolder = P.rel(P.GAMES); writeJson(CONFIG_FILE, config); } catch {}
@@ -331,6 +338,7 @@ function createWindow() {
   if (startFull) { coverScreenAgain(); win.once('ready-to-show', coverScreenAgain); win.webContents.once('did-finish-load', coverScreenAgain); }
   if (saved.maximized && !startFull) win.maximize();
   win.webContents.on('did-finish-load', () => win.webContents.send('win-full', full));
+  win.webContents.once('did-finish-load', () => { if (justUpdated) setTimeout(() => win && !win.isDestroyed() && win.webContents.send('toast', `MediaDeck updated to ${justUpdated}`), 1500); });
   // the title bar's maximize / restore button
   const tellMax = () => { if (!win.isDestroyed()) win.webContents.send('win-max', win.isMaximized()); };
   win.webContents.on('did-finish-load', tellMax);
@@ -799,6 +807,8 @@ async function installApps(ids, quiet = false) {
 // it keeps waiting for that, without a time limit.
 let selfUpdateOffered = '';
 let selfUpdateWaiting = null;
+// how far an update is (downloading … MB, unpacking): a message over whatever screen shows
+const selfUpdateProgress = (text, pct) => win && !win.isDestroyed() && win.webContents.send('emu-install-progress', { text, pct });
 async function selfUpdateAtStart() {
   if (!app.isPackaged || config.settings.checkMediaDeckUpdates === false) return;
   let me;
@@ -1035,7 +1045,7 @@ function startTestSwitch() {
       if (u.pathname === '/apps-install') { const r = await installApps(String(u.searchParams.get('ids') || '').split(',').filter(Boolean)); return send(r.results || r); }
       if (u.pathname === '/apps') return send(await appInstaller.status(net, u.searchParams.has('check')));
       // MediaDeck's own update: check, or (with install) download it, close, update and start again
-      if (u.pathname === '/self-update') { try { return send(u.searchParams.has('install') ? await selfUpdate.install(net) : await selfUpdate.check(net)); } catch (e) { return send({ error: e.message }); } }
+      if (u.pathname === '/self-update') { try { return send(u.searchParams.has('install') ? await selfUpdate.install(net, selfUpdateProgress) : await selfUpdate.check(net)); } catch (e) { return send({ error: e.message }); } }
       // sends install progress like a real download (checks how the progress message behaves)
       if (u.pathname === '/progress-demo') {
         for (let i = 1; i <= 20; i++) { win.webContents.send('emu-install-progress', { text: `Demo: downloading ${i * 5} / 100 MB`, pct: i / 20 - 0.001 }); await wait(150); }
@@ -1626,6 +1636,9 @@ function noteCoverNames(mod, list) {
 async function consoleGames(consoleId, moduleId, fresh) {
   const c = (await consoleList(true)).find((x) => x.id === consoleId);
   if (!c) return { moduleId: null, list: [] };
+  return gamesOfConsole(c, moduleId, fresh);
+}
+async function gamesOfConsole(c, moduleId, fresh) {
   const mod = await moduleById(moduleId && c.emulators.some((e) => e.moduleId === moduleId) ? moduleId : c.emulator);
   if (!mod) return { moduleId: null, list: [] };
   const mine = (rom) => (c.system ? covers.systemFor(mod, rom) === c.system : true);
@@ -2716,7 +2729,7 @@ function registerIpc() {
   ipcMain.handle('self-check', async () => { try { return await selfUpdate.check(net); } catch (err) { return { error: err.message }; } });
   ipcMain.handle('self-install', async () => {
     try {
-      return await selfUpdate.install(net, (text, pct) => win && !win.isDestroyed() && win.webContents.send('emu-install-progress', { text, pct }));
+      return await selfUpdate.install(net, selfUpdateProgress);
     } catch (err) { return { error: err.message }; }
   });
   // Runs a driver installer; Windows asks the user to allow it (administrator)
@@ -2871,6 +2884,23 @@ function registerIpc() {
       if (img.getSize().width > 2560) img = img.resize({ width: 2560, quality: 'good' });
       return `data:image/jpeg;base64,${img.toJPEG(88).toString('base64')}`;
     } catch { return null; }
+  });
+  // The screensaver's game covers: every game on the consoles shown that has one (downloaded, or a picture next to
+  // the game), one per game - versions of a game share their box art
+  ipcMain.handle('screensaver-covers', async () => {
+    const out = [], seen = new Set();
+    for (const c of await consoleList()) {
+      const { list } = await gamesOfConsole(c);
+      for (const g of list) {
+        const key = `${c.id}|${g.title}`;
+        if (seen.has(key)) continue;
+        if (g.storedCover) out.push({ rom: g.rom, c: g.console, title: g.title, console: c.name });
+        else if (g.cover && !g.coverIsIcon) out.push({ file: g.cover, title: g.title, console: c.name });
+        else continue;
+        seen.add(key);
+      }
+    }
+    return out;
   });
   // The screensaver's pictures: every picture in its folder and the folders in it (MediaDeck's own Screensaver folder
   // unless Settings → Screensaver has another), made when it is the own one and missing

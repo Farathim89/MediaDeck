@@ -19,6 +19,7 @@ contextBridge.exposeInMainWorld('api', {
   imageData: invoke('image-data'),
   bgImage: invoke('bg-image'),
   screensaverPictures: invoke('screensaver-pictures'),
+  screensaverCovers: invoke('screensaver-covers'),
   openExternalPlayer: invoke('open-external-player'),
   openDataFolder: invoke('open-data-folder'),
   clearCache: invoke('clear-cache'),
