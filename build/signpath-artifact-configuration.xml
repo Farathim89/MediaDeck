@@ -18,9 +18,6 @@
       <pe-file path="padwatch.exe" product-name="MediaDeck" product-version="${version}">
         <authenticode-sign />
       </pe-file>
-      <pe-file path="cursorhide.exe" product-name="MediaDeck" product-version="${version}">
-        <authenticode-sign />
-      </pe-file>
     </directory>
   </zip-file>
 </artifact-configuration>

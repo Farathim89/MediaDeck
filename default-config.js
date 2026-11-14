@@ -97,7 +97,6 @@ function defaultConfig() {
       setupDone: false,          // the first-start setup ran (or was skipped); Settings → About runs it again
       gameView: 'big',           // a console's games: 'big' covers, 'small' covers, or a 'list' without covers
       twitchQuality: 'best',
-      hideCursor: 10,
       hiddenDrives: [],
       clock24h: true,
     },

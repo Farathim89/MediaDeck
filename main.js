@@ -1150,25 +1150,9 @@ function startTestSwitch() {
   app.on('will-quit', () => { try { fs.rmSync(path.join(DATA, 'test-switch.json'), { force: true }); } catch {} });
 }
 
-// The mouse pointer hides in full-screen programs after this many seconds without moving
-// (Settings → General; 0 = never): tools\cursorhide.exe, which puts the pointers back when it stops
-let cursorHide = null;
-function startCursorHide() {
-  stopCursorHide();
-  const secs = Number(config.settings.hideCursor) || 0;
-  const exe = P.tool('cursorhide.exe');
-  if (!secs || !fs.existsSync(exe)) return;
-  let me;
-  try { me = cursorHide = spawn(exe, [String(secs), String(process.pid)], { windowsHide: true, stdio: 'ignore' }); } catch (e) { console.error('[cursorhide]', e.message); cursorHide = null; return; }
-  me.on('exit', () => { if (cursorHide === me) cursorHide = null; });
-  me.on('error', () => { if (cursorHide === me) cursorHide = null; });
-}
-function stopCursorHide() {
-  const exe = P.tool('cursorhide.exe');
-  if (cursorHide) { try { cursorHide.kill(); } catch {} cursorHide = null; }
-  // killed from outside it can't restore them itself: the normal pointers come back from here
-  if (fs.existsSync(exe)) execFile(exe, ['--restore'], { windowsHide: true }, () => {});
-}
+// (MediaDeck never touches the Windows mouse pointer or its settings: the pointer helper that hid it in full-screen
+// programs, by swapping Windows' pointers, is gone - the user's rule, 2026-11-14. Only MediaDeck's own page hides
+// the pointer over itself after a while, like a video player.)
 
 // It keeps running between games (the PS button opens the Exit menu at home); only quitting stops it
 let quitting = false;
@@ -2816,13 +2800,12 @@ function registerIpc() {
   ipcMain.handle('save-config', (e, next) => {
     // The window's size and full-screen state belong to this process; keep them.
     const { fullscreen, window } = config.settings;
-    const hideBefore = config.settings.hideCursor, portableBefore = portableData(), ffmpegBefore = config.settings.ffmpegPath;
+    const portableBefore = portableData(), ffmpegBefore = config.settings.ffmpegPath;
     // the games folder: relative when it is inside MediaDeck's folder (Games), so the folder can move
     config = { ...next, settings: { ...next.settings, fullscreen, window, gamesFolder: P.rel(next.settings.gamesFolder || ''), emuModulesPath: P.rel(next.settings.emuModulesPath || ''),
       screensaverFolder: P.rel(next.settings.screensaverFolder || '') },
       tiles: (next.tiles || []).map((t) => ({ ...t, ...(t.path ? { path: P.rel(t.path) } : {}), ...(t.image ? { image: P.rel(t.image) } : {}) })) };
     writeJson(CONFIG_FILE, config);
-    if (config.settings.hideCursor !== hideBefore) startCursorHide();
     if (portableData() !== portableBefore) relockAll();
     if (config.settings.ffmpegPath !== ffmpegBefore && server) server.findTools().catch(() => {});   // thumbnails at once, not after a restart
     return true;
@@ -3040,7 +3023,6 @@ if (!app.requestSingleInstanceLock()) {
       },
     });
     createWindow();
-    startCursorHide();
     startPadWatch();
     // a while after start, so it never slows the home screen down
     setTimeout(() => { if (!process.argv.includes('--test')) selfUpdateAtStart().catch(() => {}); }, 6000);
@@ -3065,7 +3047,6 @@ if (!app.requestSingleInstanceLock()) {
     globalShortcut.unregisterAll();
     mpv.stop(true);
     stopPadWatch(true);
-    stopCursorHide();
     if (server) server.stop();
     clearTimeout(progressTimer);
     if (config.settings.keepPlayHistory === false) progress = {};   // forgotten when MediaDeck closes

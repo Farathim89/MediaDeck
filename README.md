@@ -62,7 +62,7 @@ MediaDeck's releases are **not code-signed yet**. Windows SmartScreen may say "W
 
 To check that a download is the real one: every release is built on GitHub from this repository by the [Release workflow](.github/workflows/release.yml) (the release page links the build), and its `SHA256SUMS.txt` lists the checksum of the zip (`certutil -hashfile MediaDeck-<version>-portable.zip SHA256`).
 
-When signing is set up, only MediaDeck's own programs will be signed - `MediaDeck.exe` and the helpers `keys.exe`, `padwatch.exe` and `cursorhide.exe`, all built by that workflow; the third-party programs in the release (7-Zip, mpv, FFmpeg, Streamlink, Electron's libraries) stay as their makers publish them. Committer, reviewer and approver: [Farathim89](https://github.com/Farathim89).
+When signing is set up, only MediaDeck's own programs will be signed - `MediaDeck.exe` and the helpers `keys.exe` and `padwatch.exe`, all built by that workflow; the third-party programs in the release (7-Zip, mpv, FFmpeg, Streamlink, Electron's libraries) stay as their makers publish them. Committer, reviewer and approver: [Farathim89](https://github.com/Farathim89).
 
 ## Privacy
 

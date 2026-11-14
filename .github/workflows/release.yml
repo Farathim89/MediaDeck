@@ -32,7 +32,7 @@ jobs:
 
       - run: npm ci
 
-      - name: Helpers from source (keys, padwatch, cursorhide)
+      - name: Helpers from source (keys, padwatch)
         run: node build/build-helpers.js
 
       - name: Media tools (mpv, FFmpeg, Streamlink)
@@ -56,7 +56,7 @@ jobs:
         run: |
           New-Item -ItemType Directory -Force dist\to-sign\resources\tools | Out-Null
           Copy-Item dist\MediaDeck\MediaDeck.exe dist\to-sign\
-          foreach ($t in 'keys.exe', 'padwatch.exe', 'cursorhide.exe') { Copy-Item "dist\MediaDeck\resources\tools\$t" dist\to-sign\resources\tools\ }
+          foreach ($t in 'keys.exe', 'padwatch.exe') { Copy-Item "dist\MediaDeck\resources\tools\$t" dist\to-sign\resources\tools\ }
 
       - name: Upload for signing
         id: unsigned
@@ -86,7 +86,7 @@ jobs:
         if: env.SIGNPATH_API_TOKEN != ''
         run: |
           Copy-Item dist\signed\* dist\MediaDeck\ -Recurse -Force
-          $files = 'MediaDeck.exe', 'resources\tools\keys.exe', 'resources\tools\padwatch.exe', 'resources\tools\cursorhide.exe'
+          $files = 'MediaDeck.exe', 'resources\tools\keys.exe', 'resources\tools\padwatch.exe'
           $bad = $files | Where-Object { (Get-AuthenticodeSignature "dist\MediaDeck\$_").Status -ne 'Valid' }
           if ($bad) { throw "Not signed: $($bad -join ', ')" }
           $files | ForEach-Object { "$_ : $((Get-AuthenticodeSignature "dist\MediaDeck\$_").SignerCertificate.Subject)" }

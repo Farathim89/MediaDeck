@@ -133,8 +133,6 @@ const Settings = (() => {
         { label: '24-hour clock', type: 'toggle', key: 'clock24h' },
         { label: 'Minimise when an app starts', desc: 'MediaDeck comes back when the app closes', type: 'toggle', key: 'minimizeOnLaunch' },
         { label: 'Sleep, restart and shut down PC in the Exit menu', desc: 'Off: the Exit menu (Power button, PS / Guide at home) only has Restart MediaDeck and Exit MediaDeck', type: 'toggle', key: 'powerMenuPc' },
-        { label: 'Hide the mouse pointer', desc: 'In full-screen apps and games, when the mouse has not moved for a while', type: 'choice', key: 'hideCursor', options: () => [
-          { value: 0, label: 'Never' }, { value: 5, label: 'After 5 seconds' }, { value: 10, label: 'After 10 seconds' }, { value: 30, label: 'After 30 seconds' }] },
       ],
     },
     {

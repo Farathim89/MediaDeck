@@ -45,8 +45,7 @@
         "filter": [
           "7za.exe",
           "padwatch.exe",
-          "keys.exe",
-          "cursorhide.exe"
+          "keys.exe"
         ]
       }
     ],

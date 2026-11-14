@@ -2,7 +2,6 @@
 // (.NET Framework 4), into tools\ (or --out <folder>):
 //   keys.exe        focus a window, press keys in a game, answer an emulator's "Are you sure?"  (UI Automation)
 //   padwatch.exe    watches the controllers for the PS / Guide button and Back + Start
-//   cursorhide.exe  hides the mouse pointer in full-screen games
 // Used by the release workflow, so the signed programs are built from this source.
 const { execFileSync } = require('child_process');
 const fs = require('fs');
@@ -18,7 +17,6 @@ const WPF = path.join(NET, 'WPF');
 const HELPERS = [
   { out: 'keys.exe', src: 'Keys.cs', title: 'MediaDeck keys helper', refs: [path.join(WPF, 'UIAutomationClient.dll'), path.join(WPF, 'UIAutomationTypes.dll'), 'System.Core.dll'] },
   { out: 'padwatch.exe', src: 'PadWatch.cs', title: 'MediaDeck controller watcher', refs: ['System.Core.dll'] },
-  { out: 'cursorhide.exe', src: 'CursorHide.cs', title: 'MediaDeck mouse pointer helper', refs: [] },
 ];
 // Each program says what it is: product MediaDeck, the release's version (code signing checks these)
 const { version } = require('../package.json');
