@@ -1728,6 +1728,9 @@ async function launchGame(moduleId, rom) {
   }
   let args;
   try { args = games.launchArgs(mod, startRom); } catch (e) { return { ok: false, error: e.message }; }
+  // Dolphin's own full screen is "exclusive" (it takes the screen over): after MediaDeck's PS menu came over it, Back to
+  // left a black screen and Dolphin "not responding" until force closed. Borderless full screen comes back every time.
+  if (emuInstaller.emuIdOf(mod) === 'dolphin' && !args.some((a) => /BorderlessFullscreen/i.test(a))) args = ['-C', 'Graphics.Settings.BorderlessFullscreen=True', ...args];   // ("Graphics" = GFX.ini)
   ownSettings([path.dirname(mod.exe)]);
   edenOwnFolders(mod);
   await padsFollowPc(mod).catch(() => {});      // player 1 on the controller that is here (Eden, DuckStation …)
