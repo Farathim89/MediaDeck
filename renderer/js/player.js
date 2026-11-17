@@ -28,6 +28,7 @@
   let lastSaved = 0;
   let pendingSeek = null;   // target time while scrubbing
   let seekTimer = null;
+  let seekRough = false;    // the last jump went to a keyframe: the exact spot still has to follow
   let seekStep = { at: 0, count: 0 };
   let ending = false;
   let afterEnd = null;   // what comes after the end (next file / start over / close): cancelled by any new choice
@@ -289,7 +290,10 @@
     load(index + 1, { fromStart: true });
   }
 
-  // Seeking: repeated presses build up; the jump happens once the presses stop
+  // Seeking: every press jumps at once (it used to wait until the presses stopped - the user: "make it instant").
+  // Quick presses in a row still go further each time (x3, x6). The first press lands on the exact second; the quick
+  // ones after it take the nearest keyframe, which shows a picture straight away, and the exact spot follows when
+  // they stop. The time above the bar stays up a moment after the last press.
   function seekBy(sec) {
     if (live()) { flashText('Live'); return; }
     const now = Date.now();
@@ -297,19 +301,22 @@
     const mult = seekStep.count > 12 ? 6 : seekStep.count > 6 ? 3 : 1;
     const base = pendingSeek !== null ? pendingSeek : st.time;
     pendingSeek = Math.max(0, Math.min(st.dur ? st.dur - 1 : Infinity, base + sec * mult));
+    seekRough = seekStep.count > 0;
+    cmd(['seek', pendingSeek, seekRough ? 'absolute+keyframes' : 'absolute']);
     seekEl.classList.add('seeking');
     previewEl.textContent = fmt(pendingSeek);
     previewEl.style.left = (st.dur ? (pendingSeek / st.dur) * 100 : 0) + '%';
     tick();
     showOsd();
     clearTimeout(seekTimer);
-    seekTimer = setTimeout(commitSeek, 450);
+    seekTimer = setTimeout(endSeek, 450);
   }
 
-  async function commitSeek() {
+  function endSeek() {
     if (pendingSeek === null) return;
     const t = pendingSeek;
-    await cmd(['seek', t, 'absolute']);
+    if (seekRough) cmd(['seek', t, 'absolute']);     // from the keyframe to the exact second
+    seekRough = false;
     st.time = t;
     pendingSeek = null;
     seekEl.classList.remove('seeking');
@@ -592,7 +599,7 @@
     if (action === 'down' && !isMusic && Nav.current && Nav.current.dataset.group === 'ctl') { hideOsd(); return; }
     if (Nav.current === seekEl && (action === 'left' || action === 'right')) { seekBy(action === 'left' ? -skipBack() : skipFwd()); return; }
     if (action === 'ok') {
-      if (Nav.current === seekEl) { if (pendingSeek !== null) { clearTimeout(seekTimer); commitSeek(); } else togglePause(); return; }
+      if (Nav.current === seekEl) { if (pendingSeek !== null) { clearTimeout(seekTimer); endSeek(); } else togglePause(); return; }
       Nav.activate();
       return;
     }

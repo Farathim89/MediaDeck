@@ -28,19 +28,25 @@ body.is-live #time-pos { color: #ff4d5e; font-weight: 700; letter-spacing: 0.08e
 #subtitle { font-size: calc(1.05rem * var(--text-scale)); color: var(--muted); margin-top: 0.3rem; max-width: 70vw; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
 /* ---------- Seek bar ---------- */
-#seek { position: relative; padding: 0.7rem 0; border-radius: 1rem; }
-.seek-track { position: relative; height: 0.35rem; border-radius: 1rem; background: rgba(255, 255, 255, 0.28); transition: height 0.15s; }
+/* the user: a taller bar (was 0.35rem, 0.55 selected) with a darker, SOLID background (was see-through white 0.28,
+   the picture showed through; a dark grey, not black, so it still shows over a film's black bars) and a border
+   (an outline: it takes no room and goes round the played part too) */
+#seek { position: relative; padding: 0.8rem 0; border-radius: 1rem; }
+.seek-track {
+  position: relative; height: 0.6rem; border-radius: 1rem; background: #2a2a2a; transition: height 0.15s;
+  outline: 0.1rem solid rgba(255, 255, 255, 0.45);
+}
 .seek-fill { position: absolute; left: 0; top: 0; bottom: 0; width: 0; border-radius: 1rem; background: var(--progress); }   /* Player settings → Progress bar colour */
 .seek-knob {
-  position: absolute; top: 50%; left: 0; width: 1.1rem; height: 1.1rem; margin: -0.55rem 0 0 -0.55rem;
+  position: absolute; top: 50%; left: 0; width: 1.5rem; height: 1.5rem; margin: -0.75rem 0 0 -0.75rem;
   border-radius: 50%; background: #fff; transform: scale(0); transition: transform 0.15s var(--ease);
   box-shadow: 0 0 0.8rem rgba(0, 0, 0, 0.5);
 }
-#seek.focused .seek-track, #seek:hover .seek-track { height: 0.55rem; }
+#seek.focused .seek-track, #seek:hover .seek-track { height: 0.9rem; }
 #seek.focused .seek-knob { transform: scale(1.25); }
 #seek:hover .seek-knob { transform: scale(1); }
 .seek-preview {
-  position: absolute; bottom: 2.2rem; left: 0; transform: translateX(-50%);
+  position: absolute; bottom: 2.8rem; left: 0; transform: translateX(-50%);
   padding: 0.35rem 0.7rem; border-radius: 0.5rem; background: rgba(0, 0, 0, 0.8);
   font-size: calc(1rem * var(--text-scale)); font-variant-numeric: tabular-nums; opacity: 0; pointer-events: none; transition: opacity 0.15s;
 }
