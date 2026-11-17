@@ -383,7 +383,11 @@
     let list;
     if (key === 'audioDevice') {
       soundDevices = await player.audioDevices();
-      list = [{ v: 'auto', l: 'Windows default' }, ...soundDevices.map((dv) => ({ v: dv.name, l: dv.description }))];
+      // outputs hidden in Settings → General → Outputs in the lists (Windows' ids end in the GUID of mpv's
+      // "wasapi/{…}" name); the one chosen now always shows
+      const hidden = new Set((S().hiddenSoundOutputs || []).map((id) => String(id).slice(String(id).lastIndexOf('.') + 1).toLowerCase()));
+      list = [{ v: 'auto', l: 'Windows default' }, ...soundDevices.filter((dv) => dv.name === cur || !hidden.has(dv.name.replace(/^wasapi\//, '').toLowerCase()))
+        .map((dv) => ({ v: dv.name, l: dv.description }))];
     } else list = key === 'audioChannels' ? SPEAKERS : PASSTHROUGH;
     const title = { audioDevice: 'Sound output', audioChannels: 'Speakers', audioPassthrough: 'Passthrough' }[key];
     const v = await UI.menu({ title, focus: cur, items: list.map((x) => ({ label: x.l, value: x.v, icon: x.v === cur ? 'check' : '' })) });

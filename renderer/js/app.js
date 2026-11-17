@@ -162,33 +162,79 @@ const App = {
     return res.closed;
   },
 
+  // ---------- Windows' sound output (Settings → General, the PS menus) ----------
+  // Windows' default output: games, emulators, YouTube and other programs play there (the player too while its own
+  // Sound output is "Windows default"). Names lose Windows' "(driver)" part in short labels.
+  shortSoundName(n) { return String(n || '').replace(/\s*\([^()]*\)\s*$/, '') || String(n || ''); },
+
+  // Outputs left out of the lists (Settings → General → Outputs in the lists), kept as Windows' ids. Their GUID part is
+  // also mpv's "wasapi/{…}" name, so the player's own Sound output list leaves them out too.
+  soundHidden(id) {
+    const guid = (x) => { const s = String(x || ''); return (s.startsWith('wasapi/') ? s.slice(7) : s.slice(s.lastIndexOf('.') + 1)).toLowerCase(); };
+    return (this.state.config.settings.hiddenSoundOutputs || []).some((h) => guid(h) === guid(id));
+  },
+
+  // The PS menus' item, with the output in use now (listing takes ~30 ms; without an answer in 400 ms, no name)
+  async soundItem() {
+    const r = await Promise.race([api.winSoundOutputs().catch(() => null), new Promise((res) => setTimeout(() => res(null), 400))]);
+    const cur = r && r.devices && r.devices.find((d) => d.id === r.default);
+    return { label: cur ? `Sound output  ·  ${this.shortSoundName(cur.name)}` : 'Sound output', icon: 'audio', value: 'sound' };
+  },
+
+  // The outputs to pick from; true when Windows switched
+  async windowsSound() {
+    const r = await api.winSoundOutputs();
+    if (!r || !r.devices || !r.devices.length) {
+      await UI.menu({ title: 'Sound output', message: 'Windows did not list any sound outputs.', items: [{ label: 'OK', icon: 'check' }] });
+      return false;
+    }
+    const shown = r.devices.filter((d) => d.id === r.default || !this.soundHidden(d.id));     // the one in use always shows
+    const v = await UI.menu({ title: 'Sound output', message: 'Games, emulators, YouTube and other programs play here (Windows\' default output)', focus: r.default,
+      items: shown.map((d) => ({ label: d.name, value: d.id, icon: d.id === r.default ? 'check' : 'audio' })) });
+    if (!v || v === r.default) return false;
+    const res = await api.winSoundSet(v);
+    const name = this.shortSoundName((r.devices.find((d) => d.id === v) || {}).name);
+    if (res && res.ok) UI.toast(`Sound: ${name}`, { icon: 'audio' });
+    else UI.toast(`Windows did not switch to ${name}`, { icon: 'alert', error: true });
+    return !!(res && res.ok);
+  },
+
   // Controller combo (Back + Start held, or Guide) while a game/app runs: close it or go back
   // PS button while YouTube is in front: YouTube waits (paused) behind this menu
-  async youtubeMenu() {
+  // (focus: 'sound' = back from the sound list without a pick; after a switch the menu opens on its first item again)
+  async youtubeMenu(focus) {
+    const sound = await this.soundItem();
     const c = await UI.menu({
       title: 'YouTube',
       message: 'Paused',
+      focus,
       items: [
         { label: 'Back to YouTube', icon: 'play', value: 'resume' },
         { label: 'YouTube settings (TizenTube)', icon: 'settings', value: 'tizentube' },
+        sound,
         { label: 'Close YouTube', icon: 'close', value: 'close', danger: true },
         { label: 'Stay in MediaDeck', icon: 'home', value: 'stay' },
       ],
     });
+    if (c === 'sound') return this.youtubeMenu((await this.windowsSound()) ? undefined : 'sound');     // then this menu again
     await api.youtubeAction(c || 'stay');
     if (c === 'close') UI.toast('YouTube closed', { icon: 'check' });
   },
 
   // PS button while Twitch is in front: Twitch waits behind this menu
-  async twitchMenu() {
+  async twitchMenu(focus) {
+    const sound = await this.soundItem();
     const c = await UI.menu({
       title: 'Twitch',
+      focus,
       items: [
         { label: 'Back to Twitch', icon: 'play', value: 'resume' },
+        sound,
         { label: 'Close Twitch', icon: 'close', value: 'close', danger: true },
         { label: 'Stay in MediaDeck', icon: 'home', value: 'stay' },
       ],
     });
+    if (c === 'sound') return this.twitchMenu((await this.windowsSound()) ? undefined : 'sound');
     await api.twitchAction(c || 'stay');
     if (c === 'close') UI.toast('Twitch closed', { icon: 'check' });
   },
@@ -244,7 +290,7 @@ const App = {
     }
   },
 
-  async runningMenu(info) {
+  async runningMenu(info, focus) {
     if (!info || !info.alive) {
       UI.toast('Back in MediaDeck', { icon: 'home' });
       return;
@@ -254,18 +300,29 @@ const App = {
     const extra = (info.actions || []).filter((a) => EXTRA[a]).map((a) => ({ label: EXTRA[a][0], icon: EXTRA[a][1], value: a }));
     // PS again while this menu is open: it stays as it is. Opening it anew put the focus back on "Back to …" - with a
     // controller that also sends PS with other buttons, on every press (the D-pad then seemed dead in the menu)
-    if (this.runningOpen && UI.isOpen) return;
+    // (runningOpening: the moment the sound output is asked for, before the menu shows - a second PS then waits too)
+    if (this.runningOpen && (UI.isOpen || this.runningOpening)) return;
     this.runningOpen = true;
+    this.runningOpening = true;
+    const sound = await this.soundItem();
+    this.runningOpening = false;
     const c = await UI.menu({
       title: info.name,
       message: info.emulator ? `Still running in ${info.emulator}` : 'Still running',
+      focus,
       items: [
         { label: `Back to ${info.name}`, icon: 'play', value: 'resume' },
         ...extra,
+        sound,
         { label: `Close ${info.name}`, icon: 'close', value: 'close', danger: true },
         { label: 'Stay in MediaDeck', icon: 'home', value: 'stay' },
       ],
     });
+    if (c === 'sound') {         // then this menu again (the game waits behind it as before)
+      const switched = await this.windowsSound();
+      this.runningOpen = false;
+      return this.runningMenu(info, switched ? undefined : 'sound');
+    }
     this.runningOpen = false;
     if (c === 'resume') return api.resumeRunning();
     if (EXTRA[c]) return api.runningAction(c);

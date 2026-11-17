@@ -2838,6 +2838,17 @@ function registerIpc() {
     if (r.ok) displayTrial = setTimeout(() => { displayTrial = null; keysOut(['display', 'reset', displayHwnd]); }, 20000);
     return { ok: r.ok, error: r.ok ? '' : 'Windows could not switch to that mode' };
   });
+  // Windows' own default sound output (Settings → General, the PS menus): games, emulators, YouTube, Twitch's page and
+  // other programs play there; the player too while its Sound output is "Windows default". Through keys.exe, which sets
+  // it for all three roles, like Windows' Sound settings.
+  ipcMain.handle('win-sound-outputs', async () => {
+    const r = await keysOut(['audio', 'list']);
+    try { return JSON.parse(r.out); } catch { return null; }
+  });
+  ipcMain.handle('win-sound-set', async (e, id) => {
+    if (!/^\{[0-9.]+\}\.\{[0-9a-f-]{36}\}$/i.test(String(id || ''))) return { ok: false };
+    return { ok: (await keysOut(['audio', 'set', String(id)])).ok };
+  });
   ipcMain.handle('launch', (e, tile) => launch(tile));
   ipcMain.handle('youtube-open', () => openYouTube());
   ipcMain.handle('youtube-action', (e, a) => youtubeAction(a));

@@ -1129,16 +1129,19 @@ const Home = (() => {
 
 
   // Also the PS / Guide button at home (main → 'power-menu')
-  async function powerMenu() {
+  async function powerMenu(focus) {
     // Sleep / restart / shut down the PC can be hidden (Settings → General)
     const pc = App.state.config.settings.powerMenuPc !== false;
-    const c = await UI.menu({ title: 'Power', items: [
+    const sound = await App.soundItem();      // Windows' sound output, as in the PS menus over games
+    const c = await UI.menu({ title: 'Power', focus: typeof focus === 'string' ? focus : undefined, items: [
       ...(pc ? [{ label: 'Sleep', icon: 'moon', value: 'sleep' },
         { label: 'Restart PC', icon: 'restart', value: 'restart' },
         { label: 'Shut down PC', icon: 'power', value: 'shutdown', danger: true }] : []),
+      sound,
       { label: 'Restart MediaDeck', icon: 'refresh', value: 'restart-app' },
       { label: 'Exit MediaDeck', icon: 'exit', value: 'quit' },
     ] });
+    if (c === 'sound') return powerMenu((await App.windowsSound()) ? undefined : 'sound');
     if (c === 'quit') return api.quit();
     if (c === 'restart-app') return api.restartApp();
     if (c === 'sleep') return api.power('sleep');

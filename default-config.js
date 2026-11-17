@@ -57,6 +57,7 @@ function defaultConfig() {
       gamesFolder: '',
       audioLang: '',
       audioDevice: 'auto',       // mpv's sound output: 'auto' = Windows' default, else 'wasapi/{id}'
+      hiddenSoundOutputs: [],    // sound outputs left out of the Sound output lists (Settings → General): Windows' ids
       audioChannels: 'auto',     // 'auto' (Windows' speaker setup) | 'stereo' | '5.1' | '7.1' (= up to; exclusive mode)
       rtxSuperRes: 'on',         // NVIDIA RTX Video Super Resolution for videos smaller than the screen (RTX cards only)
       rtxHdr: 'off',             // NVIDIA RTX Video HDR for SDR videos (RTX cards only) - only when switched on, never with upscaling by itself

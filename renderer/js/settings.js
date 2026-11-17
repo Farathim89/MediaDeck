@@ -69,6 +69,46 @@ const Settings = (() => {
     for (const it of SECTIONS.find((x) => x.id === 'general').items) if (it._row) refreshRow(it._row, it);
   }
 
+  // Windows' sound output (Settings → General): asked once per visit, again after a change
+  let winSound = null;              // { default, devices: [{ id, name }] } from keys.exe
+  const refreshGeneral = () => { for (const it of SECTIONS.find((x) => x.id === 'general').items) if (it._row) refreshRow(it._row, it); };
+  const winSoundValue = () => {
+    if (!winSound) {
+      api.winSoundOutputs().then((r) => { winSound = r || { devices: [] }; refreshGeneral(); });
+      return '…';
+    }
+    const cur = (winSound.devices || []).find((d) => d.id === winSound.default);
+    return cur ? App.shortSoundName(cur.name) : 'Unknown';
+  };
+
+  // Settings → General → Outputs in the lists: A ticks / unticks; unticked = left out (saved as Windows' ids; one that
+  // isn't connected now stays hidden)
+  async function pickShownSoundOutputs() {
+    const r = await api.winSoundOutputs();
+    const devices = (r && r.devices) || [];
+    if (!devices.length) { await UI.menu({ title: 'Outputs in the lists', message: 'Windows did not list any sound outputs.', items: [{ label: 'OK', icon: 'check' }] }); return; }
+    const hidden = new Set(s().hiddenSoundOutputs || []);
+    let focus;
+    for (;;) {
+      const v = await UI.menu({
+        title: 'Outputs in the lists', message: 'A ticks / unticks. Unticked outputs are left out of Sound output here, in the PS / Guide menu and in the Media Player.', focus,
+        items: [
+          ...devices.map((d) => ({ label: `${hidden.has(d.id) ? '☐' : '☑'}  ${d.name}${d.id === r.default ? '  (in use)' : ''}`, value: 'o:' + d.id })),
+          { label: 'Done', value: 'done', icon: 'check' },
+        ],
+      });
+      if (!v || v === 'done') break;
+      const id = v.slice(2);
+      if (hidden.has(id)) hidden.delete(id); else hidden.add(id);
+      focus = v;
+    }
+    const before = (s().hiddenSoundOutputs || []).slice().sort().join('|');
+    if ([...hidden].sort().join('|') === before) return;
+    s().hiddenSoundOutputs = [...hidden];
+    await save();
+    refreshGeneral();
+  }
+
   // NVIDIA RTX Video (the player): only on an RTX card, and only with the Direct3D 11 renderer
   const ON_OFF = [{ value: 'on', label: 'On' }, { value: 'off', label: 'Off' }];
   let rtxName = null;
@@ -103,7 +143,8 @@ const Settings = (() => {
     const cur = s().audioDevice || 'auto';
     const v = await UI.menu({ title: 'Sound output', focus: cur, items: [
       { label: 'Windows default', value: 'auto', icon: cur === 'auto' ? 'check' : 'audio' },
-      ...soundDevices.map((x) => ({ label: x.description, value: x.name, icon: x.name === cur ? 'check' : 'audio' })),
+      ...soundDevices.filter((x) => x.name === cur || !App.soundHidden(x.name))      // (Settings → General → Outputs in the lists)
+        .map((x) => ({ label: x.description, value: x.name, icon: x.name === cur ? 'check' : 'audio' })),
       ...(cur !== 'auto' && !soundDevices.some((x) => x.name === cur) ? [{ label: 'The one chosen before (not connected now)', value: cur, icon: 'check' }] : []),
     ] });
     if (v == null || v === cur) return;
@@ -130,6 +171,10 @@ const Settings = (() => {
           type: 'action', value: () => screenValue('res'), run: () => pickScreenMode('res') },
         { label: 'Refresh rate', desc: 'Pictures per second. 23.976 / 24 Hz suits films, 50 Hz PAL TV, 60 Hz and up games and menus.',
           type: 'action', value: () => screenValue('hz'), run: () => pickScreenMode('hz') },
+        { label: 'Sound output', desc: 'Windows\' default sound output: games, emulators, YouTube and other programs play here, and the Media Player too while its own Sound output is Windows default. Also in the PS / Guide menu.',
+          type: 'action', value: () => winSoundValue(), run: async () => { if (await App.windowsSound()) { winSound = null; refreshGeneral(); } } },
+        { label: 'Outputs in the lists', desc: 'Leave out the sound outputs you never use (a microphone or chat output, a monitor\'s speakers …): they no longer show in Sound output here, in the PS / Guide menu or in the Media Player. The output in use always shows.',
+          type: 'action', value: () => { const n = (s().hiddenSoundOutputs || []).length; return n ? `${n} hidden` : 'All shown'; }, run: () => pickShownSoundOutputs() },
         { label: '24-hour clock', type: 'toggle', key: 'clock24h' },
         { label: 'Minimise when an app starts', desc: 'MediaDeck comes back when the app closes', type: 'toggle', key: 'minimizeOnLaunch' },
         { label: 'Sleep, restart and shut down PC in the Exit menu', desc: 'Off: the Exit menu (Power button, PS / Guide at home) only has Restart MediaDeck and Exit MediaDeck', type: 'toggle', key: 'powerMenuPc' },
@@ -1048,6 +1093,7 @@ const Settings = (() => {
     Nav.setRoot(el);
     UI.glow(null);
     active = (params && params.section) || 'general';
+    winSound = null;            // Windows' sound output may have changed since (the PS menu, Windows itself)
     renderNav();
     renderList();
     Nav.focus(navEl.querySelector('.tab.active'));

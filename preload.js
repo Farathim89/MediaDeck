@@ -114,5 +114,7 @@ contextBridge.exposeInMainWorld('api', {
   rtxCard: invoke('rtx-card'),
   displayModes: invoke('display-modes'),
   displaySet: invoke('display-set'),
+  winSoundOutputs: invoke('win-sound-outputs'),
+  winSoundSet: invoke('win-sound-set'),
   onSettingsPatch: (fn) => ipcRenderer.on('settings-patch', (e, patch) => fn(patch)),
 });

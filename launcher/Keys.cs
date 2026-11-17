@@ -23,6 +23,10 @@
 //   keys.exe pads                  the game controllers Windows has, one per line: "xinput vid pid version subtype slotN" (XInput's
 //                                  own ids) and "raw vid pid version 1|0 manufacturer<TAB>product" (raw input; 1 = an XInput pad)
 //                                  - where SDL reads them too; pad-pc.js makes SDL's ids from them
+//   keys.exe audio list            Windows' sound outputs (connected ones) and its default one, as JSON:
+//                                  {"default":"<id>","devices":[{"id":"<id>","name":"<name>"}]}
+//   keys.exe audio set <id>        make that output Windows' default (for everything: games, apps, calls - like
+//                                  Windows' own Sound settings); exit 0 = done
 // Keys are sent as hardware scan codes, which emulators (DirectInput / raw input) understand.
 using System;
 using System.Collections.Generic;
@@ -37,6 +41,58 @@ interface ITaskbarList2
     void MarkFullscreenWindow(IntPtr h, [MarshalAs(UnmanagedType.Bool)] bool full);
 }
 [ComImport, Guid("56FDF344-FD6D-11d0-958A-006097C9A090")] class TaskbarList { }
+
+// ---------- Windows' sound outputs (Core Audio) ----------
+[StructLayout(LayoutKind.Sequential)] struct PROPERTYKEY { public Guid fmtid; public int pid; }
+[StructLayout(LayoutKind.Sequential)] struct PROPVARIANT { public ushort vt, r1, r2, r3; public IntPtr p, p2; }
+[ComImport, Guid("886d8eeb-8cf2-4446-8d02-cdba1dbdcf99"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+interface IPropertyStore
+{
+    [PreserveSig] int GetCount(out int n);
+    [PreserveSig] int GetAt(int i, out PROPERTYKEY key);
+    [PreserveSig] int GetValue(ref PROPERTYKEY key, out PROPVARIANT v);
+}
+[ComImport, Guid("D666063F-1587-4E43-81F1-B948E807363F"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+interface IMMDevice
+{
+    [PreserveSig] int Activate(ref Guid iid, int ctx, IntPtr prm, [MarshalAs(UnmanagedType.IUnknown)] out object o);
+    [PreserveSig] int OpenPropertyStore(int access, out IPropertyStore props);
+    [PreserveSig] int GetId([MarshalAs(UnmanagedType.LPWStr)] out string id);
+    [PreserveSig] int GetState(out int state);
+}
+[ComImport, Guid("0BD7A1BE-7A1A-44DB-8397-CC5392387B5E"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+interface IMMDeviceCollection
+{
+    [PreserveSig] int GetCount(out int n);
+    [PreserveSig] int Item(int i, out IMMDevice d);
+}
+[ComImport, Guid("A95664D2-9614-4F35-A746-DE8DB63617E6"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+interface IMMDeviceEnumerator
+{
+    [PreserveSig] int EnumAudioEndpoints(int flow, int stateMask, out IMMDeviceCollection list);
+    [PreserveSig] int GetDefaultAudioEndpoint(int flow, int role, out IMMDevice d);
+    [PreserveSig] int GetDevice([MarshalAs(UnmanagedType.LPWStr)] string id, out IMMDevice d);
+}
+[ComImport, Guid("BCDE0395-E52F-467C-8E3D-C4579291692E")] class MMDeviceEnumerator { }
+// Windows' own (undocumented, stable since Windows 7) way to set the default output - what its Sound settings,
+// SoundVolumeView and AudioDeviceCmdlets use. Only SetDefaultEndpoint is called; the slots before it keep the order.
+[ComImport, Guid("f8679f50-850a-41cf-9c72-430f290290c8"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+interface IPolicyConfig
+{
+    [PreserveSig] int GetMixFormat([MarshalAs(UnmanagedType.LPWStr)] string id, IntPtr f);
+    [PreserveSig] int GetDeviceFormat([MarshalAs(UnmanagedType.LPWStr)] string id, int def, IntPtr f);
+    [PreserveSig] int ResetDeviceFormat([MarshalAs(UnmanagedType.LPWStr)] string id);
+    [PreserveSig] int SetDeviceFormat([MarshalAs(UnmanagedType.LPWStr)] string id, IntPtr f, IntPtr mix);
+    [PreserveSig] int GetProcessingPeriod([MarshalAs(UnmanagedType.LPWStr)] string id, int def, IntPtr a, IntPtr b);
+    [PreserveSig] int SetProcessingPeriod([MarshalAs(UnmanagedType.LPWStr)] string id, IntPtr p);
+    [PreserveSig] int GetShareMode([MarshalAs(UnmanagedType.LPWStr)] string id, IntPtr m);
+    [PreserveSig] int SetShareMode([MarshalAs(UnmanagedType.LPWStr)] string id, IntPtr m);
+    [PreserveSig] int GetPropertyValue([MarshalAs(UnmanagedType.LPWStr)] string id, IntPtr key, IntPtr v);
+    [PreserveSig] int SetPropertyValue([MarshalAs(UnmanagedType.LPWStr)] string id, IntPtr key, IntPtr v);
+    [PreserveSig] int SetDefaultEndpoint([MarshalAs(UnmanagedType.LPWStr)] string id, int role);
+    [PreserveSig] int SetEndpointVisibility([MarshalAs(UnmanagedType.LPWStr)] string id, int visible);
+}
+[ComImport, Guid("870af99c-171d-4f9e-af0d-e63df40c2bc9")] class PolicyConfigClient { }
 
 static class Keys
 {
@@ -375,11 +431,77 @@ static class Keys
         return 0;
     }
 
+    // ---------- Windows' sound outputs (Settings → General, the PS menu) ----------
+    [DllImport("ole32.dll")] static extern int PropVariantClear(ref PROPVARIANT v);
+    const int eRender = 0, DEVICE_STATE_ACTIVE = 1, eConsole = 0, eMultimedia = 1, eCommunications = 2;
+
+    static string Json(string s)
+    {
+        var b = new System.Text.StringBuilder("\"");
+        foreach (char c in s ?? "")
+        {
+            if (c == '"' || c == '\\') b.Append('\\').Append(c);
+            else if (c < 0x20) b.AppendFormat("\\u{0:x4}", (int)c);
+            else b.Append(c);
+        }
+        return b.Append('"').ToString();
+    }
+
+    static string DeviceName(IMMDevice d)
+    {
+        IPropertyStore ps;
+        if (d.OpenPropertyStore(0, out ps) != 0 || ps == null) return "";   // STGM_READ
+        var key = new PROPERTYKEY { fmtid = new Guid("a45c254e-df1c-4efd-8020-67d146a850e0"), pid = 14 };   // PKEY_Device_FriendlyName
+        PROPVARIANT v;
+        if (ps.GetValue(ref key, out v) != 0) return "";
+        string name = v.vt == 31 ? Marshal.PtrToStringUni(v.p) : "";   // VT_LPWSTR
+        PropVariantClear(ref v);
+        return name;
+    }
+
+    static int Audio(string[] a)
+    {
+        var en = (IMMDeviceEnumerator)new MMDeviceEnumerator();
+        if (a[1] == "list")
+        {
+            string def = "";
+            IMMDevice d;
+            if (en.GetDefaultAudioEndpoint(eRender, eMultimedia, out d) == 0 && d != null) d.GetId(out def);
+            IMMDeviceCollection list;
+            if (en.EnumAudioEndpoints(eRender, DEVICE_STATE_ACTIVE, out list) != 0) return 3;
+            int n;
+            list.GetCount(out n);
+            var items = new List<string>();
+            for (int i = 0; i < n; i++)
+            {
+                if (list.Item(i, out d) != 0 || d == null) continue;
+                string id;
+                if (d.GetId(out id) != 0) continue;
+                items.Add("{\"id\":" + Json(id) + ",\"name\":" + Json(DeviceName(d)) + "}");
+            }
+            Console.OutputEncoding = System.Text.Encoding.UTF8;
+            Console.WriteLine("{\"default\":" + Json(def) + ",\"devices\":[" + string.Join(",", items) + "]}");
+            return 0;
+        }
+        if (a[1] == "set" && a.Length >= 3)
+        {
+            IMMDevice d;
+            int state;
+            // only an output that is there and connected
+            if (en.GetDevice(a[2], out d) != 0 || d == null || d.GetState(out state) != 0 || state != DEVICE_STATE_ACTIVE) return 2;
+            var pc = (IPolicyConfig)new PolicyConfigClient();
+            int r = pc.SetDefaultEndpoint(a[2], eConsole) | pc.SetDefaultEndpoint(a[2], eMultimedia) | pc.SetDefaultEndpoint(a[2], eCommunications);
+            return r == 0 ? 0 : 3;
+        }
+        return 1;
+    }
+
     static int Main(string[] a)
     {
         try
         {
             if (a.Length >= 1 && a[0] == "pads") return Pads();
+            if (a.Length >= 2 && a[0] == "audio") return Audio(a);
             if (a.Length >= 2 && a[0] == "unmark")
             {
                 var tb = (ITaskbarList2)new TaskbarList();
@@ -435,7 +557,7 @@ static class Keys
             }
         }
         catch (Exception e) { Console.Error.WriteLine(e.Message); return 1; }
-        Console.Error.WriteLine("usage: keys focus <hwnd> | keys game <pid> | keys confirm <pid> [secs] | keys send <pid> <combo> | keys freeze|thaw <pid> | keys unmark <hwnd> | keys border <hwnd> none|default | keys display list|reset <hwnd> | keys display set <hwnd> <w> <h> <hz> try|keep|test");
+        Console.Error.WriteLine("usage: keys focus <hwnd> | keys game <pid> | keys confirm <pid> [secs] | keys send <pid> <combo> | keys freeze|thaw <pid> | keys unmark <hwnd> | keys border <hwnd> none|default | keys display list|reset <hwnd> | keys display set <hwnd> <w> <h> <hz> try|keep|test | keys audio list | keys audio set <id>");
         return 1;
     }
 }
